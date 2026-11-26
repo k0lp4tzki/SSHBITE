@@ -1,0 +1,115 @@
+
+### 01 Interaktive Shell (mit PTY)
+$ ssh -t sshbite@jump 
+  (stdin: id
+exit
+)
+[ChannelOpenError] PTY request failed
+
+### 02 Beliebiger Befehl ohne sudo
+$ ssh sshbite@jump id
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 03 sudo -i
+$ ssh sshbite@jump sudo -i
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 04 sudo sh
+$ ssh sshbite@jump sudo -n sh -c id
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 05 sudo cat /etc/shadow
+$ ssh sshbite@jump sudo -n cat /etc/shadow
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 06 sudo -l
+$ ssh sshbite@jump sudo -n -l
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 07 Eigenes Skript per stdin an sudo /bin/sh -s (exakter SSHBITE-Befehl)
+$ ssh sshbite@jump test -x /usr/bin/sudo && exec /usr/bin/sudo -n /bin/sh -s; exec /bin/sudo -n /bin/sh -s
+  (stdin: id; head -n 2 /etc/shadow)
+[stderr] sshbite-gate: Collector-Version passt nicht zu /usr/local/libexec/sshbite/sshbite-collect
+[exit 126]
+
+### 08 Collector mit Argument
+$ ssh sshbite@jump sudo -n /usr/local/libexec/sshbite/sshbite-collect -x
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 09 Collector direkt mit Umgebungsvariable
+$ ssh sshbite@jump LD_PRELOAD=/tmp/x.so sudo -n /usr/local/libexec/sshbite/sshbite-collect
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 10 Collector direkt (ohne Gate-Pfad)
+$ ssh sshbite@jump sudo -n /usr/local/libexec/sshbite/sshbite-collect
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 11 Gate-Befehl plus angehängter Befehl
+$ ssh sshbite@jump test -x /usr/bin/sudo && exec /usr/bin/sudo -n /bin/sh -s; exec /bin/sudo -n /bin/sh -s; id
+  (stdin: x)
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 12 Passwort-Variante mit Skript
+$ ssh sshbite@jump test -x /usr/bin/sudo && exec /usr/bin/sudo -S -k -p '' /bin/sh -s; exec /bin/sudo -S -k -p '' /bin/sh -s
+  (stdin: pw
+id)
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 13 Unprivilegierte Shell /bin/sh -s
+$ ssh sshbite@jump /bin/sh -s
+  (stdin: id)
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 14 sudo-login-Variante -i
+$ ssh sshbite@jump test -x /usr/bin/sudo && exec /usr/bin/sudo -n -i /bin/sh -s; exec /bin/sudo -n -i /bin/sh -s
+  (stdin: id)
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 15 Namensauflösung mit eingeschleustem Befehl
+$ ssh sshbite@jump /bin/sh -c 'id'
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 16 Datei lesen ohne sudo
+$ ssh sshbite@jump cat /etc/passwd
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 17 Weiterleitung von jump zu SSH-Port eines Hosts
+$ ssh -W 172.30.1.11:22 sshbite@jump 
+[Weiterleitung zu 172.30.1.11:22 geoeffnet]
+
+### 18 Weiterleitung von jump zu anderem Port (2200)
+$ ssh -W 172.30.1.11:2200 sshbite@jump 
+[ChannelOpenError] open failed
+
+### 19 Weiterleitung über Zielhost a1 (kein Hop)
+$ ssh -W 172.30.1.12:22 sshbite@172.30.1.11 
+[ChannelOpenError] open failed
+
+### 20 Login auf a1 direkt vom Scanner statt über jump
+$ ssh sshbite@172.30.1.11 (direkt vom Scanner) id
+[PermissionDenied] Permission denied for user sshbite on host 172.30.1.11
+
+### 21 Zielhost a1 über jump: sudo sh
+$ ssh sshbite@172.30.1.11 sudo -n sh -c id
+[stderr] sshbite-gate: Befehl nicht erlaubt
+[exit 126]
+
+### 22 Zielhost a1: Skript per stdin
+$ ssh sshbite@172.30.1.11 test -x /usr/bin/sudo && exec /usr/bin/sudo -n /bin/sh -s; exec /bin/sudo -n /bin/sh -s
+  (stdin: id)
+[stderr] sshbite-gate: Collector-Version passt nicht zu /usr/local/libexec/sshbite/sshbite-collect
+[exit 126]

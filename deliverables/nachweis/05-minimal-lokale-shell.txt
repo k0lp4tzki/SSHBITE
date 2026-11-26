@@ -1,0 +1,94 @@
+
+### sudo -l
+sshbite$ sudo -n -l
+Matching Defaults entries for sshbite on jump:
+    env_reset, mail_badpass, secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin, use_pty, env_reset, secure_path=/usr/sbin\:/usr/bin\:/sbin\:/bin, !lecture, !log_output, !log_input, !requiretty
+
+User sshbite may run the following commands on jump:
+    (root) NOPASSWD: /usr/local/libexec/sshbite/sshbite-collect ""
+[exit 0]
+
+### sudo -i
+sshbite$ sudo -n -i
+sudo: a password is required
+[exit 1]
+
+### sudo sh
+sshbite$ sudo -n /bin/sh -c id
+sudo: a password is required
+[exit 1]
+
+### sudo cat /etc/shadow
+sshbite$ sudo -n /usr/bin/cat /etc/shadow
+sudo: a password is required
+[exit 1]
+
+### sudo /bin/true (heute Probe von SSHBITE)
+sshbite$ sudo -n /bin/true
+sudo: a password is required
+[exit 1]
+
+### Collector mit Argument
+sshbite$ sudo -n /usr/local/libexec/sshbite/sshbite-collect /etc/shadow
+sudo: a password is required
+[exit 1]
+
+### Collector mit Umgebungsvariable LD_PRELOAD
+sshbite$ LD_PRELOAD=/tmp/x.so sudo -n /usr/local/libexec/sshbite/sshbite-collect | head -n 1
+#SSHBITE 1 01fba7910d9e
+[exit 0]
+
+### Umgebungsvariable per sudo VAR=wert
+sshbite$ sudo -n PATH=/tmp /usr/local/libexec/sshbite/sshbite-collect
+sudo: sorry, you are not allowed to set the following environment variables: PATH
+[exit 1]
+
+### Umgebung behalten (-E)
+sshbite$ sudo -n -E /usr/local/libexec/sshbite/sshbite-collect
+sudo: sorry, you are not allowed to preserve the environment
+[exit 1]
+
+### Anderes Ziel-Konto (-u)
+sshbite$ sudo -n -u daemon /usr/local/libexec/sshbite/sshbite-collect
+sudo: a password is required
+[exit 1]
+
+### Collector ueberschreiben
+sshbite$ printf 'id' > /usr/local/libexec/sshbite/sshbite-collect
+sh: 1: cannot create /usr/local/libexec/sshbite/sshbite-collect: Permission denied
+[exit 2]
+
+### Eigene Datei ins Verzeichnis legen
+sshbite$ touch /usr/local/libexec/sshbite/x
+touch: cannot touch '/usr/local/libexec/sshbite/x': Permission denied
+[exit 1]
+
+### Im eigenen Home schreiben
+sshbite$ touch /home/sshbite/.ssh/known_hosts
+touch: cannot touch '/home/sshbite/.ssh/known_hosts': Permission denied
+[exit 1]
+
+### authorized_keys aendern
+sshbite$ printf x >> /home/sshbite/.ssh/authorized_keys
+sh: 1: cannot create /home/sshbite/.ssh/authorized_keys: Permission denied
+[exit 2]
+
+### Collector ausfuehren (erlaubt): erste Zeilen
+sshbite$ sudo -n /usr/local/libexec/sshbite/sshbite-collect | head -n 3
+#SSHBITE 1 01fba7910d9e
+#S META
+#V hostname	jump
+[exit 0]
+
+### Collector-Ausgabe: Zeilen mit privatem Schluesselmaterial?
+sshbite$ sudo -n /usr/local/libexec/sshbite/sshbite-collect | grep -c -e '^|-----BEGIN' -e '^|b3BlbnNzaC1rZXktdjE' -e '^|MII'
+0
+[exit 1]
+
+### Collector-Ausgabe: shadow-Abschnitt (nur 1. Zeichen des Hashes)
+sshbite$ sudo -n /usr/local/libexec/sshbite/sshbite-collect | sed -n '/^#S SHADOW/,/^#S USERS/p' | head -n 4
+#S SHADOW
+#V cmd	shadow
+|root:*:
+|daemon:*:
+[exit 0]

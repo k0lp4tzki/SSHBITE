@@ -1,0 +1,47 @@
+#!/bin/sh
+# sshbite-gate - Forced Command fuer den SSHBITE-Audit-Account (authorized_keys: command="...").
+# Ablage: /usr/local/libexec/sshbite/sshbite-gate   Eigentuemer root:root, Modus 0755.
+#
+# sshd startet dieses Skript bei JEDER Verbindung des Audit-Keys statt des angefragten Befehls;
+# der angefragte Befehl steht in SSH_ORIGINAL_COMMAND. Erlaubt sind genau die festen Befehle,
+# die SSHBITE 0.1.0 sendet (sshbite/privilege.py, sshbite/collector/__init__.py):
+#   1. sudo-Probe              -> sudo -n -l <Collector>    (prueft die Regel, fuehrt nichts aus)
+#   2. Collector "sudo sh -s"  -> sudo -n <Collector>       (fest installierte Kopie; stdin wird nur
+#                                 per SHA-256 mit dieser Kopie verglichen und NIE ausgefuehrt)
+#   3. Namensaufloesung        -> der feste resolve-Befehl, ohne sudo
+# Alles andere (Shell, andere Skripte, sudo -i, Passwort-Varianten, scp/sftp) wird abgelehnt.
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+LC_ALL=C
+export PATH LC_ALL
+umask 077
+
+COLLECT=/usr/local/libexec/sshbite/sshbite-collect
+SUDO=/usr/bin/sudo
+[ -x "$SUDO" ] || SUDO=/bin/sudo
+C=${SSH_ORIGINAL_COMMAND-}
+
+PROBE='test -x /usr/bin/sudo && exec /usr/bin/sudo -n /bin/true; exec /bin/sudo -n /bin/true'
+RUN='test -x /usr/bin/sudo && exec /usr/bin/sudo -n /bin/sh -s; exec /bin/sudo -n /bin/sh -s'
+RESOLVE=$(cat <<'EOF'
+/bin/sh -c 'while IFS= read -r n; do getent hosts -- "$n" | awk -v n="$n" '\''{print n"\t"$1}'\''; done'
+EOF
+)
+
+deny() {
+  printf 'sshbite-gate: %s\n' "$1" >&2
+  logger -p authpriv.warning -t sshbite-gate -- "abgelehnt ($1): $(printf '%s' "$C" | tr -c '[:print:]' '?' | cut -c1-200)" 2>/dev/null
+  exit 126
+}
+
+if [ "$C" = "$PROBE" ]; then
+  exec "$SUDO" -n -l "$COLLECT" >/dev/null
+elif [ "$C" = "$RUN" ]; then
+  # Das von SSHBITE gesendete Skript muss Byte fuer Byte der installierten Kopie (ohne Shebang) entsprechen.
+  got=$(sha256sum) || deny "stdin nicht lesbar"
+  want=$(tail -n +2 "$COLLECT" | sha256sum) || deny "$COLLECT fehlt"
+  [ "$got" = "$want" ] || deny "Collector-Version passt nicht zu $COLLECT"
+  exec "$SUDO" -n "$COLLECT" </dev/null
+elif [ "$C" = "$RESOLVE" ]; then
+  exec /bin/sh -c "$C"
+fi
+deny "Befehl nicht erlaubt"
