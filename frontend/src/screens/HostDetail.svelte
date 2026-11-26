@@ -34,7 +34,15 @@
   const name = $derived(hs?.display_name ?? '');
   const notScanned = $derived(hs ? ['unreachable', 'timeout', 'auth_failed', 'hostkey_mismatch', 'hostkey_unknown', 'excluded',
     'out_of_scope', 'max_depth', 'max_hosts', 'unresolvable', 'alias', 'no_ssh'].includes(hs.status) : false);
-  const tab = $derived(route.query.get('tab') ?? 'overview');
+  // Tabs (design §4.8). A host without collected data keeps Overview, Known by and Findings; the data tabs are
+  // disabled and then show no count. An unknown or disabled ?tab= falls back to Overview.
+  const TAB_KEYS = ['overview', 'users', 'access', 'known_by', 'sshd', 'accounts', 'findings'];
+  const DATA_TABS = ['users', 'access', 'sshd', 'accounts'];
+  const disabledTab = (t: string) => notScanned && DATA_TABS.includes(t);
+  const tab = $derived.by(() => {
+    const t = route.query.get('tab') ?? 'overview';
+    return TAB_KEYS.includes(t) && !disabledTab(t) ? t : 'overview';
+  });
   let accessLayer = $state<'access' | 'evidence'>('access');
   let showAllAccounts = $state(false);
 
@@ -84,7 +92,21 @@
   let showAllSshd = $state(false);
 
   function setTab(t: string) { setQuery({ tab: t === 'overview' ? null : t }, true); }
-  const disabledTab = (t: string) => notScanned && !['overview', 'known_by'].includes(t);
+  const shownAccounts = $derived((d?.accounts ?? []).filter((a: any) => showAllAccounts || sshUsers.has(a.username)));
+  const tabs = $derived.by(() => {
+    if (!d) return [];
+    const acc = shownAccounts.length === d.accounts.length ? `${d.accounts.length}` : `${shownAccounts.length} of ${d.accounts.length}`;
+    const all: [string, string, string][] = [
+      ['overview', 'Overview', ''], ['users', 'Users', `${d.users.length}`],
+      ['access', 'Access', `${accIn.length} in · ${accOut.length} out`], ['known_by', 'Known by', `${d.known_by.length}`],
+      ['sshd', 'sshd', ''], ['accounts', 'Accounts', acc], ['findings', 'Findings', `${d.findings.length}`]];
+    return all.map(([k, l, c]) => ({ key: k, label: c && !disabledTab(k) ? `${l} (${c})` : l, disabled: disabledTab(k) }));
+  });
+  // Route attempts with an error: shown under the status line for every host that has one, also when a later
+  // route worked (c1: jump → c1 failed, jump → b3 → c1 ok). Unreachable hosts show them in their strip.
+  const UNREACHED = ['unreachable', 'timeout', 'auth_failed'];
+  const attempts = $derived((hs?.route_attempts ?? []) as any[]);
+  const showAttempts = $derived(!!hs && !UNREACHED.includes(hs.status) && attempts.some((a) => a.error));
 
   // scroll to #user-x / #finding-n once loaded
   let target = $state('');
@@ -124,6 +146,14 @@
           {:else}<span>{SOURCE_LABEL[hs.discovered_via?.source] ?? hs.discovered_via?.source ?? '–'}</span>{/if}
           {#if hs.route}{' · route '}<HopChain route={hs.route} links={hostIds} scan={sid} />{/if}
         </div>
+        {#if showAttempts}
+          <table class="t att compact" aria-label="Route attempts">
+            <caption>Route attempts</caption>
+            <thead><tr><th>Route</th><th>Result</th></tr></thead>
+            <tbody>{#each attempts as a}<tr><td class="nowrap"><HopChain route={a.route} links={hostIds} scan={sid} /></td>
+              <td class="mono">{#if a.error}<span class="att-err" title={a.error}>{a.error}</span>{:else}<span class="att-ok">ok</span>{/if}</td></tr>{/each}</tbody>
+          </table>
+        {/if}
         <div class="line mono secondary">{[...d.names.filter((x: any) => x.kind === 'name').map((x: any) => x.value), ...hs.ips].filter((v, i, a) => a.indexOf(v) === i).join(' · ') || hs.connect_addr}{#if hs.os}{' · '}<span class="sans">{hs.os}</span>{/if}{#if hs.kernel}{' · ' + hs.kernel}{/if}</div>
       {/snippet}
       {#snippet actions()}
@@ -145,7 +175,7 @@
         <ul class="reasons mono">{#each hs.partial_reasons as r}<li>{r}</li>{:else}<li>{hs.error ?? hs.status}</li>{/each}</ul>
         <span class="secondary">Rerun with <span class="mono">--ask-sudo-password</span> or grant sudo to the audit account.</span>
       </Strip>
-    {:else if ['unreachable', 'timeout', 'auth_failed'].includes(hs.status)}
+    {:else if UNREACHED.includes(hs.status)}
       <Strip role="high">
         <span>Not scanned: {STATUS_LABEL[hs.status].toLowerCase()}.</span>
         <table class="t att"><thead><tr><th>Route</th><th>Error</th></tr></thead><tbody>
@@ -167,14 +197,14 @@
     {/if}
 
     <div class="tabs" role="tablist">
-      {#each [['overview', 'Overview'], ['users', `Users (${d.users.length})`], ['access', `Access (${accIn.length} in · ${accOut.length} out)`], ['known_by', `Known by (${d.known_by.length})`], ['sshd', 'sshd'], ['accounts', `Accounts (${d.accounts.length})`], ['findings', `Findings (${d.findings.length})`]] as [k, l]}
-        <button role="tab" aria-selected={tab === k} disabled={disabledTab(k)} title={disabledTab(k) ? 'No data: host was not scanned.' : ''} onclick={() => setTab(k)}>{l}</button>
+      {#each tabs as t (t.key)}
+        <button role="tab" aria-selected={tab === t.key} disabled={t.disabled} title={t.disabled ? 'No data: host was not scanned.' : ''} onclick={() => setTab(t.key)}>{t.label}</button>
       {/each}
     </div>
   </div>
 
   <section class="tabpanel" role="tabpanel">
-    {#if tab === 'overview' || disabledTab(tab)}
+    {#if tab === 'overview'}
       <div class="ov">
         <section class="panel">
           <h2 class="section-title">Host</h2>
@@ -342,7 +372,7 @@
         <div class="table-wrap"><table class="t">
           <thead><tr><th>Username</th><th class="r">UID</th><th>Shell</th><th>Login shell</th><th>Password</th><th>Expiry</th></tr></thead>
           <tbody>
-            {#each d.accounts.filter((a: any) => showAllAccounts || sshUsers.has(a.username)) as a (a.username)}
+            {#each shownAccounts as a (a.username)}
               <tr><td class="mono">{#if sshUsers.has(a.username)}<a href="?tab=users#user-{encodeURIComponent(a.username)}">{a.username}</a>{:else}{a.username}{/if}</td><td class="r num">{a.uid}</td><td class="mono">{a.shell || '–'}</td>
                 <td>{a.login_shell ? 'yes' : 'no'}</td><td>{a.pw_state}</td><td class="mono">{a.expiry ?? '–'}</td></tr>
             {:else}<tr><td class="empty" colspan="6">{d.accounts.length ? 'No account on this host has SSH data.' : `No accounts were read on ${name}.`}</td></tr>{/each}
@@ -370,6 +400,10 @@
   .sans { font-family: var(--sans); }
   .reasons { margin: var(--s2) 0; padding-left: var(--s5); font-size: 13px; }
   .att { margin-top: var(--s3); max-width: 720px; }
+  .att.compact { margin-top: 0; width: auto; max-width: 100%; font-size: 13px; }
+  .att.compact caption { text-align: left; font-size: 12px; font-weight: 500; color: var(--text-secondary); padding-bottom: var(--s1); }
+  .att.compact th, .att.compact :global(td) { height: 28px; padding-top: 0; padding-bottom: 0; }
+  .att-ok { color: var(--text-secondary); }
   .hk { margin: var(--s3) 0; }
   .tabpanel { display: flex; flex-direction: column; gap: var(--s5); }
   .ov { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--s5); align-items: start; }

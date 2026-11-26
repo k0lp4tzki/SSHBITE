@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { navigate, route } from './lib/router.svelte';
-  import { latestCompleted, loadScans, loadSession, scans, session, startLivePolling } from './lib/state.svelte';
+  import { diffPair, lastScan, latestCompleted, rememberScan, loadScans, loadSession, scans, session, startLivePolling } from './lib/state.svelte';
   import Shell from './components/Shell.svelte';
   import NoScan from './components/NoScan.svelte';
   import Login from './screens/Login.svelte';
@@ -62,10 +62,19 @@
 
   const scanId = $derived((parsed as any).scan ?? null);
   const scan = $derived(scanId !== null ? scans.items.find((s) => s.id === scanId) ?? null : null);
-  const diffSynthetic = $derived.by(() => {
-    if (parsed.screen !== 'diff') return false;
-    const a = +(route.query.get('a') ?? 0), b = +(route.query.get('b') ?? 0);
-    return scans.items.some((s) => (s.id === a || s.id === b) && s.synthetic);
+  $effect(() => { if (scan) rememberScan(scan.id); });
+  // /scans and /diff have no scan in the URL: the top bar keeps the scan last opened (else the latest completed)
+  const topScanId = $derived(scanId ?? (parsed.screen === 'scans' || parsed.screen === 'diff'
+    ? (scans.items.some((s) => s.id === lastScan.id) ? lastScan.id : latestCompleted()?.id ?? null) : null));
+  const topScan = $derived(topScanId !== null ? scans.items.find((s) => s.id === topScanId) ?? null : null);
+  // synthetic banner (design §3, §4.12, §10.1): the scan shown; on Diff when A or B is synthetic
+  const synthetic = $derived.by(() => {
+    if (parsed.screen === 'diff') {
+      const [a, b] = diffPair(route.query);
+      return scans.items.some((s) => (s.id === a || s.id === b) && s.synthetic);
+    }
+    if (parsed.screen === 'scans') return !!topScan?.synthetic;
+    return !!scan?.synthetic;
   });
 </script>
 
@@ -74,7 +83,7 @@
 {:else if parsed.screen === 'login'}
   <Login onlogin={loggedIn} />
 {:else if session.username}
-  <Shell scanId={scanId} synthetic={!!scan?.synthetic || diffSynthetic}>
+  <Shell scanId={topScanId} {synthetic}>
     {#if parsed.screen === 'scans'}
       <Scans />
     {:else if scans.loaded && scans.items.length === 0}

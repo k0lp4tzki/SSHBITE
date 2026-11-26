@@ -35,8 +35,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     SSHBITE_IN_CONTAINER=1 \
     SSHBITE_CONFIG=/etc/sshbite/sshbite.yaml
-# dependencies only from the hash-pinned lock, then the wheel without resolving anything else
-COPY requirements.lock /tmp/requirements.lock
+# runtime dependencies only (no test extra) from the hash-pinned lock, then the wheel without resolving anything else
+COPY requirements-runtime.lock /tmp/requirements.lock
 RUN pip install --require-hashes -r /tmp/requirements.lock && rm /tmp/requirements.lock
 COPY --from=wheel /dist/ /tmp/dist/
 RUN pip install --no-deps /tmp/dist/sshbite-*.whl && rm -rf /tmp/dist \

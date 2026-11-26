@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import sqlite3
 from importlib import resources
 from pathlib import Path
@@ -45,7 +46,65 @@ def static_dir() -> Path:
     return Path(str(resources.files("sshbite.web").joinpath("static")))
 
 
-def create_app(database: str, session_hours: float = 8, tls: bool = False, guard: Guard | None = None) -> FastAPI:
+MAX_API_BODY = 64 * 1024
+
+
+class BodyLimit:
+    """ASGI middleware: request bodies on /api larger than MAX_API_BODY get 413 (declared or streamed)."""
+
+    def __init__(self, app, limit: int = MAX_API_BODY):
+        self.app = app
+        self.limit = limit
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not (scope["path"] == "/api" or scope["path"].startswith("/api/")):
+            return await self.app(scope, receive, send)
+        for k, v in scope.get("headers", []):
+            if k == b"content-length":
+                try:
+                    too_big = int(v) > self.limit
+                except ValueError:
+                    too_big = True
+                if too_big:
+                    return await self._reject(scope, receive, send)
+        if any(k == b"content-length" for k, _ in scope.get("headers", [])):
+            return await self.app(scope, receive, send)
+        # streamed (chunked) body: read it up to the limit first, then replay it to the app
+        chunks: list[bytes] = []
+        seen = 0
+        while True:
+            msg = await receive()
+            if msg["type"] != "http.request":
+                return
+            chunks.append(msg.get("body", b""))
+            seen += len(chunks[-1])
+            if seen > self.limit:
+                return await self._reject(scope, receive, send)
+            if not msg.get("more_body", False):
+                break
+        body = b"".join(chunks)
+        replayed = False
+
+        async def replay():
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await receive()
+
+        await self.app(scope, replay, send)
+
+    async def _reject(self, scope, receive, send):
+        resp = error_response(413, "too_large", f"request body larger than {self.limit // 1024} KiB")
+        for k, v in SECURITY_HEADERS.items():
+            resp.headers.setdefault(k, v)
+        resp.headers["Cache-Control"] = "no-store"
+        resp.headers["Connection"] = "close"
+        await resp(scope, receive, send)
+
+
+def create_app(database: str, session_hours: float = 8, tls: bool = False, guard: Guard | None = None,
+               secure_cookie: bool = False, trusted_proxies: list[str] | None = None) -> FastAPI:
     # migrate once at start (writes a backup before migrating an existing DB, spec 8.2)
     conn = dbm.connect(database)
     conn.close()
@@ -54,6 +113,8 @@ def create_app(database: str, session_hours: float = 8, tls: bool = False, guard
     app.state.database = database
     app.state.session_hours = session_hours
     app.state.tls = tls
+    app.state.secure_cookie = bool(tls or secure_cookie)
+    app.state.trusted_proxies = [ipaddress.ip_network(p, strict=False) for p in (trusted_proxies or [])]
     app.state.guard = guard or Guard()
     app.state.views = Views()
 
@@ -121,4 +182,29 @@ def create_app(database: str, session_hours: float = 8, tls: bool = False, guard
                             status_code=503, media_type="text/plain")
         return FileResponse(index, headers={"Cache-Control": "no-cache"})
 
+    app.add_middleware(BodyLimit)
     return app
+
+
+def client_ip(request: Request) -> str:
+    """The client address for the per-IP limit. X-Forwarded-For is used only when the peer is a trusted proxy,
+    and then only its last hop (the address that proxy itself saw); otherwise the header is ignored."""
+    peer = request.client.host if request.client else "?"
+    trusted = getattr(request.app.state, "trusted_proxies", None)
+    if not trusted:
+        return peer
+    try:
+        peer_ip = ipaddress.ip_address(peer)
+    except ValueError:
+        return peer
+    if not any(peer_ip in net for net in trusted):
+        return peer
+    values = request.headers.getlist("x-forwarded-for")
+    hops = [h.strip() for h in ",".join(values).split(",") if h.strip()]
+    if not hops:
+        return peer
+    last = hops[-1]
+    try:
+        return str(ipaddress.ip_address(last.strip("[]")))
+    except ValueError:
+        return peer

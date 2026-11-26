@@ -631,7 +631,7 @@
     {:else if !drawerRes.data}<p class="secondary">Loading edges…</p>
     {:else}
       <p class="meta secondary">{plural(drawerRes.data.total, P.layer === 'access' ? 'access edge' : 'evidence edge')}</p>
-      <EdgeTable edges={drawerRes.data.items} scan={sid} evidence={P.layer === 'evidence'} empty="No edges between these hosts." />
+      <EdgeTable edges={drawerRes.data.items} scan={sid} evidence={P.layer === 'evidence'} compact empty="No edges between these hosts." />
     {/if}
   </Drawer>
 {/if}

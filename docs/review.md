@@ -10,11 +10,15 @@ SSHBITE talks SSH only (asyncssh in the SSHBITE process; no `ssh` client runs an
 opens **exec channels without a terminal** and runs exactly these command strings – nothing is ever built
 from data found on a target:
 
+`sudo` in the table is short for its absolute path: every sudo command is sent as
+`test -x /usr/bin/sudo && exec /usr/bin/sudo ARGS; exec /bin/sudo ARGS` – `/usr/bin/sudo`, or `/bin/sudo`
+only where the first does not exist. The audit account's `PATH` never decides which `sudo` runs.
+
 | Command | Where | stdin |
 |---|---|---|
 | `sudo -n /bin/true` | every host (`privilege.mode: sudo`) | – |
 | `sudo -n /bin/sh -s` | if the probe succeeded | `collect.sh` |
-| `sudo -S -k -p '' /bin/true` | if sudo wants a password and one was given | the password |
+| `sudo -S -k -p '' /bin/true` | if sudo wants a password, one was given and the host is inside `privilege.password_scope` (empty = all) | the password |
 | `sudo -S -k -p '' /bin/sh -s` | if that probe succeeded | the password, then `collect.sh` |
 | `/bin/sh -s` | if sudo is not possible (host becomes `partial`) | `collect.sh` |
 | `/bin/sh -c '<resolve.sh>'` | entry host (and a referencing host for names the entry cannot resolve) | host names, one per line, as data |
@@ -113,6 +117,29 @@ catches them.
   All of this is listed in [side-effects.md](side-effects.md).
 - **The literal sudo/sh command strings** are not part of the scripts; they are fixed in
   `sshbite/privilege.py` and printed by `collector show` for review.
+
+## Residual risk: a symlink race in users' `~/.ssh`
+
+The collector runs as root and reads files in directories that belong to other users (`~/.ssh/*`,
+authorized_keys files). Before it prints a file it checks that the path is not a symbolic link
+(`[ -L "$p" ]`), and for authorized_keys also the directory one level up. POSIX sh offers no way to open a
+file first and check the opened file afterwards, so there is a short window between the check and the
+read. A local user who owns such a directory could, in that window, replace a file with a symlink to a
+file only root may read (e.g. `/etc/shadow`); the collector would then print that content (up to 5,000
+lines) into the scan, where it ends up in the database and the UI. The user does not get to see it.
+
+This is accepted as a residual risk and not changed in v1, because:
+
+- only **root and the owner of that home directory** can set up the race – it needs write access to the
+  user's own `~/.ssh` at exactly the moment of the scan; root can read the file anyway;
+- the content never reaches the attacker: it goes only into the SSHBITE database, which is created with
+  mode **0600** in a directory with mode 0700 (and lives in the container's `/data` volume as uid 10001),
+  and into the UI, which requires a login;
+- the result would be visible: the file would show up as the content of an authorized_keys, config or
+  known_hosts file of that user, with parse errors.
+
+If you find such content in a scan, treat that host and user as hostile, delete the scan
+(`sshbite scans delete ID`) and its backups.
 
 ## How read-only behaviour is tested
 

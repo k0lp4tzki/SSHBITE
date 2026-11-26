@@ -10,7 +10,7 @@
 {#if !fp}
   <span class="muted italic">fingerprint unknown</span>
 {:else}
-  <span class="fp-host" title={fp}>
+  <span class="fp-host" class:full title={fp}>
     {#if href}
       <a {href} class="fp mono"><span class="muted">SHA256:</span>{full ? grouped : short}</a>
     {:else}
@@ -21,6 +21,9 @@
 {/if}
 
 <style>
-  .fp-host { display: inline-flex; align-items: center; gap: var(--s1); white-space: nowrap; max-width: 100%; }
-  .fp { font-size: 13px; line-height: 18px; overflow-wrap: anywhere; white-space: normal; }
+  /* the short form never wraps (it is 18 characters); the full form breaks only between its groups of 4 */
+  .fp-host { display: inline-flex; align-items: center; gap: var(--s1); white-space: nowrap; flex: none; }
+  .fp { font-size: 13px; line-height: 18px; white-space: nowrap; }
+  .fp-host.full { flex: 0 1 auto; max-width: 100%; }
+  .fp-host.full .fp { white-space: normal; overflow-wrap: normal; }
 </style>

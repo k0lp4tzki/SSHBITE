@@ -61,21 +61,68 @@
   let timer: number | undefined;
   function onSearch() {
     clearTimeout(timer);
-    if (q.trim().length < 2) { results = null; return; }
+    active = -1;
+    if (q.trim().length < 2) { results = null; pending = false; return; }
+    pending = true;
     timer = window.setTimeout(async () => {
       const sid = navScan;
-      try {
-        results = await api('/search' + qs({ q: q.trim(), scan: sid }));
-        searchOpen = true;
-      } catch { results = { hosts: [], keys: [], users: [], scan: sid }; }
+      const asked = q.trim();
+      let r;
+      try { r = await api('/search' + qs({ q: asked, scan: sid })); } catch { r = { hosts: [], keys: [], users: [], scan: sid }; }
+      if (asked !== q.trim()) return;     // typed on meanwhile
+      results = r;
+      pending = false;
+      active = -1;
+      searchOpen = true;
     }, 200);
   }
   function go(href: string) {
     searchOpen = false;
     q = '';
     results = null;
+    active = -1;
     navigate(href);
   }
+  // keyboard (design §3, §8): ArrowDown/ArrowUp move the active result (aria-activedescendant), Enter opens it -
+  // or the first result when none is active - and Esc closes the popover.
+  let active = $state(-1);
+  const options = $derived.by(() => {
+    if (!results) return [] as string[];
+    const sc = results.scan;
+    return [
+      ...results.hosts.map((h: any) => `/s/${sc}/hosts/${h.host_id}`),
+      ...results.keys.map((k: any) => keyHref(sc, k.fp)),
+      ...results.users.map((u: any) => `/s/${sc}/hosts/${u.host_id}?tab=users#user-${encodeURIComponent(u.username)}`),
+    ];
+  });
+  const optId = (i: number) => `search-opt-${i}`;
+  async function searchNow() {
+    clearTimeout(timer);
+    const sid = navScan;
+    try { results = await api('/search' + qs({ q: q.trim(), scan: sid })); } catch { results = { hosts: [], keys: [], users: [], scan: sid }; }
+    active = -1;
+    searchOpen = true;
+  }
+  async function searchKey(e: KeyboardEvent) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!options.length) return;
+      e.preventDefault();
+      searchOpen = true;
+      active = e.key === 'ArrowDown' ? Math.min(active + 1, options.length - 1) : Math.max(active - 1, 0);
+      document.getElementById(optId(active))?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (q.trim().length < 2) return;
+      if (!results || pending) { pending = false; await searchNow(); }
+      if (options.length) go(options[active >= 0 ? active : 0]);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      searchOpen = false;
+      active = -1;
+    }
+  }
+  let pending = false;
   function globalKey(e: KeyboardEvent) {
     const t = e.target as HTMLElement;
     const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
@@ -156,24 +203,26 @@
 
       <div class="search" role="search">
         <input bind:this={searchEl} class="input" type="search" placeholder="Search hosts, keys, users" aria-label="Search hosts, keys, users"
-          bind:value={q} oninput={onSearch} onfocus={() => { if (results) searchOpen = true; }} />
+          role="combobox" aria-autocomplete="list" aria-controls="search-results" aria-expanded={searchOpen && !!results}
+          aria-activedescendant={searchOpen && active >= 0 ? optId(active) : undefined}
+          bind:value={q} oninput={onSearch} onkeydown={searchKey} onfocus={() => { if (results) searchOpen = true; }} />
         <kbd class="kbd micro" aria-hidden="true">/</kbd>
         {#if searchOpen && results}
-          <div class="popover results">
+          <div class="popover results" id="search-results" role="listbox" aria-label="Search results">
             {#if !results.hosts.length && !results.keys.length && !results.users.length}
               <p class="none">Nothing matches "{q}" in scan #{results.scan}.</p>
             {:else}
               {#if results.hosts.length}
                 <h3 class="micro muted">Hosts</h3>
-                {#each results.hosts as h}<button class="res" onclick={() => go(`/s/${results.scan}/hosts/${h.host_id}`)}><span class="mono">{h.display_name}</span><span class="meta muted mono">{h.ips.filter(Boolean).join(', ')}</span></button>{/each}
+                {#each results.hosts as h, i}<button class="res" id={optId(i)} role="option" tabindex="-1" aria-selected={active === i} class:active={active === i} onmouseenter={() => (active = i)} onclick={() => go(`/s/${results.scan}/hosts/${h.host_id}`)}><span class="mono">{h.display_name}</span><span class="meta muted mono">{h.ips.filter(Boolean).join(', ')}</span></button>{/each}
               {/if}
               {#if results.keys.length}
                 <h3 class="micro muted">Keys</h3>
-                {#each results.keys as k}<button class="res" onclick={() => go(keyHref(results.scan, k.fp))}><Fp fp={k.fp} copy={false} /><StrengthChip strength={k.strength} /><span class="meta secondary trunc">{k.label || k.comment || ''}</span></button>{/each}
+                {#each results.keys as k, j}{@const i = results.hosts.length + j}<button class="res" id={optId(i)} role="option" tabindex="-1" aria-selected={active === i} class:active={active === i} onmouseenter={() => (active = i)} onclick={() => go(keyHref(results.scan, k.fp))}><Fp fp={k.fp} copy={false} /><StrengthChip strength={k.strength} /><span class="meta secondary trunc">{k.label || k.comment || ''}</span></button>{/each}
               {/if}
               {#if results.users.length}
                 <h3 class="micro muted">Users</h3>
-                {#each results.users as u}<button class="res" onclick={() => go(`/s/${results.scan}/hosts/${u.host_id}?tab=users#user-${encodeURIComponent(u.username)}`)}><span class="mono">{u.username} <span class="muted">@</span> {u.host}</span></button>{/each}
+                {#each results.users as u, j}{@const i = results.hosts.length + results.keys.length + j}<button class="res" id={optId(i)} role="option" tabindex="-1" aria-selected={active === i} class:active={active === i} onmouseenter={() => (active = i)} onclick={() => go(`/s/${results.scan}/hosts/${u.host_id}?tab=users#user-${encodeURIComponent(u.username)}`)}><span class="mono">{u.username} <span class="muted">@</span> {u.host}</span></button>{/each}
               {/if}
             {/if}
           </div>
@@ -251,6 +300,7 @@
   .res { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: var(--s3); width: 100%; min-height: 32px;
     padding: 0 var(--s4); cursor: pointer; font-size: 13px; }
   .res:hover, .res:focus-visible { background: var(--bg-hover); }
+  .res.active { background: var(--bg-selected); box-shadow: inset 3px 0 0 var(--accent); }
   .none { padding: var(--s3) var(--s4); color: var(--text-secondary); }
   .um { right: 0; top: 36px; padding: var(--s3); display: flex; flex-direction: column; gap: var(--s3); min-width: 220px; }
   .thl { padding: 0 var(--s1); }

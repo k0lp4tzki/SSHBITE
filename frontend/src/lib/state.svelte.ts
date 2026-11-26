@@ -36,6 +36,22 @@ export async function loadScans(): Promise<void> {
 export function latestCompleted(): any | null {
   return scans.items.find((s) => s.status === 'completed') ?? null;
 }
+/** The scan last opened under /s/{id}: the top bar keeps showing it on /scans and /diff (design §3). */
+function storedLastScan(): number | null {
+  try { const v = Number(sessionStorage.getItem('sshbite.lastScan')); return Number.isInteger(v) && v > 0 ? v : null; } catch { return null; }
+}
+export const lastScan = $state({ id: storedLastScan() });
+export function rememberScan(id: number) {
+  lastScan.id = id;
+  try { sessionStorage.setItem('sshbite.lastScan', String(id)); } catch { /* storage unavailable */ }
+}
+/** Diff A/B: the query, else the two newest completed scans (design §4.12). Used by Diff and the shell's banner. */
+export function diffPair(query: URLSearchParams): [number, number] {
+  const completed = scans.items.filter((s) => s.status === 'completed');
+  const defA = completed[1]?.id ?? completed[0]?.id ?? 0;
+  const defB = completed[0]?.id ?? 0;
+  return [+(query.get('a') ?? defA), +(query.get('b') ?? defB)];
+}
 export function runningScan(): any | null {
   return scans.items.find((s) => s.running) ?? null;
 }

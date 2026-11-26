@@ -538,8 +538,10 @@ class Scanner:
             t.connect_ip = t.addr
         t.route = route
         try:
+            scope = self.cfg.privilege.password_scope
+            allowed = not scope or scope_match(scope, [*t.names, t.addr], [t.addr, t.connect_ip or t.addr])
             outcome = await priv_collect(conn, self.script, self.cfg.privilege.mode, self.secret,
-                                         self.cfg.limits.max_output_mb * 1024 * 1024)
+                                         self.cfg.limits.max_output_mb * 1024 * 1024, password_allowed=allowed)
         finally:
             if t.role != "entry":
                 self.transport.release([h.hop() for h in route])

@@ -1,0 +1,33 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace
+configfile: pyproject.toml
+plugins: anyio-4.16.0
+collecting ... collected 23 items
+
+tests/browser/test_ui.py::test_1_login_logout_wrong_password_and_lockout PASSED [  4%]
+tests/browser/test_ui.py::test_2_dashboard_counts_equal_api PASSED       [  8%]
+tests/browser/test_ui.py::test_3_heatmap_host_grouping_jump_a2 PASSED    [ 13%]
+tests/browser/test_ui.py::test_4_subnet_heatmap_2000_hosts_fast_and_drilldown PASSED [ 17%]
+tests/browser/test_ui.py::test_5_host_discovered_via_and_routes PASSED   [ 21%]
+tests/browser/test_ui.py::test_6_key_dsa PASSED                          [ 26%]
+tests/browser/test_ui.py::test_7_label_persists_and_put_without_csrf_403 PASSED [ 30%]
+tests/browser/test_ui.py::test_8_synthetic_banner_on_every_screen PASSED [ 34%]
+tests/browser/test_ui.py::test_9_no_request_leaves_the_origin PASSED     [ 39%]
+tests/browser/test_ui.py::test_10_empty_states_on_empty_db PASSED        [ 43%]
+tests/browser/test_ui.py::test_empty_lists_and_filters PASSED            [ 47%]
+tests/browser/test_ui.py::test_c3_contrast_computed_in_both_themes[light] PASSED [ 52%]
+tests/browser/test_ui.py::test_c3_contrast_computed_in_both_themes[dark] PASSED [ 56%]
+tests/browser/test_ui.py::test_c4_severity_and_strength_have_glyph_and_label PASSED [ 60%]
+tests/browser/test_ui.py::test_c5_fingerprints_mono_and_exact_copy PASSED [ 65%]
+tests/browser/test_ui.py::test_c13_no_horizontal_page_scroll_at_1280_and_375 PASSED [ 69%]
+tests/browser/test_ui.py::test_f1_route_attempts_on_host_detail_and_crawl_tree PASSED [ 73%]
+tests/browser/test_ui.py::test_f2_tabs_of_a_host_that_was_not_scanned PASSED [ 78%]
+tests/browser/test_ui.py::test_f4_synthetic_banner_on_scans_and_diff PASSED [ 82%]
+tests/browser/test_ui.py::test_f5_search_by_keyboard PASSED              [ 86%]
+tests/browser/test_ui.py::test_f3_fingerprints_and_narrow_tables PASSED  [ 91%]
+tests/browser/test_ui.py::test_f6_accounts_count_diff_route_removed PASSED [ 95%]
+tests/browser/test_ui.py::test_f6_crawl_tree_reaches_every_one_of_2000_hosts PASSED [100%]
+
+======================== 23 passed in 106.78s (0:01:46) ========================

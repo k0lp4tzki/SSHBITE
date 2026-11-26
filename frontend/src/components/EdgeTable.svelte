@@ -3,11 +3,13 @@
   import Fp from './Fp.svelte';
   import StrengthChip from './StrengthChip.svelte';
   import Glyph from './Glyph.svelte';
-  import { EDGE_STATUS, FLAG_LABEL, fileLine, SOURCE_LABEL } from '../lib/format';
+  import { EDGE_STATUS, FLAG_LABEL, fileLine, midTrunc, SOURCE_LABEL } from '../lib/format';
   import { hostHref, keyHref } from '../lib/links';
 
-  let { edges, scan, show = 'both', evidence = false, empty = 'No edges.' }:
-    { edges: any[]; scan: number; show?: 'src' | 'dst' | 'both'; evidence?: boolean; empty?: string } = $props();
+  // compact: the 480 px drawer - tighter cells, strength under the fingerprint, flag chips wrap; whatever still
+  // does not fit scrolls sideways inside the drawer with the first column sticky.
+  let { edges, scan, show = 'both', evidence = false, empty = 'No edges.', compact = false }:
+    { edges: any[]; scan: number; show?: 'src' | 'dst' | 'both'; evidence?: boolean; empty?: string; compact?: boolean } = $props();
 
   function statusCls(s: string, eff: boolean) {
     if (s === 'restricted_blocked' || !eff) return 'sev-info';
@@ -16,7 +18,7 @@
   }
 </script>
 
-<div class="table-wrap">
+<div class="table-wrap sticky-first" class:compact>
   <table class="t">
     <thead>
       <tr>
@@ -40,12 +42,12 @@
           {/if}
           {#if evidence}
             <td>{SOURCE_LABEL[e.evidence_source] ?? e.evidence_source ?? '–'}</td>
-            <td class="mono" title={fileLine(e.evidence_file, e.evidence_line)}>{fileLine(e.evidence_file, e.evidence_line) || '–'}</td>
+            <td class="mono nowrap" title={fileLine(e.evidence_file, e.evidence_line)}>{midTrunc(fileLine(e.evidence_file, e.evidence_line), compact ? 30 : 48) || '–'}</td>
           {:else}
-            <td class="nowrap"><span class="row nowrap"><Fp fp={e.fp} href={keyHref(scan, e.fp)} /><StrengthChip strength={e.strength} /></span></td>
-            <td><span class="badge {statusCls(e.status, e.effective)}">{EDGE_STATUS[e.status] ?? e.status}</span></td>
+            <td class="nowrap"><span class="row nowrap" class:stack={compact}><Fp fp={e.fp} href={keyHref(scan, e.fp)} /><StrengthChip strength={e.strength} /></span></td>
+            <td class="nowrap"><span class="badge {statusCls(e.status, e.effective)}">{EDGE_STATUS[e.status] ?? e.status}</span></td>
             <td>{e.effective ? 'yes' : 'no'}</td>
-            <td><span class="chips">{#each e.flags as f}<span class="kchip">{FLAG_LABEL[f] ?? f}</span>{/each}{#if e.from_patterns?.length}<span class="kchip" title={`from="${e.from_patterns.join(',')}"`}>from="{e.from_patterns.join(',').slice(0, 40)}"</span>{/if}</span></td>
+            <td class="flags"><span class="chips">{#each e.flags as f}<span class="kchip">{FLAG_LABEL[f] ?? f}</span>{/each}{#if e.from_patterns?.length}<span class="kchip" title={`from="${e.from_patterns.join(',')}"`}>from="{e.from_patterns.join(',').slice(0, 40)}"</span>{/if}</span></td>
           {/if}
         </tr>
       {:else}
@@ -58,4 +60,10 @@
 <style>
   .unk { color: var(--c); margin-right: var(--s2); }
   .row { gap: var(--s2); flex-wrap: nowrap; }
+  .row.stack { flex-direction: column; align-items: flex-start; gap: var(--s1); }
+  .flags { min-width: 96px; }
+  .compact :global(table.t th), .compact :global(table.t td) { padding-left: var(--s2); padding-right: var(--s2); }
+  .compact :global(table.t th:first-child), .compact :global(table.t td:first-child) { padding-left: var(--s2); }
+  .compact :global(table.t th:last-child), .compact :global(table.t td:last-child) { padding-right: var(--s1); }
+  .compact .flags { min-width: 0; max-width: 120px; }
 </style>
