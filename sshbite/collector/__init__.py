@@ -42,3 +42,13 @@ def with_updated_sha(text: str) -> str:
     """Developer helper: return the script with B= set to its body hash."""
     return _B_RE.sub("B=" + body_sha_short(text), text, count=1)
 
+
+
+def shell_quote(text: str) -> str:
+    return "'" + text.replace("'", "'\\''") + "'"
+
+
+def resolve_command() -> str:
+    """The exec command for name resolution: the fixed resolve.sh text as `sh -c` argument.
+    Names are sent on stdin as data, never as part of a script stream."""
+    return "/bin/sh -c " + shell_quote(resolve_script().strip())

@@ -147,7 +147,6 @@ class Scanner:
         self.host_timeout = self.opts.timeout or cfg.limits.host_timeout
         self.script_text = collector.collect_script()
         self.script = self.script_text.encode("utf-8")
-        self.resolve_script = collector.resolve_script().encode("utf-8")
         self.expected_sha_short = collector.declared_sha_short(self.script_text)
         self.targets: list[Target] = []           # connected or queued, in order
         self.seen: dict[tuple[str, int], Target] = {}  # never-connected hosts (excluded, out_of_scope...)
@@ -385,10 +384,12 @@ class Scanner:
     async def _resolve_on(self, conn, names: list[str]) -> dict[str, list[str]]:
         out: dict[str, list[str]] = {}
         for i in range(0, len(names), 500):
-            chunk = names[i:i + 500]
-            data = self.resolve_script + ("\n".join(chunk) + "\n").encode()
+            chunk = [n for n in names[i:i + 500] if _NAME_RE.match(n)]
+            # resolve.sh is the fixed command string; the names are stdin data only. (With `sh -s`
+            # and names after the script on stdin, dash reads ahead and runs the names as commands.)
+            data = ("\n".join(chunk) + "\n").encode()
             try:
-                res = await asyncio.wait_for(run(conn, "/bin/sh -s", data, max_bytes=1 << 20),
+                res = await asyncio.wait_for(run(conn, collector.resolve_command(), data, max_bytes=1 << 20),
                                              timeout=max(10.0, self.cfg.limits.connect_timeout * 2))
             except BaseException as exc:
                 if isinstance(exc, asyncio.CancelledError):
@@ -736,17 +737,20 @@ class Scanner:
                 r.outcome = "unresolvable"
                 r.target = self._seen_target(r, "unresolvable", depth + 1)
                 continue
-            owner = next((self.ip_owner[ip] for ip in r.resolved_ips if ip in self.ip_owner), None)
-            if owner is not None:
-                r.outcome, r.target = "alias", owner
-                if r.value not in owner.names and not is_ip(r.value):
-                    owner.names.append(r.value)
-                continue
+            # 'already' (the same address:port is queued or collected) is checked before 'alias' (another
+            # interface address of a collected host). Spec 3.3 lists alias first, but its own expectations
+            # in 9.3 (a5's db/ProxyJump -> already) need this order; see the README of the lab.
             known = next((self.by_addr[(ip, r.port)] for ip in r.resolved_ips if (ip, r.port) in self.by_addr), None)
             if known is not None:
                 r.outcome, r.target = "already", known
                 if r.value not in known.names:
                     known.names.append(r.value)
+                continue
+            owner = next((self.ip_owner[ip] for ip in r.resolved_ips if ip in self.ip_owner), None)
+            if owner is not None:
+                r.outcome, r.target = "alias", owner
+                if r.value not in owner.names and not is_ip(r.value):
+                    owner.names.append(r.value)
                 continue
             names = [r.value]
             if exc and scope_match(exc, names, r.resolved_ips):

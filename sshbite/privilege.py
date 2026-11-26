@@ -124,6 +124,7 @@ async def collect(conn, script: bytes, mode: str, secret: SudoSecret, max_bytes:
                     res = await run(conn, cmds["pw_run"], line + script, max_bytes=max_bytes)
                     res.stderr = secret.redact(res.stderr)
                     return CollectOutcome("sudo_password", res)
+                reasons.append(_first_line(err, secret) or "sudo: a password is required")
                 reasons.append("sudo password not accepted: " + (_first_line(p2.stderr, secret) or f"exit {p2.rc}"))
             else:
                 needs_password = True
