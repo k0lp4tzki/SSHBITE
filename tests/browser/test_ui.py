@@ -281,7 +281,8 @@ def test_6_key_dsa(lab):
     rows = [r.split("\t")[:2] for r in p.locator("table").first.locator("tbody tr").all_inner_texts()]
     assert sorted(rows) == [["a4", "root"], ["b1", "root"]]
     head = p.locator("header.kh").inner_text()
-    assert "Critical" in head and "dsa 1024" in head and "origin:" in head and "Unknown" in head
+    # design-revision §5.4: Origin is a context field (label above value), no longer the inline "origin:" label
+    assert "Critical" in head and "dsa 1024" in head and "Origin\nUnknown" in head
     lab.shot("06-key-dsa")
 
 
@@ -321,6 +322,9 @@ def test_9_no_request_leaves_the_origin(browser, servers):
         s.go(path)
     s.page.wait_for_timeout(500)
     assert s.requests
+    # design-revision §3.4: Mono only for copyable strings - the last page above (/diff, hosts tab) has none any
+    # more, so the font check runs on a page with fingerprints
+    s.go("/s/1/findings")
     outside = [r for r in s.requests if not (r.startswith(s.base + "/") or r.startswith("data:"))]
     assert outside == []
     # fonts come from the origin (checklist 12)
@@ -506,10 +510,10 @@ def test_f1_route_attempts_on_host_detail_and_crawl_tree(lab):
     lab.go(f"/s/1/hosts/{ids['172.30.1.99']}", wait="h1")
     strip = p.locator(".strip", has_text="Not scanned: unreachable.")
     assert strip.locator("tbody tr").count() == 2
-    # crawl tree: "↺ 1 failed attempt" opens the inline list of routes and errors
+    # crawl tree: "1 failed attempt" (design-revision §5.8: the ↺ glyph is gone) opens the inline list
     lab.go("/s/1/crawl", wait="tr[data-tree]")
     row = p.locator("tr[data-tree]", has=p.locator("td.hcell").get_by_role("link", name="c1", exact=True))
-    row.get_by_role("button", name="↺ 1 failed attempt").click()
+    row.get_by_role("button", name="1 failed attempt").click()
     lst = row.get_by_role("list", name="Route attempts")
     assert [" ".join(x.split()) for x in lst.locator("li").all_inner_texts()] == \
         ["jump → c1 172.30.3.21: timeout", "jump → b3 → c1 ok"]
@@ -647,11 +651,14 @@ def test_f6_accounts_count_diff_route_removed(lab):
     p.get_by_label("Show all accounts").check()
     p.get_by_role("tab", name="Accounts (21)").wait_for()
     assert p.locator(".tabpanel tbody tr").count() == 21
+    # design-revision §5.6: a changed row shows a Field | Before | After table instead of the sentence chain
     lab.go("/diff?a=1&b=2")
-    row = p.locator("tbody tr", has_text="c2")
-    text = " ".join(row.inner_text().split())
-    assert "route removed (was jump → b3 → c1 → c2)" in text and "privilege removed (was root)" in text, text
-    assert "→ –" not in text
+    row = p.locator("table.t > tbody > tr", has_text="c2")
+    sub = row.get_by_role("table", name="Changes")
+    rows = [[" ".join(c.split()) for c in r.split("\t")] for r in sub.locator("tbody tr").all_inner_texts()]
+    assert ["Route", "jump → b3 → c1 → c2", "removed"] in rows and ["Privilege", "root", "removed"] in rows, rows
+    assert ["Status", "OK", "Host key changed"] in rows, rows
+    assert "→ –" not in row.inner_text()
 
 
 def test_f6_crawl_tree_reaches_every_one_of_2000_hosts(syn):
@@ -673,7 +680,7 @@ def test_f6_crawl_tree_reaches_every_one_of_2000_hosts(syn):
     while y < height:
         p.evaluate(f"window.scrollTo(0, {y})")
         p.wait_for_timeout(30)
-        seen.update(p.eval_on_selector_all("tr[data-tree] td.hcell a, tr[data-tree] td.hcell span.mono",
+        seen.update(p.eval_on_selector_all("tr[data-tree] td.hcell .hn",
                                            "els => els.map(e => e.title)"))
         y += 700
     names = {h["display_name"] for h in total["hosts"]}

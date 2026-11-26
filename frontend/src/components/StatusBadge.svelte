@@ -1,7 +1,12 @@
 <script lang="ts">
-  import Glyph from './Glyph.svelte';
-  import { STATUS_LABEL, statusGlyph, statusSev } from '../lib/format';
+  // Host status (design-revision §3.2): OK as text, Partial Medium, unreachable family High, host key Critical,
+  // not scanned as muted text.
+  import Badge from './Badge.svelte';
+  import { STATUS_LABEL, statusSev } from '../lib/format';
   let { status, label = '' }: { status: string; label?: string } = $props();
+  const sev = $derived(statusSev(status));
+  const text = $derived(label || STATUS_LABEL[status] || status);
 </script>
-
-<span class="badge sev-{statusSev(status)}"><Glyph kind={statusGlyph(status)} />{label || STATUS_LABEL[status] || status}</span>
+{#if status === 'ok'}<span class="state">{text}</span>
+{:else if sev === 'info'}<span class="state muted">{text}</span>
+{:else}<Badge role={sev} label={text} />{/if}

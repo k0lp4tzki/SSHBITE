@@ -8,8 +8,10 @@
   const p = $derived(live.scan?.progress ?? {});
   const partialCount = $derived(scan?.counts?.hosts?.partial ?? 0);
   const latest = $derived(latestCompleted());
+  const any = $derived(!!((running && running.id !== scan?.id) || (scan && (scan.status === 'failed' || scan.status === 'aborted')) || (partial && partialCount > 0)));
 </script>
 
+{#if any}
 <div class="notices">
   {#if running && running.id !== scan?.id}
     <Strip role="info">Scan #{running.id} is running – depth {p.depth ?? 0}, {n(p.queued ?? 0)} queued, {n(p.running ?? 0)} running, {n(p.done ?? 0)} done. Data shown is from scan #{scan?.id}.</Strip>
@@ -22,6 +24,7 @@
     <Strip role="warning">{plural(partialCount, 'host was', 'hosts were')} scanned partially; their data is incomplete. <a href="/s/{scan.id}/hosts?status=partial">Show partial hosts</a></Strip>
   {/if}
 </div>
+{/if}
 
 <style>
   .notices { display: flex; flex-direction: column; gap: var(--s3); }

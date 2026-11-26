@@ -47,7 +47,7 @@
     cursor: pointer; opacity: 0; transition: background var(--t-fast) ease-out; vertical-align: middle; flex: none; }
   .copy.shown, .copy:focus-visible { opacity: 1; }
   .copy:hover { background: var(--bg-hover); }
-  .lbl { font: 500 11px/14px var(--sans); }
+  .lbl { font: 500 12px/16px var(--sans); }
   .fail { color: var(--critical); }
   :global(.fp-host:hover) .copy, :global(tr:hover) .copy, :global(.copy-host:hover) .copy { opacity: 1; }
 </style>

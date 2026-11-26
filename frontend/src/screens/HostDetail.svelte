@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Host detail (design §4.8).
+  // Host detail (design §4.8, design-revision §5.3).
   import { tick } from 'svelte';
   import { api } from '../lib/api';
   import { route, setQuery } from '../lib/router.svelte';
@@ -19,7 +19,8 @@
   import FindingsTable from '../components/FindingsTable.svelte';
   import CodeBlock from '../components/CodeBlock.svelte';
   import Strip from '../components/Strip.svelte';
-  import Glyph from '../components/Glyph.svelte';
+  import Badge from '../components/Badge.svelte';
+  import Field from '../components/Field.svelte';
   import ErrorPanel from '../components/ErrorPanel.svelte';
   import Skeleton from '../components/Skeleton.svelte';
 
@@ -98,15 +99,17 @@
     const acc = shownAccounts.length === d.accounts.length ? `${d.accounts.length}` : `${shownAccounts.length} of ${d.accounts.length}`;
     const all: [string, string, string][] = [
       ['overview', 'Overview', ''], ['users', 'Users', `${d.users.length}`],
-      ['access', 'Access', `${accIn.length} in · ${accOut.length} out`], ['known_by', 'Known by', `${d.known_by.length}`],
+      ['access', 'Access', `${accIn.length} in, ${accOut.length} out`], ['known_by', 'Known by', `${d.known_by.length}`],
       ['sshd', 'sshd', ''], ['accounts', 'Accounts', acc], ['findings', 'Findings', `${d.findings.length}`]];
-    return all.map(([k, l, c]) => ({ key: k, label: c && !disabledTab(k) ? `${l} (${c})` : l, disabled: disabledTab(k) }));
+    return all.map(([k, l, c]) => ({ key: k, label: l, count: c && !disabledTab(k) ? `(${c})` : '', disabled: disabledTab(k) }));
   });
   // Route attempts with an error: shown under the status line for every host that has one, also when a later
   // route worked (c1: jump → c1 failed, jump → b3 → c1 ok). Unreachable hosts show them in their strip.
   const UNREACHED = ['unreachable', 'timeout', 'auth_failed'];
   const attempts = $derived((hs?.route_attempts ?? []) as any[]);
   const showAttempts = $derived(!!hs && !UNREACHED.includes(hs.status) && attempts.some((a) => a.error));
+  const names = $derived(d ? d.names.filter((x: any) => x.kind === 'name').map((x: any) => x.value) : []);
+  const addrs = $derived(hs ? [...new Set([...(hs.ips ?? []), ...(d?.names ?? []).filter((x: any) => x.kind === 'ip').map((x: any) => x.value)])].filter(Boolean) as string[] : []);
 
   // scroll to #user-x / #finding-n once loaded
   let target = $state('');
@@ -132,98 +135,116 @@
 
 <svelte:window onclick={(e) => { if (!(e.target as HTMLElement).closest('.exp')) exportOpen = false; }} />
 
+{#snippet attemptsTable(list: any[], label: string)}
+  <table class="t att" aria-label={label}>
+    <thead><tr><th>Route</th><th>Error</th></tr></thead>
+    <tbody>
+      {#each list as a}<tr><td class="nowrap"><HopChain route={a.route} links={hostIds} scan={sid} /></td>
+        <td>{#if a.error}<span class="mono err" title={a.error}>{a.error}</span>{:else}<span class="state">ok</span>{/if}</td></tr>
+      {:else}<tr><td colspan="2" class="mono">{hs.error ?? 'no route was tried'}</td></tr>{/each}
+    </tbody>
+  </table>
+{/snippet}
+
 {#if res.error}
   <PageHead title="Host" />
   <ErrorPanel thing="host {hostId}" message={res.error} retry={res.errorCode === 'host_not_found' ? undefined : load} />
 {:else if !d}
   {#if res.slow}<Skeleton />{/if}
 {:else}
-  <div class="head">
-    <PageHead title={name} mono>
-      {#snippet sub()}
-        <div class="line"><StatusBadge status={hs.status} />{#if hs.privilege}{' · ' + privilege(hs.privilege)}{/if} · depth {hs.depth ?? '–'} · discovered via
-          {#if hs.discovered_via?.parent}<a class="mono" href={hostHref(sid, hs.discovered_via.parent_host_id)}>{hs.discovered_via.parent}</a> <span class="mono">{fileLine(hs.discovered_via.file, hs.discovered_via.line)}</span>{#if hs.discovered_via.source === 'known_hosts_hashed'} (hashed){/if}
-          {:else}<span>{SOURCE_LABEL[hs.discovered_via?.source] ?? hs.discovered_via?.source ?? '–'}</span>{/if}
-          {#if hs.route}{' · route '}<HopChain route={hs.route} links={hostIds} scan={sid} />{/if}
-        </div>
-        {#if showAttempts}
-          <table class="t att compact" aria-label="Route attempts">
-            <caption>Route attempts</caption>
-            <thead><tr><th>Route</th><th>Result</th></tr></thead>
-            <tbody>{#each attempts as a}<tr><td class="nowrap"><HopChain route={a.route} links={hostIds} scan={sid} /></td>
-              <td class="mono">{#if a.error}<span class="att-err" title={a.error}>{a.error}</span>{:else}<span class="att-ok">ok</span>{/if}</td></tr>{/each}</tbody>
-          </table>
-        {/if}
-        <div class="line mono secondary">{[...d.names.filter((x: any) => x.kind === 'name').map((x: any) => x.value), ...hs.ips].filter((v, i, a) => a.indexOf(v) === i).join(' · ') || hs.connect_addr}{#if hs.os}{' · '}<span class="sans">{hs.os}</span>{/if}{#if hs.kernel}{' · ' + hs.kernel}{/if}</div>
-      {/snippet}
-      {#snippet actions()}
-        <a class="btn" href={graphHostHref(sid, hostId)}>Show in graph</a>
-        <div class="exp">
-          <button class="btn" aria-haspopup="menu" aria-expanded={exportOpen} onclick={() => (exportOpen = !exportOpen)}>Export findings ▾</button>
-          {#if exportOpen}<div class="popover expmenu" role="menu">
-            <a role="menuitem" href="/api/scans/{sid}/export/findings.csv?host_id={hostId}" download>Findings (CSV)</a>
-            <a role="menuitem" href="/api/scans/{sid}/export/findings.json?host_id={hostId}" download>Findings (JSON)</a>
-          </div>{/if}
-        </div>
-      {/snippet}
-    </PageHead>
-    <Notices {scan} />
+  <PageHead title={name}>
+    {#snippet badge()}<StatusBadge status={hs.status} />{/snippet}
+    {#snippet sub()}
+      <div class="line">
+        <span class="pv"><span class="muted">discovered via</span>
+          {#if hs.discovered_via?.parent}<a class="plain" href={hostHref(sid, hs.discovered_via.parent_host_id)}>{hs.discovered_via.parent}</a> <span class="mono path">{fileLine(hs.discovered_via.file, hs.discovered_via.line)}</span>{#if hs.discovered_via.source === 'known_hosts_hashed'} <span class="secondary">(hashed)</span>{/if}
+          {:else}<span class="primary">{SOURCE_LABEL[hs.discovered_via?.source] ?? hs.discovered_via?.source ?? '–'}</span>{/if}</span>
+        {#if hs.route}<span class="pv"><span class="muted">route</span> <HopChain route={hs.route} links={hostIds} scan={sid} /></span>{/if}
+      </div>
+    {/snippet}
+    {#snippet fields()}
+      <Field label="Privilege" value={privilege(hs.privilege)} />
+      <Field label="Depth" value={hs.depth ?? '–'} />
+      <Field label="Addresses" title={addrs.join(', ')}>{#if addrs.length}<span class="num">{addrs[0]}</span>{#if addrs.length > 1}<span class="muted"> +{addrs.length - 1}</span>{/if}{:else}<span class="num">{hs.connect_addr}</span>{/if}</Field>
+      <Field label="OS" value={hs.os ?? '–'} />
+      <Field label="Kernel" value={hs.kernel ?? '–'} />
+    {/snippet}
+    {#snippet actions()}
+      <a class="btn" href={graphHostHref(sid, hostId)}>Show in graph</a>
+      <div class="exp">
+        <button class="btn" aria-haspopup="menu" aria-expanded={exportOpen} onclick={() => (exportOpen = !exportOpen)}>Export findings<svg class="chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5" /></svg></button>
+        {#if exportOpen}<div class="popover expmenu" role="menu">
+          <a role="menuitem" href="/api/scans/{sid}/export/findings.csv?host_id={hostId}" download>Findings (CSV)</a>
+          <a role="menuitem" href="/api/scans/{sid}/export/findings.json?host_id={hostId}" download>Findings (JSON)</a>
+        </div>{/if}
+      </div>
+    {/snippet}
+  </PageHead>
+  <Notices {scan} />
 
-    {#if hs.status === 'partial' || hs.status === 'output_limit'}
-      <Strip role="warning">
-        <span>Scanned partially:</span>
-        <ul class="reasons mono">{#each hs.partial_reasons as r}<li>{r}</li>{:else}<li>{hs.error ?? hs.status}</li>{/each}</ul>
-        <span class="secondary">Rerun with <span class="mono">--ask-sudo-password</span> or grant sudo to the audit account.</span>
-      </Strip>
-    {:else if UNREACHED.includes(hs.status)}
-      <Strip role="high">
-        <span>Not scanned: {STATUS_LABEL[hs.status].toLowerCase()}.</span>
-        <table class="t att"><thead><tr><th>Route</th><th>Error</th></tr></thead><tbody>
-          {#each hs.route_attempts as a}<tr><td><HopChain route={a.route} links={hostIds} scan={sid} /></td><td class="mono">{a.error ?? 'ok'}</td></tr>{:else}<tr><td colspan="2" class="mono">{hs.error ?? 'no route was tried'}</td></tr>{/each}
-        </tbody></table>
-      </Strip>
-    {:else if hs.status === 'hostkey_mismatch' || hs.status === 'hostkey_unknown'}
-      <Strip role="error">
-        <span>{hs.status === 'hostkey_mismatch' ? 'Host key changed – not scanned.' : 'Host key unknown – not scanned.'}</span>
-        {#if hkFinding}
-          <dl class="dl hk">
-            {#each hkFinding.detail.old ?? [] as o}<dt>Stored ({o.alg})</dt><dd><Fp fp={o.fp} full /></dd>{/each}
-            {#if hkFinding.detail.new}<dt>Presented ({hkFinding.detail.new.alg})</dt><dd><Fp fp={hkFinding.detail.new.fp} full /></dd>{/if}
-          </dl>
-        {:else if hs.error}<p class="mono dense">{hs.error}</p>{/if}
-        <p>Verify out-of-band, then run:</p>
-        <CodeBlock cmd="sshbite hostkey accept {hs.connect_addr}{hs.connect_port && hs.connect_port !== 22 ? ':' + hs.connect_port : ''}" />
-      </Strip>
-    {/if}
+  {#if showAttempts}
+    <section class="panel flush attempts">
+      <header><h2 class="section-title">Route attempts</h2></header>
+      {@render attemptsTable(attempts, 'Route attempts')}
+    </section>
+  {/if}
 
-    <div class="tabs" role="tablist">
-      {#each tabs as t (t.key)}
-        <button role="tab" aria-selected={tab === t.key} disabled={t.disabled} title={t.disabled ? 'No data: host was not scanned.' : ''} onclick={() => setTab(t.key)}>{t.label}</button>
-      {/each}
-    </div>
+  {#if hs.status === 'partial' || hs.status === 'output_limit'}
+    <Strip role="warning">
+      <span>Scanned partially:</span>
+      <ul class="reasons">{#each hs.partial_reasons as r}<li>{r}</li>{:else}<li>{hs.error ?? hs.status}</li>{/each}</ul>
+      <span class="secondary">Rerun with <span class="mono">--ask-sudo-password</span> or grant sudo to the audit account.</span>
+    </Strip>
+  {:else if UNREACHED.includes(hs.status)}
+    <Strip role="high">
+      <p class="st">Not scanned: {STATUS_LABEL[hs.status].toLowerCase()}.</p>
+      <div class="inner">{@render attemptsTable(hs.route_attempts ?? [], 'Route attempts')}</div>
+    </Strip>
+  {:else if hs.status === 'hostkey_mismatch' || hs.status === 'hostkey_unknown'}
+    <Strip role="error">
+      <p class="st">{hs.status === 'hostkey_mismatch' ? 'Host key changed – not scanned.' : 'Host key unknown – not scanned.'}</p>
+      {#if hkFinding}
+        <dl class="hk">
+          {#each hkFinding.detail.old ?? [] as o}<div><dt>Stored <span class="muted">{o.alg}</span></dt><dd><Fp fp={o.fp} full size={13} /></dd></div>{/each}
+          {#if hkFinding.detail.new}<div><dt>Presented <span class="muted">{hkFinding.detail.new.alg}</span></dt><dd><Fp fp={hkFinding.detail.new.fp} full size={13} /></dd></div>{/if}
+        </dl>
+      {:else if hs.error}<p class="mono dense">{hs.error}</p>{/if}
+      <p class="vf">Verify out-of-band, then run:</p>
+      <CodeBlock cmd="sshbite hostkey accept {hs.connect_addr}{hs.connect_port && hs.connect_port !== 22 ? ':' + hs.connect_port : ''}" />
+    </Strip>
+  {/if}
+
+  <div class="tabs sticky" role="tablist">
+    {#each tabs as t (t.key)}
+      <button role="tab" aria-selected={tab === t.key} disabled={t.disabled} title={t.disabled ? 'No data: host was not scanned.' : ''} onclick={() => setTab(t.key)}><span>{t.label}{#if t.count}{' '}<span class="cnt">{t.count}</span>{/if}</span></button>
+    {/each}
   </div>
 
   <section class="tabpanel" role="tabpanel">
     {#if tab === 'overview'}
       <div class="ov">
         <section class="panel">
-          <h2 class="section-title">Host</h2>
+          <h2 class="section-title ptitle">Host</h2>
           <dl class="dl">
-            <dt>Names</dt><dd class="mono">{d.names.filter((x: any) => x.kind === 'name').map((x: any) => x.value).join(', ') || '–'}</dd>
-            <dt>IPs</dt><dd class="mono">{[...new Set([...(hs.ips ?? []), ...d.names.filter((x: any) => x.kind === 'ip').map((x: any) => x.value)])].join(', ') || '–'}</dd>
-            <dt>Connected at</dt><dd class="mono">{hs.connect_addr}{hs.connect_port && hs.connect_port !== 22 ? ':' + hs.connect_port : ''}</dd>
+            <dt>Names</dt><dd>{names.join(', ') || '–'}</dd>
+            <dt>IPs</dt><dd class="num">{addrs.join(', ') || '–'}</dd>
+            <dt>Connected at</dt><dd class="num">{hs.connect_addr}{hs.connect_port && hs.connect_port !== 22 ? ':' + hs.connect_port : ''}</dd>
             <dt>OS</dt><dd>{hs.os ?? '–'}</dd>
-            <dt>Kernel</dt><dd class="mono">{hs.kernel ?? '–'}</dd>
-            <dt>Groups</dt><dd class="mono">{Object.entries(d.groups).map(([k, v]) => `${k}: ${v}`).join(' · ') || '–'}</dd>
+            <dt>Kernel</dt><dd>{hs.kernel ?? '–'}</dd>
+            <dt>Groups</dt><dd>{#each Object.entries(d.groups) as [k, v]}<div><span class="muted">{k}</span> {v}</div>{:else}–{/each}</dd>
             <dt>Scan time</dt><dd class="num">{hs.duration_ms !== null ? `${(hs.duration_ms / 1000).toFixed(1)} s` : '–'}</dd>
           </dl>
           <h3 class="sub-title">Host keys</h3>
           {#if d.host_keys.length}
-            <ul class="hk-list">{#each d.host_keys as k}<li><KeyType alg={k.alg} bits={k.bits} /><Fp fp={k.fp} full /></li>{/each}</ul>
+            <table class="t hkt">
+              <thead><tr><th>Algorithm</th><th>Fingerprint</th></tr></thead>
+              <tbody>{#each d.host_keys as k}<tr><td><KeyType alg={k.alg} bits={k.bits} /></td>
+                <td><span class="fpshort"><Fp fp={k.fp} /></span><span class="fpfull"><Fp fp={k.fp} full /></span></td></tr>{/each}</tbody>
+            </table>
           {:else}<p class="secondary dense">No host key was collected.</p>{/if}
         </section>
         <section class="panel">
-          <h2 class="section-title">Access counts</h2>
+          <h2 class="section-title ptitle">Access counts</h2>
           <dl class="dl num">
             <dt>In: hosts / users / keys</dt><dd>{d.metrics.in_hosts} / {d.metrics.in_users} / {d.metrics.in_keys}</dd>
             <dt>Unknown-origin keys</dt><dd>{d.metrics.in_unknown_keys}</dd>
@@ -245,13 +266,14 @@
         {@const priv = d.private_keys.filter((p: any) => p.username === u.username)}
         {@const kh = d.known_hosts.filter((k: any) => k.username === u.username)}
         {@const cfg = d.ssh_config.filter((c: any) => c.username === u.username)}
-        <section class="panel user" id="user-{u.username}" class:target={target === `user-${u.username}`}>
-          <h2 class="uh"><span class="mono section-title">{u.username || '(system files)'}</span>
-            {#if acc}<span class="kchip">uid {acc.uid}</span><span class="kchip">{acc.shell || 'no shell'}</span>{/if}
-            {#each userChips(u.username) as c}{#if c === 'missing'}<span class="badge sev-medium"><Glyph kind="medium" />missing</span>{:else}<span class="kchip">{c}</span>{/if}{/each}
-          </h2>
+        <section class="panel flush user" id="user-{u.username}" class:target={target === `user-${u.username}`}>
+          <div class="uh">
+            <h2 class="section-title">{u.username || '(system files)'}</h2>
+            {#if acc}<dl class="ctx"><Field label="uid" value={acc.uid} /><Field label="Shell" value={acc.shell || 'no shell'} /></dl>{/if}
+            <span class="chips">{#each userChips(u.username) as c}{#if c === 'missing'}<Badge role="medium" label="missing" />{:else}<span class="kchip">{c}</span>{/if}{/each}</span>
+          </div>
           {#if auth.length}
-            <h3 class="sub-title">Authorized keys</h3>
+            <h3 class="sub-title sect">Authorized keys</h3>
             <div class="table-wrap"><table class="t">
               <thead><tr><th>File:line</th><th>Strength</th><th>Type</th><th>Fingerprint</th><th>Comment</th><th>Options</th><th>Origin</th></tr></thead>
               <tbody>{#each auth as a (a.id)}<tr>
@@ -259,50 +281,50 @@
                 <td><StrengthChip strength={a.strength} /></td>
                 <td><KeyType alg={a.alg} bits={a.bits} /></td>
                 <td><Fp fp={a.fp} href={keyHref(sid, a.fp)} /></td>
-                <td class="mono">{a.comment ?? '–'}{#if a.label}<div class="meta secondary sans">“{a.label}”</div>{/if}</td>
+                <td>{a.comment ?? '–'}{#if a.label}<div class="meta secondary">“{a.label}”</div>{/if}</td>
                 <td><OptionChips options={a.options} /></td>
                 <td class="nowrap">{#if a.origin === 'ca'}<span class="kchip">CA trusted</span>
-                  {:else if a.origin === 'known'}<a href={keyHref(sid, a.fp)}>Known private holder ({a.holders})</a>
-                  {:else}<span class="sev-info unk"><Glyph kind="unknown" /></span> Unknown origin{/if}</td>
+                  {:else if a.origin === 'known'}<a class="plain" href={keyHref(sid, a.fp)}>Known private holder ({a.holders})</a>
+                  {:else}<span class="state unknown">Unknown origin</span>{/if}</td>
               </tr>{/each}</tbody>
             </table></div>
           {/if}
           {#if priv.length}
-            <h3 class="sub-title">Private keys</h3>
+            <h3 class="sub-title sect">Private keys</h3>
             <div class="table-wrap"><table class="t">
               <thead><tr><th>Path</th><th>Type</th><th>Fingerprint</th><th>Encrypted</th><th>Mode</th><th>Owner</th></tr></thead>
               <tbody>{#each priv as p (p.id)}<tr>
                 <td class="mono" title={p.path}>{midTrunc(p.path, 40)}</td>
-                <td><span class="row nowrap"><KeyType alg={p.alg} bits={p.bits} /><StrengthChip strength={p.strength} /></span></td>
+                <td><span class="kr"><KeyType alg={p.alg} bits={p.bits} /><StrengthChip strength={p.strength} /></span></td>
                 <td><Fp fp={p.fp} href={keyHref(sid, p.fp)} /></td>
-                <td>{#if p.encrypted === 'no'}<span class="badge sev-medium"><Glyph kind="medium" />no</span>{:else}{p.encrypted}{/if}</td>
-                <td class="mono">{#if p.mode_bad}<span class="badge sev-high"><Glyph kind="high" />{p.mode}</span>{:else}{p.mode ?? '–'}{/if}</td>
-                <td class="mono">{p.owner ?? '–'}</td>
+                <td>{#if p.encrypted === 'no'}<Badge role="medium" label="no" />{:else}{p.encrypted}{/if}</td>
+                <td>{#if p.mode_bad}<Badge role="high" label={p.mode} />{:else}<span class="mono">{p.mode ?? '–'}</span>{/if}</td>
+                <td>{p.owner ?? '–'}</td>
               </tr>{/each}</tbody>
             </table></div>
           {/if}
           {#if kh.length}
-            <h3 class="sub-title">known_hosts</h3>
-            {#if unmatchedFor(u.username) > 0}<p class="dense secondary">{plural2(unmatchedFor(u.username))} could not be matched.</p>{/if}
+            <h3 class="sub-title sect">known_hosts</h3>
+            {#if unmatchedFor(u.username) > 0}<p class="dense secondary padx">{plural2(unmatchedFor(u.username))} could not be matched.</p>{/if}
             <div class="table-wrap"><table class="t">
               <thead><tr><th>File:line</th><th>Pattern</th><th>Resolved host</th><th>Key</th><th>Match</th></tr></thead>
               <tbody>{#each kh as k (k.id)}<tr>
                 <td class="mono" title={fileLine(k.file, k.line)}>{midTrunc(fileLine(k.file, k.line), 36)}</td>
-                <td class="mono">{#if k.hashed}<span class="muted">hashed</span>{#if k.resolved_value}{' = ' + k.resolved_value}{/if}{:else}{k.patterns.join(',')}{/if}{#if k.marker} <span class="kchip">{k.marker}</span>{/if}</td>
-                <td class="mono">{#if k.target_host_id}<a href={hostHref(sid, k.target_host_id)}>{k.target}</a>{:else}<span class="muted">–</span>{/if}</td>
-                <td><span class="row nowrap"><KeyType alg={k.key_alg} /><Fp fp={k.key_fp} /></span></td>
-                <td>{#if k.matches_actual === 'yes'}matches{:else if k.matches_actual === 'no'}<span class="badge sev-low"><Glyph kind="low" />stale</span>{:else}<span class="muted">unknown</span>{/if}</td>
+                <td>{#if k.hashed}<span class="muted">hashed</span>{#if k.resolved_value}{' = ' + k.resolved_value}{/if}{:else}{k.patterns.join(',')}{/if}{#if k.marker} <span class="kchip">{k.marker}</span>{/if}</td>
+                <td>{#if k.target_host_id}<a class="plain" href={hostHref(sid, k.target_host_id)}>{k.target}</a>{:else}<span class="muted">–</span>{/if}</td>
+                <td><span class="kr"><KeyType alg={k.key_alg} /><Fp fp={k.key_fp} /></span></td>
+                <td>{#if k.matches_actual === 'yes'}<span class="state">matches</span>{:else if k.matches_actual === 'no'}<Badge role="low" label="stale" />{:else}<span class="state muted">unknown</span>{/if}</td>
               </tr>{/each}</tbody>
             </table></div>
           {/if}
           {#if cfg.length}
-            <h3 class="sub-title">ssh config</h3>
+            <h3 class="sub-title sect">ssh config</h3>
             <div class="table-wrap"><table class="t">
               <thead><tr><th>File:line</th><th>Host</th><th>HostName</th><th>User</th><th>Port</th><th>IdentityFile</th><th>ProxyJump</th></tr></thead>
               <tbody>{#each cfg as c}<tr>
                 <td class="mono" title={fileLine(c.file, c.line)}>{midTrunc(fileLine(c.file, c.line), 36)}</td>
-                <td class="mono">{c.host_pattern ?? '–'}</td><td class="mono">{c.hostname ?? '–'}</td><td class="mono">{c.user ?? '–'}</td>
-                <td class="mono num">{c.port ?? '–'}</td><td class="mono">{c.identity_files.join(', ') || '–'}</td><td class="mono">{c.proxyjump ?? '–'}</td>
+                <td>{c.host_pattern ?? '–'}</td><td>{c.hostname ?? '–'}</td><td>{c.user ?? '–'}</td>
+                <td class="num">{c.port ?? '–'}</td><td class="mono">{c.identity_files.join(', ') || '–'}</td><td>{c.proxyjump ?? '–'}</td>
               </tr>{/each}</tbody>
             </table></div>
           {/if}
@@ -329,16 +351,17 @@
       <section class="panel flush">
         {#if stale}<header><p class="dense secondary">{stale} of {d.known_by.length} entries are stale.</p></header>{/if}
         <div class="table-wrap"><table class="t">
-          <thead><tr><th>Host · user</th><th>File:line</th><th>Key</th><th>Match</th></tr></thead>
+          <thead><tr><th>Host</th><th>User</th><th>File:line</th><th>Key</th><th>Match</th></tr></thead>
           <tbody>
             {#each d.known_by as k (k.id)}
               <tr>
-                <td class="mono"><a href={hostHref(sid, k.host_id)}>{k.host}</a> · {k.username || '(system)'}</td>
+                <td class="ent"><a href={hostHref(sid, k.host_id)}>{k.host}</a></td>
+                <td>{k.username || '(system)'}</td>
                 <td class="mono" title={fileLine(k.file, k.line)}>{midTrunc(fileLine(k.file, k.line), 40)}{#if k.hashed} <span class="muted">(hashed)</span>{/if}</td>
-                <td><span class="row nowrap"><KeyType alg={k.key_alg} /><Fp fp={k.key_fp} /></span></td>
-                <td>{#if k.matches_actual === 'yes'}matches{:else if k.matches_actual === 'no'}<span class="badge sev-low"><Glyph kind="low" />Stale – key no longer presented</span>{:else}<span class="muted">unknown</span>{/if}</td>
+                <td><span class="kr"><KeyType alg={k.key_alg} /><Fp fp={k.key_fp} /></span></td>
+                <td>{#if k.matches_actual === 'yes'}<span class="state">matches</span>{:else if k.matches_actual === 'no'}<Badge role="low" label="Stale – key no longer presented" />{:else}<span class="state muted">unknown</span>{/if}</td>
               </tr>
-            {:else}<tr><td class="empty" colspan="4">No scanned host has {name} in its known_hosts.</td></tr>{/each}
+            {:else}<tr><td class="empty" colspan="5">No scanned host has {name} in its known_hosts.</td></tr>{/each}
           </tbody>
         </table></div>
       </section>
@@ -350,7 +373,7 @@
           <tbody>
             {#each [...sshd.pin, ...sshd.sec] as r}
               {@const rk = risk(r.name, r.value)}
-              <tr class="pinned"><td>{NICE[r.name] ?? r.name}</td><td class="mono wrap-any">{r.value}{#if rk} <SevBadge severity={rk} />{/if}</td><td class="secondary">{r.source}</td><td class="mono">{fileLine(r.file, r.line) || '–'}</td></tr>
+              <tr class="pinned"><td class="sname">{NICE[r.name] ?? r.name}</td><td class="wrap-any"><span class="vrow"><span class="mono">{r.value}</span>{#if rk}<SevBadge severity={rk} />{/if}</span></td><td class="secondary">{r.source}</td><td class="mono">{fileLine(r.file, r.line) || '–'}</td></tr>
             {/each}
             {#each showAllSshd ? sshd.rest : [] as r}
               <tr><td>{NICE[r.name] ?? r.name}</td><td class="mono wrap-any">{r.value}</td><td class="secondary">{r.source}</td><td class="mono">{fileLine(r.file, r.line) || '–'}</td></tr>
@@ -358,11 +381,11 @@
             {#if !sshd.pin.length && !sshd.rest.length}<tr><td class="empty" colspan="4">No sshd settings were read on {name}.</td></tr>{/if}
           </tbody>
         </table></div>
-        {#if sshd.rest.length}<div class="more"><button class="btn ghost" onclick={() => (showAllSshd = !showAllSshd)}>{showAllSshd ? 'Show the relevant settings only' : `Show all ${n(sshd.rest.length + sshd.pin.length + sshd.sec.length)} settings`}</button></div>{/if}
+        {#if sshd.rest.length}<div class="tfoot"><button class="btn ghost small" onclick={() => (showAllSshd = !showAllSshd)}>{showAllSshd ? 'Show the relevant settings only' : `Show all ${n(sshd.rest.length + sshd.pin.length + sshd.sec.length)} settings`}</button></div>{/if}
       </section>
       {#each sshd.match as m}
-        <section class="panel"><h3 class="sub-title">Match block (shown as written; not evaluated)</h3><pre class="raw">{m.value}</pre>
-          {#if m.file}<p class="meta mono secondary">{fileLine(m.file, m.line)}</p>{/if}</section>
+        <section class="panel"><h3 class="section-title mtitle">Match block (shown as written; not evaluated)</h3><pre class="raw">{m.value}</pre>
+          {#if m.file}<p class="meta mono secondary mfile">{fileLine(m.file, m.line)}</p>{/if}</section>
       {/each}
 
     {:else if tab === 'accounts'}
@@ -373,8 +396,8 @@
           <thead><tr><th>Username</th><th class="r">UID</th><th>Shell</th><th>Login shell</th><th>Password</th><th>Expiry</th></tr></thead>
           <tbody>
             {#each shownAccounts as a (a.username)}
-              <tr><td class="mono">{#if sshUsers.has(a.username)}<a href="?tab=users#user-{encodeURIComponent(a.username)}">{a.username}</a>{:else}{a.username}{/if}</td><td class="r num">{a.uid}</td><td class="mono">{a.shell || '–'}</td>
-                <td>{a.login_shell ? 'yes' : 'no'}</td><td>{a.pw_state}</td><td class="mono">{a.expiry ?? '–'}</td></tr>
+              <tr><td class="ent">{#if sshUsers.has(a.username)}<a href="?tab=users#user-{encodeURIComponent(a.username)}">{a.username}</a>{:else}{a.username}{/if}</td><td class="r num">{a.uid}</td><td class="mono">{a.shell || '–'}</td>
+                <td>{a.login_shell ? 'yes' : 'no'}</td><td>{a.pw_state}</td><td class="num">{a.expiry ?? '–'}</td></tr>
             {:else}<tr><td class="empty" colspan="6">{d.accounts.length ? 'No account on this host has SSH data.' : `No accounts were read on ${name}.`}</td></tr>{/each}
           </tbody>
         </table></div>
@@ -391,37 +414,47 @@
 <script lang="ts" module>
   function plural2(v: number) { return v === 1 ? '1 hashed entry' : `${v} hashed entries`; }
 </script>
-
 <style>
-  .head { display: flex; flex-direction: column; gap: var(--s4); position: sticky; top: 48px; z-index: 5; background: var(--bg-page);
-    padding-top: var(--s2); }
-  :global(.has-synth) .head { top: 80px; }
-  .line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
-  .sans { font-family: var(--sans); }
-  .reasons { margin: var(--s2) 0; padding-left: var(--s5); font-size: 13px; }
-  .att { margin-top: var(--s3); max-width: 720px; }
-  .att.compact { margin-top: 0; width: auto; max-width: 100%; font-size: 13px; }
-  .att.compact caption { text-align: left; font-size: 12px; font-weight: 500; color: var(--text-secondary); padding-bottom: var(--s1); }
-  .att.compact th, .att.compact :global(td) { height: 28px; padding-top: 0; padding-bottom: 0; }
-  .att-ok { color: var(--text-secondary); }
-  .hk { margin: var(--s3) 0; }
+  .chev { color: var(--text-muted); }
+  .line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2) var(--s6); font-size: 13px; line-height: 20px; color: var(--text-primary); }
+  .pv { display: inline-flex; align-items: baseline; gap: .35em; flex-wrap: wrap; }
+  .path { font-size: 12px; color: var(--text-secondary); }
+  .primary { color: var(--text-primary); }
+  .reasons { margin: var(--s2) 0; padding-left: var(--s5); }
+  /* Route attempts: its own section, 16 px above and below (the page gap) */
+  .att .err { font-size: 12px; }
+  .strip .st { font-weight: 500; }
+  .strip .inner { margin-top: var(--s3); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r2);
+    overflow: hidden; max-width: 720px; }
+  .hk { display: flex; flex-direction: column; gap: var(--s3); margin: var(--s3) 0; }
+  .hk dt { font-size: 12px; line-height: 16px; color: var(--text-secondary); font-weight: 500; }
+  .hk dd { margin: 0; }
+  .vf { margin-bottom: var(--s2); }
+  :global(.strip .code) { background: var(--bg-surface); max-width: 560px; }
+  /* tabs: sticky under the top bar */
+  .tabs.sticky { position: sticky; top: var(--topbar); z-index: 5; background: var(--bg-page); }
+  :global(.has-synth) .tabs.sticky { top: calc(var(--topbar) + 32px); }
   .tabpanel { display: flex; flex-direction: column; gap: var(--s5); }
   .ov { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--s5); align-items: start; }
-  .ov .section-title { margin-bottom: var(--s4); }
+  .ptitle { margin-bottom: var(--s4); }
   .sub-title { font-size: 14px; line-height: 20px; font-weight: 600; margin: var(--s5) 0 var(--s3); }
-  .hk-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--s3); }
-  .hk-list li { display: flex; gap: var(--s3); align-items: center; flex-wrap: wrap; }
+  .hkt { margin-top: var(--s2); border: 1px solid var(--border-subtle); border-radius: var(--r2); }
+  .hkt :global(th:first-child), .hkt :global(td:first-child) { padding-left: var(--s4); width: 120px; }
+  .fpfull { display: none; }
   .cnote { margin-top: var(--s4); }
-  .user { scroll-margin-top: 220px; }
+  .user { scroll-margin-top: 120px; }
   .user.target { border-color: var(--accent); }
-  .uh { display: flex; gap: var(--s3); align-items: center; flex-wrap: wrap; }
-  .unk { color: var(--c); }
-  .emptytab { text-align: center; padding: var(--s7); color: var(--text-secondary); }
-  .more { padding: var(--s3) var(--s4); }
-  .exp { position: relative; }
-  .expmenu { right: 0; top: 36px; display: flex; flex-direction: column; padding: var(--s2) 0; min-width: 180px; }
-  .expmenu a { padding: var(--s3) var(--s4); color: var(--text-primary); }
-  .expmenu a:hover { background: var(--bg-hover); text-decoration: none; }
-  :global(tr[id^='finding-']) { scroll-margin-top: 240px; }
-  @media (max-width: 1100px) { .ov { grid-template-columns: minmax(0, 1fr); } .head { position: static; } }
+  .uh { display: flex; gap: var(--s6); align-items: center; flex-wrap: wrap; padding: var(--s4) var(--s5); }
+  .user .sub-title.sect { margin: 0; padding: var(--s4) var(--s5) var(--s3); border-top: 1px solid var(--border-subtle); }
+  .padx { padding: 0 var(--s5) var(--s3); }
+  .kr { display: inline-flex; gap: var(--s3); align-items: center; white-space: nowrap; }
+  .vrow { display: inline-flex; gap: var(--s3); align-items: center; flex-wrap: wrap; }
+  .sname { font-weight: 500; }
+  .mtitle { margin-bottom: var(--s3); }
+  .mfile { margin-top: var(--s2); }
+  .emptytab { padding: var(--s7) 0; color: var(--text-secondary); }
+  :global(tr[id^='finding-']) { scroll-margin-top: 120px; }
+  @media (max-width: 1100px) { .ov { grid-template-columns: minmax(0, 1fr); } }
+  /* below 640 px the host keys show the full form in groups of 4, breaking only between groups */
+  @media (max-width: 639px) { .fpshort { display: none; } .fpfull { display: inline; } .hkt :global(td:first-child) { width: auto; } }
 </style>

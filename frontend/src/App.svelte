@@ -68,6 +68,12 @@
     ? (scans.items.some((s) => s.id === lastScan.id) ? lastScan.id : latestCompleted()?.id ?? null) : null));
   const topScan = $derived(topScanId !== null ? scans.items.find((s) => s.id === topScanId) ?? null : null);
   // synthetic banner (design §3, §4.12, §10.1): the scan shown; on Diff when A or B is synthetic
+  // on /diff the top bar names the compared pair instead of a scan (design-revision §4, check-9 N2)
+  const compare = $derived.by((): [number, number] | null => {
+    if (parsed.screen !== 'diff' || !scans.loaded || scans.items.length === 0) return null;
+    const [a, b] = diffPair(route.query);
+    return a && b ? [a, b] : null;
+  });
   const synthetic = $derived.by(() => {
     if (parsed.screen === 'diff') {
       const [a, b] = diffPair(route.query);
@@ -83,7 +89,7 @@
 {:else if parsed.screen === 'login'}
   <Login onlogin={loggedIn} />
 {:else if session.username}
-  <Shell scanId={topScanId} {synthetic}>
+  <Shell scanId={topScanId} {synthetic} {compare}>
     {#if parsed.screen === 'scans'}
       <Scans />
     {:else if scans.loaded && scans.items.length === 0}
@@ -93,9 +99,9 @@
     {:else if parsed.screen === 'home'}
       <NoScan />
     {:else if parsed.screen === 'notfound'}
-      <section class="empty-state"><h2 class="section-title">Page not found</h2><p>There is no page at <span class="mono">{route.path}</span>. <a href="/">Open the dashboard</a></p></section>
+      <section class="empty-state"><h2>Page not found</h2><p>There is no page at <span class="mono">{route.path}</span>. <a href="/">Open the dashboard</a></p></section>
     {:else if scanId !== null && scans.loaded && !scan}
-      <section class="empty-state"><h2 class="section-title">Scan #{scanId} does not exist</h2><p>It may have been deleted with <span class="mono">sshbite scans delete</span>. <a href="/scans">Show all scans</a></p></section>
+      <section class="empty-state"><h2>Scan #{scanId} does not exist</h2><p>It may have been deleted with <span class="mono">sshbite scans delete</span>. <a href="/scans">Show all scans</a></p></section>
     {:else if scan}
       {#key scanId}
         {#if parsed.screen === 'dashboard'}<Dashboard {scan} />
