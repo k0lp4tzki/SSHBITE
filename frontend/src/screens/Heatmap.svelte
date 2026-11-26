@@ -231,7 +231,7 @@
     const maxR = Math.max(1, ...order.rt);
     const top10 = new Set([...order.rows].sort((a, b) => order.rt[b] - order.rt[a]).slice(0, 10).filter((i) => order.rt[i] > 0));
     const showNum = pitch >= 10;
-    const barMax = showNum ? BARW - 30 : BARW - 6;
+    const barMax = showNum ? BARW - 40 : BARW - 6;
     const sc = scaleLinear().domain([0, maxR]).range([0, barMax]);
     ctx.font = `500 11px 'IBM Plex Sans Condensed', system-ui, sans-serif`;
     ctx.textBaseline = 'middle';
@@ -503,7 +503,7 @@
 {#if crumbs}
   <nav class="crumbs" aria-label="Breadcrumb">
     <a href={location.pathname + qs({ group_by: route.query.get('group_by'), metric: route.query.get('metric'), layer: route.query.get('layer'), unknown: route.query.get('unknown'), sort: route.query.get('sort') })}>All groups</a>
-    <span class="muted"> › </span><span class="mono" aria-current="page">{crumbs.src} → {crumbs.dst}</span>
+    <span class="muted">{' › '}</span><span class="mono" aria-current="page">{crumbs.src} → {crumbs.dst}</span>
   </nav>
 {/if}
 
@@ -635,7 +635,7 @@
   .crumbs { font-size: 13px; }
   .hmgrid { align-items: start; }
   .matrix-panel { min-width: 0; display: flex; flex-direction: column; gap: var(--s4); }
-  .scroller { overflow: auto; max-height: calc(100vh - 290px); min-height: 200px; position: relative; max-width: 100%; }
+  .scroller { overflow: auto; max-height: max(560px, calc(100vh - 150px)); min-height: 200px; position: relative; max-width: 100%; }
   .mgrid { display: grid; width: max-content; }
   .corner { background: var(--bg-surface); position: sticky; top: 0; z-index: 3; }
   .c1 { left: 0; z-index: 4; }

@@ -161,7 +161,7 @@
                 </td>
                 <td class="r num">{h.depth ?? '–'}</td>
                 <td>{#if NOT_SCANNED.includes(h.status)}<span class="chip ref">{OUTCOME_CHIP[h.status] ?? STATUS_LABEL[h.status] ?? h.status}</span>{:else}<StatusBadge status={h.status} />{/if}</td>
-                <td>{NOT_SCANNED.includes(h.status) ? '–' : privilege(h.privilege)}</td>
+                <td class="nowrap">{NOT_SCANNED.includes(h.status) ? '–' : privilege(h.privilege)}</td>
                 <td>
                   {#if NOT_SCANNED.includes(h.status)}<span class="muted">– seen only</span>{:else}<HopChain route={h.route} links={hostIds} scan={sid} />{/if}
                   {#if failed.length && h.status !== 'unreachable'}

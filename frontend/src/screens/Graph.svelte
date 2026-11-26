@@ -10,6 +10,7 @@
   import { Resource } from '../lib/state.svelte';
   import { EDGE_STATUS, FLAG_LABEL, fileLine, n, NOT_SCANNED, SOURCE_LABEL, STATUS_LABEL } from '../lib/format';
   import { hostHref, keyHref } from '../lib/links';
+  import { commonSuffix } from '../lib/heat';
   import PageHead from '../components/PageHead.svelte';
   import Notices from '../components/Notices.svelte';
   import Strip from '../components/Strip.svelte';
@@ -36,6 +37,8 @@
   let nodes = $state.raw<N[]>([]);
   let links = $state.raw<L[]>([]);
   let frame = $state(0);  // bumps on every simulation tick
+  let ring1 = 160, ring2 = 320;
+  let suffix = $state('');
   let sim: Simulation<any, any> | null = null;
   const WIDTH = 960, HEIGHT = 680;
   const SRANK: Record<string, number> = { critical: 0, weak: 1, unknown: 2, ok: 3, good: 4 };
@@ -66,6 +69,12 @@
       } else merged.set(k, { id: k, source: byId.get(l.source), target: byId.get(l.target), kind: l.kind, cls, strength: l.strength, count: l.edge_ids.length, links: [l], status: l.status, effective: l.effective });
     }
     const ls = [...merged.values()].filter((l) => l.source && l.target);
+    // ring radii grow with the number of nodes on them, so a hub's neighbours do not pile up
+    const cnt = [0, 0, 0];
+    ns.forEach((x) => { cnt[Math.min(2, x.dist)]++; });
+    ring1 = Math.max(160, (cnt[1] * 26) / (2 * Math.PI));
+    ring2 = Math.max(320, ring1 + 160, (cnt[2] * 22) / (2 * Math.PI));
+    suffix = commonSuffix(ns.filter((x) => x.kind === 'host').map((x) => x.label));
     const centre = ns.find((x) => x.dist === 0);
     if (centre) { centre.fx = 0; centre.fy = 0; }
     // deterministic start: spread each ring evenly
@@ -74,14 +83,14 @@
     rings.forEach((arr, dist) => arr.forEach((x, i) => {
       if (x.fx !== undefined && x.fx !== null) return;
       const a = (i / arr.length) * Math.PI * 2;
-      const rr = dist === 0 ? 0 : dist === 1 ? 160 : 320;
+      const rr = dist === 0 ? 0 : dist === 1 ? ring1 : ring2;
       x.x = Math.cos(a) * rr; x.y = Math.sin(a) * rr;
     }));
     sim = forceSimulation(ns as any)
       .force('link', forceLink(ls as any).distance(80).strength(0.04))
       .force('charge', forceManyBody().strength(-220))
       .force('collide', forceCollide((x: any) => x.r + 6))
-      .force('radial', forceRadial((x: any) => (x.dist === 0 ? 0 : x.dist === 1 ? 160 : 320), 0, 0).strength(1))
+      .force('radial', forceRadial((x: any) => (x.dist === 0 ? 0 : x.dist === 1 ? ring1 : ring2), 0, 0).strength(1))
       .stop();
     nodes = ns;
     links = ls;
@@ -178,10 +187,10 @@
   const marker = (l: L) => (l.cls === 'evidence' ? 'url(#arr-ev)' : l.cls === 'blocked' ? 'url(#arr-blocked)' : `url(#arr-${l.strength ?? 'unknown'})`);
   const width = (l: L) => (l.cls === 'evidence' ? 1 : 1.5 + Math.min(l.count - 1, 3));
   const shortFp = (fp: string) => { const b = (fp ?? '').replace('SHA256:', ''); return `SHA256:${b.slice(0, 4)}…${b.slice(-4)}`; };
-  function nodeLabel(nd: N) { return nd.kind === 'unknown' ? `? ${shortFp(nd.fp!)}` : nd.label; }
-  const showLabel = (nd: N) => nd.dist <= 1 || nodes.length <= 40 || activeNode === nd.id || adjacent.has(nd.id);
+  function nodeLabel(nd: N) { return nd.kind === 'unknown' ? `? ${shortFp(nd.fp!)}` : suffix && nd.label.endsWith(suffix) ? nd.label.slice(0, -suffix.length) : nd.label; }
+  const showLabel = (nd: N) => nd.dist === 0 || nodes.length <= 40 || (nd.dist === 1 && nodes.length <= 60) || activeNode === nd.id || adjacent.has(nd.id);
   const centreNode = $derived(nodes.find((x) => x.dist === 0));
-  const title = $derived(G.key ? `Graph · key ${shortFp(fpFromUrl(G.key))}` : `Graph · around ${centreNode?.label ?? '…'}`);
+  const title = $derived(G.key ? `Graph · key ${shortFp(fpFromUrl(G.key))}` : `Graph · around ${centreNode ? nodeLabel(centreNode) : '…'}`);
   const isolated = $derived(res.data && G.host && res.data.links.length === 0);
   let showList = $state(false);
 
@@ -304,6 +313,7 @@
         <span><svg width="28" height="10" aria-hidden="true"><line x1="0" y1="5" x2="28" y2="5" stroke="var(--text-primary)" stroke-width="1.5" /><circle cx="14" cy="5" r="3" fill="var(--bg-surface)" stroke="var(--text-primary)" /></svg> from= restricted</span>
         <span><svg width="14" height="14" aria-hidden="true"><rect x="3" y="3" width="8" height="8" transform="rotate(45 7 7)" fill="var(--bg-surface)" stroke="var(--text-secondary)" stroke-dasharray="2 1.5" /></svg> unknown origin</span>
         <span>colour = key strength</span>
+        {#if suffix}<span>Hidden suffix: <span class="mono">{suffix}</span></span>{/if}
         <span class="muted">Click a node to centre on it (Shift+click opens the host), drag to pin, scroll to zoom.</span>
       </p>
     </section>

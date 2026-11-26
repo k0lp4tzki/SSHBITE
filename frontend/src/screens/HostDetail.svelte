@@ -98,6 +98,7 @@
   let exportOpen = $state(false);
   const unmatchedFor = (u: string) => (d?.known_hosts ?? []).filter((k: any) => k.username === u && k.hashed && !k.target_host_id && !k.resolved_value).length;
   function userChips(u: string): string[] {
+    if (!u) return [];
     const a: any = accounts.get(u);
     if (!a) return d?.accounts?.length ? ['missing'] : [];
     const c: string[] = [];
@@ -118,7 +119,7 @@
   <div class="head">
     <PageHead title={name} mono>
       {#snippet sub()}
-        <div class="line"><StatusBadge status={hs.status} /> · {privilege(hs.privilege)} · depth {hs.depth ?? '–'} · discovered via
+        <div class="line"><StatusBadge status={hs.status} />{#if hs.privilege}{' · ' + privilege(hs.privilege)}{/if} · depth {hs.depth ?? '–'} · discovered via
           {#if hs.discovered_via?.parent}<a class="mono" href={hostHref(sid, hs.discovered_via.parent_host_id)}>{hs.discovered_via.parent}</a> <span class="mono">{fileLine(hs.discovered_via.file, hs.discovered_via.line)}</span>{#if hs.discovered_via.source === 'known_hosts_hashed'} (hashed){/if}
           {:else}<span>{SOURCE_LABEL[hs.discovered_via?.source] ?? hs.discovered_via?.source ?? '–'}</span>{/if}
           {#if hs.route}{' · route '}<HopChain route={hs.route} links={hostIds} scan={sid} />{/if}
@@ -216,8 +217,8 @@
         {@const cfg = d.ssh_config.filter((c: any) => c.username === u.username)}
         <section class="panel user" id="user-{u.username}" class:target={target === `user-${u.username}`}>
           <h2 class="uh"><span class="mono section-title">{u.username || '(system files)'}</span>
-            {#if acc}<span class="kchip">uid {acc.uid}</span><span class="kchip">{acc.shell || 'no shell'}</span><span class="kchip">password {acc.pw_state}</span>{/if}
-            {#each userChips(u.username) as c}<span class="badge sev-medium"><Glyph kind="medium" />{c}</span>{/each}
+            {#if acc}<span class="kchip">uid {acc.uid}</span><span class="kchip">{acc.shell || 'no shell'}</span>{/if}
+            {#each userChips(u.username) as c}{#if c === 'missing'}<span class="badge sev-medium"><Glyph kind="medium" />missing</span>{:else}<span class="kchip">{c}</span>{/if}{/each}
           </h2>
           {#if auth.length}
             <h3 class="sub-title">Authorized keys</h3>
@@ -257,7 +258,7 @@
               <thead><tr><th>File:line</th><th>Pattern</th><th>Resolved host</th><th>Key</th><th>Match</th></tr></thead>
               <tbody>{#each kh as k (k.id)}<tr>
                 <td class="mono" title={fileLine(k.file, k.line)}>{midTrunc(fileLine(k.file, k.line), 36)}</td>
-                <td class="mono">{#if k.hashed}<span class="muted">hashed</span>{#if k.resolved_value} = {k.resolved_value}{/if}{:else}{k.patterns.join(',')}{/if}{#if k.marker} <span class="kchip">{k.marker}</span>{/if}</td>
+                <td class="mono">{#if k.hashed}<span class="muted">hashed</span>{#if k.resolved_value}{' = ' + k.resolved_value}{/if}{:else}{k.patterns.join(',')}{/if}{#if k.marker} <span class="kchip">{k.marker}</span>{/if}</td>
                 <td class="mono">{#if k.target_host_id}<a href={hostHref(sid, k.target_host_id)}>{k.target}</a>{:else}<span class="muted">–</span>{/if}</td>
                 <td><span class="row nowrap"><KeyType alg={k.key_alg} /><Fp fp={k.key_fp} /></span></td>
                 <td>{#if k.matches_actual === 'yes'}matches{:else if k.matches_actual === 'no'}<span class="badge sev-low"><Glyph kind="low" />stale</span>{:else}<span class="muted">unknown</span>{/if}</td>
