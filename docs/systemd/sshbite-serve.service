@@ -1,0 +1,33 @@
+# SSHBITE web UI (pip install). Copy to /etc/systemd/system/, then:
+#   systemctl daemon-reload && systemctl enable --now sshbite-serve.service
+[Unit]
+Description=SSHBITE web UI (read-only SSH access audit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sshbite-app
+Group=sshbite-app
+Environment=SSHBITE_CONFIG=/etc/sshbite/sshbite.yaml
+ExecStart=/usr/local/bin/sshbite serve
+Restart=on-failure
+RestartSec=5
+# hardening: the UI only needs to read its config and write its database directory
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/sshbite
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

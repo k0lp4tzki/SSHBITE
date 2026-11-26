@@ -357,6 +357,13 @@ class Scanner:
                 self.seen[key] = t
             return
         ip = sorted(ips, key=_ip_sort_key)[0]
+        if self.cfg.crawl.exclude and scope_match(self.cfg.crawl.exclude, [s.value], ips):
+            # exclude always wins (spec 3.2), also over seeds: listed as seen, never probed or connected to
+            key = (ip, s.port)
+            if key not in self.seen and key not in self.by_addr:
+                self.seen[key] = Target(addr=ip, port=s.port, depth=0, names=[s.value] if s.value == ip
+                                        else [s.value, ip], seed_source=source, status="excluded")
+            return
         if (ip, s.port) in self.by_addr:
             ex = self.by_addr[(ip, s.port)]
             for g in s.groups:

@@ -34,3 +34,13 @@ sshbite = ["collector/*.sh", "db/migrations/*.sql", "web/static/**/*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["e2e: end-to-end tests against the lab (real sshd)"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = ["frontend", "sshbite/web/static"]
+
+[tool.ruff.lint]
+# pyflakes and pycodestyle errors: real defects (undefined names, unused imports, syntax); no style rules
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E702", "E741"]  # semicolons and short names in a few compact parsers/tests

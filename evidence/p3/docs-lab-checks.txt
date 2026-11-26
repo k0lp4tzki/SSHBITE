@@ -1,0 +1,61 @@
+# Checks of docs/install.md against the lab (stack). Lab changes through the lab-control sshd as root; restored at the end.
+# 1. a1 gets the documented sudoers line, jump gets 'restrict,port-forwarding', a2 gets 'restrict' on the audit key line
+--- a1:
+/etc/sudoers.d/sshbite: parsed OK
+Defaults:sshbite !lecture
+sshbite ALL=(root) NOPASSWD: /bin/true, /bin/sh -s
+
+--- jump:
+restrict,port-forwarding ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILVKJK+K8C6RonE5M9PnX7PHm/pvP47DK4SZOqd1P4fm sshbite-audit
+
+--- a2:
+restrict ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILVKJK+K8C6RonE5M9PnX7PHm/pvP47DK4SZOqd1P4fm sshbite-audit
+
+$ SSHBITE_SUDO_PASSWORD=labsudo sshbite -c lab/sshbite.lab.yaml scan
+
+scan 1 completed in 14 s
+hosts:    13 connected; 11 ok, 1 partial, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
+findings: 37 - 4 critical, 15 high, 15 medium, 2 low, 1 info
+edges:    20 access (19 effective, 3 unknown origin); keys: 10
+scan id:  1
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+$ sshbite -c lab/sshbite.lab.yaml export --what hosts | (host, status, privilege)
+host,status,privilege
+jump,ok,root
+203.0.113.10,out_of_scope,
+a1,ok,root
+b1,ok,root
+a2,ok,root
+a3,ok,root
+b2,ok,root
+b3,ok,root
+b5,partial,unprivileged
+10.20.30.40,out_of_scope,
+172.30.1.99,unreachable,
+172.30.2.14,excluded,
+a4,ok,sudo_password
+a5,ok,root
+c1,ok,root
+git.example.com,unresolvable,
+c2,ok,root
+
+# 2. negative: plain 'restrict' on the entry host blocks the tunnels (scan with --max-depth 1)
+restrict ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILVKJK+K8C6RonE5M9PnX7PHm/pvP47DK4SZOqd1P4fm sshbite-audit
+
+hosts:    3 connected; 1 ok, 2 unreachable, 1 out_of_scope
+edges:    0 access (0 effective, 0 unknown origin); keys: 2
+                    tried jump -> 172.30.1.11: 172.30.1.11: channel open failed: open failed
+b1                 unreachable       -                 1  jump /home/ops/.ssh/config:4                 -
+                    tried jump -> b1: b1: channel open failed: open failed
+restrict,port-forwarding ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILVKJK+K8C6RonE5M9PnX7PHm/pvP47DK4SZOqd1P4fm sshbite-audit
+
+# 3. restore
+--- a1:
+sshbite ALL=(root) NOPASSWD: ALL
+
+--- jump:
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILVKJK+K8C6RonE5M9PnX7PHm/pvP47DK4SZOqd1P4fm sshbite-audit
+
+--- a2:
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILVKJK+K8C6RonE5M9PnX7PHm/pvP47DK4SZOqd1P4fm sshbite-audit
+

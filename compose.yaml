@@ -1,4 +1,30 @@
-# The SSHBITE test lab (lab/compose.yaml). The product itself is not a compose service;
-# see README.md "Test lab". This file only makes `docker compose up` at the top level start the lab.
+# Lab demo: the SSHBITE test lab (lab/compose.yaml, 13 OpenSSH hosts) plus the real SSHBITE image scanning it.
+#   docker compose up -d --build      then open http://127.0.0.1:8722/  (login admin / sshbite-lab-demo)
+# The service "sshbite" validates the entry, creates the UI user, runs one scan and serves the UI
+# (lab/demo/start.sh). For real systems use docs/compose.example.yaml instead - see docs/install.md.
 include:
   - lab/compose.yaml
+
+services:
+  sshbite:
+    build: .
+    image: sshbite:latest
+    depends_on: [jump]
+    entrypoint: ["/bin/sh", "/etc/sshbite/start.sh"]
+    environment:
+      SSHBITE_DEMO_PASSWORD: ${SSHBITE_DEMO_PASSWORD:-sshbite-lab-demo}
+    volumes:
+      - sshbite-lab-data:/data
+      - ./lab/demo:/etc/sshbite:ro
+      - ./lab/keys/audit_ed25519:/lab-keys/audit_ed25519:ro
+    ports: ["127.0.0.1:8722:8722"]
+    networks:
+      lab_a: {ipv4_address: 172.30.1.250}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+volumes:
+  sshbite-lab-data:

@@ -1,0 +1,25 @@
+# SSHBITE with Docker Compose (docs/install.md).
+#   1. /etc/sshbite/ on the host holds sshbite.yaml and the audit key, owned by uid 10001, mode 0600
+#      (the config must say  database: /data/sshbite.db).
+#   2. docker compose -f compose.example.yaml up -d
+#   3. docker exec -it sshbite sshbite user add admin
+#   4. docker exec -it sshbite sshbite scan --ask-sudo-password
+#   5. open http://127.0.0.1:8722/
+services:
+  sshbite:
+    build: ..                 # the repository root; or use an image you built: image: sshbite:0.1.0
+    image: sshbite:0.1.0
+    container_name: sshbite
+    restart: unless-stopped
+    volumes:
+      - sshbite-data:/data                  # database and its pre-update backups
+      - /etc/sshbite:/etc/sshbite:ro        # config and audit key, read-only
+    ports:
+      - "127.0.0.1:8722:8722"               # loopback only; the UI has no TLS inside the container
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  sshbite-data:

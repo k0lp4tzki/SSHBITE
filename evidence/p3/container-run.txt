@@ -1,0 +1,43 @@
+sshbite-1  | == id
+sshbite-1  | uid=10001(sshbite) gid=10001(sshbite) groups=10001(sshbite)
+sshbite-1  | == sshbite --version
+sshbite-1  | sshbite, version 0.1.0
+sshbite-1  | == sshbite config validate --connect
+sshbite-1  | warning: config file /etc/sshbite/sshbite.yaml is group- or world-readable (chmod 600 recommended)
+sshbite-1  | config OK: /etc/sshbite/sshbite.yaml
+sshbite-1  | entry OK, pinned key matches, sudo: root
+sshbite-1  | == sshbite user add admin
+sshbite-1  |   passwd = fallback_getpass(prompt, stream)
+sshbite-1  | password: 
+sshbite-1  | repeat password: 
+sshbite-1  | user admin added
+sshbite-1  | == sshbite scan --ask-sudo-password --label 'lab demo'
+sshbite-1  | /usr/local/lib/python3.12/getpass.py:91: GetPassWarning: Can not control echo on the terminal.
+sshbite-1  |   passwd = fallback_getpass(prompt, stream)
+sshbite-1  | Warning: Password input may be echoed.
+sshbite-1  | sudo password: 
+sshbite-1  | scan: entry 172.30.1.5:22, max depth 10, max hosts 1000, concurrency 20
+sshbite-1  | depth 0: 1 queued, 0 running, 0 done
+sshbite-1  | depth 0: 0 queued, 0 running, 1 done
+sshbite-1  | depth 1: 2 queued, 0 running, 1 done
+sshbite-1  | depth 1: 0 queued, 0 running, 3 done
+sshbite-1  | depth 2: 5 queued, 0 running, 3 done
+sshbite-1  | depth 2: 0 queued, 1 running, 7 done
+sshbite-1  | depth 2: 0 queued, 0 running, 8 done (1 partial)
+sshbite-1  | depth 3: 4 queued, 0 running, 8 done (1 partial)
+sshbite-1  | depth 3: 0 queued, 2 running, 10 done (1 partial)
+sshbite-1  | depth 3: 0 queued, 0 running, 12 done (1 partial, 1 unreachable)
+sshbite-1  | depth 4: 1 queued, 0 running, 12 done (1 partial, 1 unreachable)
+sshbite-1  | depth 4: 0 queued, 1 running, 12 done (1 partial, 1 unreachable)
+sshbite-1  | depth 4: 0 queued, 0 running, 13 done (1 partial, 1 unreachable)
+sshbite-1  | 
+sshbite-1  | scan 1 completed in 15 s
+sshbite-1  | hosts:    13 connected; 11 ok, 1 partial, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
+sshbite-1  | findings: 37 - 4 critical, 15 high, 15 medium, 2 low, 1 info
+sshbite-1  | edges:    20 access (19 effective, 3 unknown origin); keys: 10
+sshbite-1  | scan id:  1
+sshbite-1  | UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+sshbite-1  |   id  started               status     hosts  findings  label
+sshbite-1  |    1  2026-11-26T16:07:15Z  completed     13        37  lab demo
+sshbite-1  | == sshbite serve
+sshbite-1  | SSHBITE UI on http://0.0.0.0:8722/  (database /data/sshbite.db)

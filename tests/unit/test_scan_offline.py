@@ -289,6 +289,28 @@ def test_seeds_hosts_file_and_cidr_probe(tmp_path, audit):
     assert rows["198.51.100.7"] == ("no_ssh", "seed:cidr", 0)
 
 
+def test_exclude_wins_over_seeds(tmp_path, audit):
+    key, kp = audit
+    with ServerThread("nopasswd", key.public_data) as srv:
+        cfgp = _config(tmp_path, srv, kp)
+        cfg = yaml.safe_load(open(cfgp))
+        hf = tmp_path / "hosts"
+        hf.write_text("192.0.2.10\n192.0.2.11\n")
+        cfg["seeds"] = {"hosts_file": str(hf), "cidrs": ["198.51.100.0/30"]}
+        cfg.setdefault("crawl", {})["exclude"] = ["192.0.2.11/32", "198.51.100.0/30"]
+        open(cfgp, "w").write(yaml.safe_dump(cfg))
+        r = CliRunner().invoke(main, ["-c", cfgp, "scan", "--no-crawl"])
+        assert r.exit_code == 0, r.output
+    c = sqlite3.connect(tmp_path / "data" / "sshbite.db")
+    rows = {r[0]: r[1:] for r in c.execute("SELECT hs.connect_addr, hs.status, hs.seed_source FROM host_scan hs")}
+    assert rows["192.0.2.10"] == ("unreachable", "seed:hosts_file")
+    # excluded seeds are only listed: no TCP probe, no connection attempt, no route attempt
+    assert rows["192.0.2.11"] == ("excluded", "seed:hosts_file")
+    assert rows["198.51.100.1"] == ("excluded", "seed:cidr") and rows["198.51.100.2"] == ("excluded", "seed:cidr")
+    assert all(not r[0] or r[0] == "[]" for r in c.execute(
+        "SELECT route_attempts FROM host_scan WHERE status = 'excluded'"))
+
+
 def test_nopasswd_only_for_sh_never_sends_the_password(tmp_path, audit):
     """sudoers wants a password for /bin/true but has NOPASSWD for /bin/sh: the password line must not be sent,
     or the root shell would run it as a command."""
