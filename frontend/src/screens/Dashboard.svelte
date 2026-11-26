@@ -150,7 +150,7 @@
               <span class="c2"><a class="title plain" href={findingHref(f)}>{ruleTitle(f.rule, f)}</a></span>
               <span class="c3">
                 <span class="loc">{#if f.host}<a href={hostHref(sid, f.host_id)}>{f.host}</a>{:else}<span class="muted">all hosts</span>{/if}{#if f.username}<span class="usr">{f.username}</span>{/if}</span>
-                {#if f.file}<span class="mono path" title={fileLine(f.file, f.line)}>{midTrunc(fileLine(f.file, f.line), 22)}</span>{/if}
+                {#if f.file}<span class="mono path" title={fileLine(f.file, f.line)}>{midTrunc(fileLine(f.file, f.line), 20)}</span>{/if}
               </span>
               <span class="c4 secondary"><span class="clamp" title={f.recommendation}>{f.recommendation}</span></span>
             </li>

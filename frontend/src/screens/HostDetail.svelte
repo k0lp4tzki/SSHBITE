@@ -425,9 +425,9 @@
   // Users tab (check-12 F2): one fixed column grid per table kind, the same in every user panel of a host, so
   // Strength, Type and Fingerprint line up from panel to panel. File:line is always the first 23.5 %.
   const COLS = {
-    auth: [23.5, 9, 8.8, 13.4, 10, 17.6, 17.7],    // File:line, Strength, Type, Fingerprint, Comment, Options, Origin
-    priv: [23.5, 9, 8.8, 13.4, 14, 13, 18.3],    // Path, Strength, Type, Fingerprint, Encrypted, Mode, Owner
-    kh: [23.5, 21, 17.5, 22, 16],             // File:line, Pattern, Resolved host, Key, Match
+    auth: [23.5, 9, 8.8, 15.6, 10, 15.8, 17.3],    // File:line, Strength, Type, Fingerprint, Comment, Options, Origin
+    priv: [23.5, 9, 8.8, 15.6, 13, 13, 17.1],    // Path, Strength, Type, Fingerprint, Encrypted, Mode, Owner
+    kh: [23.5, 20, 17, 23.5, 16],             // File:line, Pattern, Resolved host, Key, Match
     cfg: [23.5, 12.5, 15.5, 10, 7.5, 17.5, 13.5],     // File:line, Host, HostName, User, Port, IdentityFile, ProxyJump
   };
   const FL = 28;   // characters of File:line / Path before the middle is cut (full value in the title)
@@ -468,6 +468,8 @@
   /* fixed column grid of the Users tab; below 880 px the table scrolls inside its panel */
   .ut { table-layout: fixed; min-width: 880px; }
   .ut :global(td) { overflow: hidden; }
+  .ut :global(th:not(:first-child)), .ut :global(td:not(:first-child)) { padding-left: var(--s3); }
+  .ut :global(th:not(:last-child)), .ut :global(td:not(:last-child)) { padding-right: var(--s3); }
   .ut :global(td.mono) { white-space: nowrap; text-overflow: ellipsis; }
   .clamp2 { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
   .optc :global(.chips) { max-width: 100%; }
