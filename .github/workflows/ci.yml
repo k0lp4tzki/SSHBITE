@@ -1,0 +1,169 @@
+# SSHBITE CI: lint, unit tests, lab e2e on Docker, Playwright, image build (spec 10, P3).
+# The same steps run locally - see docs/development.md.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+  RUFF_VERSION: "0.17.6"
+  PLAYWRIGHT_VERSION: "1.65.2"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}"}
+      - uses: actions/setup-node@v4
+        with: {node-version: "${{ env.NODE_VERSION }}", cache: npm, cache-dependency-path: frontend/package-lock.json}
+      - name: ruff (Python)
+        run: |
+          pip install "ruff==${RUFF_VERSION}"
+          ruff check .
+      - name: svelte-check (frontend types)
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run check
+      - name: collector allowlist lint (spec 3.6)
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --require-hashes -r requirements.lock
+          SSHBITE_SKIP_FRONTEND=1 .venv/bin/pip install --no-deps -e .
+          .venv/bin/sshbite collector show | tee collector-show.txt | grep '^====='
+          test "$(grep -c '^===== .*lint: OK$' collector-show.txt)" = 2
+      - name: compose files are valid
+        run: |
+          docker compose -f docs/compose.example.yaml config -q
+          docker compose -f compose.lab.yaml config -q
+
+  unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}"}
+      - uses: actions/setup-node@v4
+        with: {node-version: "${{ env.NODE_VERSION }}", cache: npm, cache-dependency-path: frontend/package-lock.json}
+      - name: install (pinned, with hashes; builds the frontend)
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --require-hashes -r requirements.lock
+          .venv/bin/pip install --no-deps -e .
+      - name: unit and web API tests
+        run: .venv/bin/python -m pytest tests/unit tests/web -rs | tee pytest-unit.txt; test "${PIPESTATUS[0]}" = 0
+      - name: no test was skipped
+        run: "! grep -q SKIPPED pytest-unit.txt"
+
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}"}
+      - name: install (no frontend needed)
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --require-hashes -r requirements.lock
+          SSHBITE_SKIP_FRONTEND=1 .venv/bin/pip install --no-deps -e .
+      - name: start the lab (13 OpenSSH hosts, docker compose)
+        run: sh lab/up.sh
+      - name: spec 9.3 against the lab, read-only snapshots around every scan
+        env:
+          SSHBITE_LAB_NO_START: "1"
+          SSHBITE_EVIDENCE_DIR: e2e-evidence
+        run: .venv/bin/python -m pytest tests/e2e -v -rs | tee pytest-e2e.txt; test "${PIPESTATUS[0]}" = 0
+      - name: the e2e test ran (not skipped)
+        run: "! grep -q SKIPPED pytest-e2e.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: e2e-evidence, path: "e2e-evidence\npytest-e2e.txt", if-no-files-found: ignore}
+      - name: lab logs on failure
+        if: failure()
+        run: docker compose -f lab/compose.yaml logs --tail 50
+      - name: stop the lab
+        if: always()
+        run: docker compose -f lab/compose.yaml down -v
+
+  browser:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}"}
+      - uses: actions/setup-node@v4
+        with: {node-version: "${{ env.NODE_VERSION }}", cache: npm, cache-dependency-path: frontend/package-lock.json}
+      - name: install (builds the frontend) and Playwright with Chromium
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --require-hashes -r requirements.lock
+          .venv/bin/pip install --no-deps -e .
+          .venv/bin/pip install "playwright==${PLAYWRIGHT_VERSION}"
+          .venv/bin/playwright install --with-deps chromium
+      - name: Playwright checks (spec 9.4, design checklist)
+        run: .venv/bin/python -m pytest tests/browser -v -rs | tee pytest-browser.txt; test "${PIPESTATUS[0]}" = 0
+      - name: no check was skipped
+        run: "! grep -q SKIPPED pytest-browser.txt"
+
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker build
+        run: docker build --progress=plain -t sshbite:ci . 2>&1 | tee docker-build.txt; test "${PIPESTATUS[0]}" = 0
+      - name: runs as uid 10001, the package and the collector lint are inside
+        run: |
+          docker run --rm --entrypoint id sshbite:ci | tee id.txt
+          grep -q '^uid=10001(sshbite) gid=10001(sshbite)' id.txt
+          docker run --rm sshbite:ci sshbite --version
+          docker run --rm sshbite:ci sshbite collector show | grep '^=====.*lint: OK'
+          test "$(docker image inspect -f '{{.Config.User}}' sshbite:ci)" = "10001:10001"
+      - name: the runtime image has no test dependencies (requirements-runtime.lock)
+        run: |
+          docker run --rm --entrypoint pip sshbite:ci list | tee pip-list.txt
+          ! grep -Eiq '^(pytest|playwright|pluggy|iniconfig|greenlet|pyee) ' pip-list.txt
+      - name: the lab demo refuses the old published password
+        run: |
+          set +e
+          docker run --rm -e SSHBITE_DEMO_PASSWORD=sshbite-lab-demo -v "$PWD/lab/demo:/etc/sshbite:ro" \
+            --entrypoint /bin/sh sshbite:ci /etc/sshbite/start.sh > refused.txt 2>&1
+          code=$?
+          set -e
+          cat refused.txt
+          test "$code" != 0 && grep -q 'refusing to start' refused.txt
+      - name: the image scans the lab and serves the UI (compose.lab.yaml = lab + image)
+        run: |
+          docker compose -f compose.lab.yaml up -d --build --wait --wait-timeout 600
+          docker compose -f compose.lab.yaml logs sshbite | tee demo.txt
+          grep -q 'LAB DEMO LOGIN (shown only now):  user admin   password ' demo.txt
+          grep -q 'entry OK, pinned key matches, sudo: root' demo.txt
+          grep -q 'edges:    20 access (19 effective, 3 unknown origin)' demo.txt
+          curl -fsS -D headers.txt -o index.html http://127.0.0.1:8722/
+          grep -qi "^content-security-policy: default-src 'self'" headers.txt
+          grep -q 'assets/index-' index.html
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT http://127.0.0.1:8722/api/keys/x/label)
+          test "$code" = 401 -o "$code" = 403
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: image-logs, path: "docker-build.txt\nid.txt\npip-list.txt\nrefused.txt\ndemo.txt\nheaders.txt",
+               if-no-files-found: ignore}
+      - name: stop
+        if: always()
+        run: docker compose -f compose.lab.yaml down -v

@@ -1,0 +1,33 @@
+# LAB DEMO ONLY: the SSHBITE test lab (lab/compose.yaml, 13 OpenSSH hosts) plus the real SSHBITE image scanning it.
+#   docker compose -f compose.lab.yaml up -d --build
+#   docker compose -f compose.lab.yaml logs sshbite | grep 'LAB DEMO LOGIN'     then open http://127.0.0.1:8722/
+# The service "sshbite" validates the entry, creates the UI user "admin", runs one scan and serves the UI
+# (lab/demo/start.sh). The admin password is SSHBITE_DEMO_PASSWORD if you set it (e.g. in .env), else a random
+# one printed once to the log. Everything here - including the private keys in lab/keys/ - is test material:
+# never use it for real systems. For real systems use docs/compose.example.yaml - see docs/install.md.
+include:
+  - lab/compose.yaml
+
+services:
+  sshbite:
+    build: .
+    image: sshbite:latest
+    depends_on: [jump]
+    entrypoint: ["/bin/sh", "/etc/sshbite/start.sh"]
+    environment:
+      SSHBITE_DEMO_PASSWORD: ${SSHBITE_DEMO_PASSWORD:-}   # empty: start.sh generates one and logs it once
+    volumes:
+      - sshbite-lab-data:/data
+      - ./lab/demo:/etc/sshbite:ro
+      - ./lab/keys/audit_ed25519:/lab-keys/audit_ed25519:ro
+    ports: ["127.0.0.1:8722:8722"]
+    networks:
+      lab_a: {ipv4_address: 172.30.1.250}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+volumes:
+  sshbite-lab-data:

@@ -1,0 +1,20 @@
+# Only what the Dockerfile copies is needed: frontend/, sshbite/, pyproject.toml, setup.py, README.md, *.lock
+.git
+.github
+.venv
+**/__pycache__
+**/*.pyc
+*.egg-info
+build/
+dist/
+.env
+*.db
+*.db-wal
+*.db-shm
+frontend/node_modules/
+sshbite/web/static/
+lab/
+tests/
+evidence/
+docs/
+tools/

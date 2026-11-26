@@ -1,0 +1,394 @@
+#SSHBITE 1 b95dd735488f
+#S META
+#V hostname	a1
+#V uname	Linux 7.0.0-43-generic x86_64
+#V uid	0
+#V cmd	os-release
+|PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+|NAME="Debian GNU/Linux"
+|VERSION_ID="12"
+|VERSION="12 (bookworm)"
+|VERSION_CODENAME=bookworm
+|ID=debian
+|HOME_URL="https://www.debian.org/"
+|SUPPORT_URL="https://www.debian.org/support"
+|BUG_REPORT_URL="https://bugs.debian.org/"
+
+#V cmd	ip-addr
+|1: lo    inet 127.0.0.1/8 scope host lo\       valid_lft forever preferred_lft forever
+|1: lo    inet6 ::1/128 scope host \       valid_lft forever preferred_lft forever
+|2: eth0    inet 172.30.1.11/24 brd 172.30.1.255 scope global eth0\       valid_lft forever preferred_lft forever
+
+#S HOSTKEYS
+#F /etc/ssh/ssh_host_ecdsa_key.pub	0	root	644	1795702094	169	
+|ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBBfljz2ZG2RitLDTzktfaarweduRfGuYV3Znnc7eSymQSagwNx9MNY+4KxfeMKSh2nUmO6iMmzlhuzKofb10Jhw= root@a1
+
+#F /etc/ssh/ssh_host_ed25519_key.pub	0	root	644	1795702094	89	
+|ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEaB2pGjejYMR+9Bc0TT/4pphLPLe5LZPaHidim2lN6F root@a1
+
+#S SSHD
+#V sshd_t_lines	93
+#V cmd	sshd-T
+|port 22
+|addressfamily any
+|listenaddress [::]:22
+|listenaddress 0.0.0.0:22
+|usepam yes
+|logingracetime 120
+|x11displayoffset 10
+|maxauthtries 6
+|maxsessions 10
+|clientaliveinterval 0
+|clientalivecountmax 3
+|requiredrsasize 1024
+|streamlocalbindmask 0177
+|unusedconnectiontimeout none
+|permitrootlogin without-password
+|ignorerhosts yes
+|ignoreuserknownhosts no
+|hostbasedauthentication no
+|hostbasedusesnamefrompacketonly no
+|pubkeyauthentication yes
+|kerberosauthentication no
+|kerberosorlocalpasswd yes
+|kerberosticketcleanup yes
+|gssapiauthentication no
+|gssapicleanupcredentials yes
+|gssapikeyexchange no
+|gssapistrictacceptorcheck yes
+|gssapistorecredentialsonrekey no
+|gssapikexalgorithms gss-group14-sha256-,gss-group16-sha512-,gss-nistp256-sha256-,gss-curve25519-sha256-,gss-group14-sha1-,gss-gex-sha1-
+|passwordauthentication no
+|kbdinteractiveauthentication no
+|printmotd no
+|printlastlog yes
+|x11forwarding yes
+|x11uselocalhost yes
+|permittty yes
+|permituserrc yes
+|strictmodes yes
+|tcpkeepalive yes
+|permitemptypasswords no
+|compression yes
+|gatewayports no
+|usedns no
+|allowtcpforwarding yes
+|allowagentforwarding yes
+|disableforwarding no
+|allowstreamlocalforwarding yes
+|streamlocalbindunlink no
+|fingerprinthash SHA256
+|exposeauthinfo no
+|pidfile /run/sshd.pid
+|modulifile /etc/ssh/moduli
+|xauthlocation /usr/bin/xauth
+|ciphers chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com
+|macs umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1
+|banner none
+|forcecommand none
+|chrootdirectory none
+|trustedusercakeys none
+|revokedkeys none
+|securitykeyprovider internal
+|authorizedprincipalsfile none
+|versionaddendum none
+|authorizedkeyscommand none
+|authorizedkeyscommanduser none
+|authorizedprincipalscommand none
+|authorizedprincipalscommanduser none
+|hostkeyagent none
+|kexalgorithms sntrup761x25519-sha512,sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group14-sha256
+|casignaturealgorithms ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,sk-ssh-ed25519@openssh.com,sk-ecdsa-sha2-nistp256@openssh.com,rsa-sha2-512,rsa-sha2-256
+|hostbasedacceptedalgorithms ssh-ed25519-cert-v01@openssh.com,ecdsa-sha2-nistp256-cert-v01@openssh.com,ecdsa-sha2-nistp384-cert-v01@openssh.com,ecdsa-sha2-nistp521-cert-v01@openssh.com,sk-ssh-ed25519-cert-v01@openssh.com,sk-ecdsa-sha2-nistp256-cert-v01@openssh.com,rsa-sha2-512-cert-v01@openssh.com,rsa-sha2-256-cert-v01@openssh.com,ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,sk-ssh-ed25519@openssh.com,sk-ecdsa-sha2-nistp256@openssh.com,rsa-sha2-512,rsa-sha2-256
+|hostkeyalgorithms ssh-ed25519-cert-v01@openssh.com,ecdsa-sha2-nistp256-cert-v01@openssh.com,ecdsa-sha2-nistp384-cert-v01@openssh.com,ecdsa-sha2-nistp521-cert-v01@openssh.com,sk-ssh-ed25519-cert-v01@openssh.com,sk-ecdsa-sha2-nistp256-cert-v01@openssh.com,rsa-sha2-512-cert-v01@openssh.com,rsa-sha2-256-cert-v01@openssh.com,ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,sk-ssh-ed25519@openssh.com,sk-ecdsa-sha2-nistp256@openssh.com,rsa-sha2-512,rsa-sha2-256
+|pubkeyacceptedalgorithms ssh-ed25519-cert-v01@openssh.com,ecdsa-sha2-nistp256-cert-v01@openssh.com,ecdsa-sha2-nistp384-cert-v01@openssh.com,ecdsa-sha2-nistp521-cert-v01@openssh.com,sk-ssh-ed25519-cert-v01@openssh.com,sk-ecdsa-sha2-nistp256-cert-v01@openssh.com,rsa-sha2-512-cert-v01@openssh.com,rsa-sha2-256-cert-v01@openssh.com,ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,sk-ssh-ed25519@openssh.com,sk-ecdsa-sha2-nistp256@openssh.com,rsa-sha2-512,rsa-sha2-256
+|loglevel INFO
+|syslogfacility AUTH
+|authorizedkeysfile .ssh/authorized_keys .ssh/authorized_keys2
+|hostkey /etc/ssh/ssh_host_rsa_key
+|hostkey /etc/ssh/ssh_host_ecdsa_key
+|hostkey /etc/ssh/ssh_host_ed25519_key
+|acceptenv LANG
+|acceptenv LC_*
+|authenticationmethods any
+|subsystem sftp /usr/lib/openssh/sftp-server
+|maxstartups 10:30:100
+|persourcemaxstartups none
+|persourcenetblocksize 32:128
+|permittunnel no
+|ipqos lowdelay throughput
+|rekeylimit 0 0
+|permitopen any
+|permitlisten any
+|permituserenvironment no
+|pubkeyauthoptions none
+
+#F /etc/ssh/sshd_config	0	root	644	1777976816	3223	
+|
+|# This is the sshd server system-wide configuration file.  See
+|# sshd_config(5) for more information.
+|
+|# This sshd was compiled with PATH=/usr/local/bin:/usr/bin:/bin:/usr/games
+|
+|# The strategy used for options in the default sshd_config shipped with
+|# OpenSSH is to specify options with their default value where
+|# possible, but leave them commented.  Uncommented options override the
+|# default value.
+|
+|Include /etc/ssh/sshd_config.d/*.conf
+|
+|#Port 22
+|#AddressFamily any
+|#ListenAddress 0.0.0.0
+|#ListenAddress ::
+|
+|#HostKey /etc/ssh/ssh_host_rsa_key
+|#HostKey /etc/ssh/ssh_host_ecdsa_key
+|#HostKey /etc/ssh/ssh_host_ed25519_key
+|
+|# Ciphers and keying
+|#RekeyLimit default none
+|
+|# Logging
+|#SyslogFacility AUTH
+|#LogLevel INFO
+|
+|# Authentication:
+|
+|#LoginGraceTime 2m
+|#PermitRootLogin prohibit-password
+|#StrictModes yes
+|#MaxAuthTries 6
+|#MaxSessions 10
+|
+|#PubkeyAuthentication yes
+|
+|# Expect .ssh/authorized_keys2 to be disregarded by default in future.
+|#AuthorizedKeysFile	.ssh/authorized_keys .ssh/authorized_keys2
+|
+|#AuthorizedPrincipalsFile none
+|
+|#AuthorizedKeysCommand none
+|#AuthorizedKeysCommandUser nobody
+|
+|# For this to work you will also need host keys in /etc/ssh/ssh_known_hosts
+|#HostbasedAuthentication no
+|# Change to yes if you don't trust ~/.ssh/known_hosts for
+|# HostbasedAuthentication
+|#IgnoreUserKnownHosts no
+|# Don't read the user's ~/.rhosts and ~/.shosts files
+|#IgnoreRhosts yes
+|
+|# To disable tunneled clear text passwords, change to no here!
+|#PasswordAuthentication yes
+|#PermitEmptyPasswords no
+|
+|# Change to yes to enable challenge-response passwords (beware issues with
+|# some PAM modules and threads)
+|KbdInteractiveAuthentication no
+|
+|# Kerberos options
+|#KerberosAuthentication no
+|#KerberosOrLocalPasswd yes
+|#KerberosTicketCleanup yes
+|#KerberosGetAFSToken no
+|
+|# GSSAPI options
+|#GSSAPIAuthentication no
+|#GSSAPICleanupCredentials yes
+|#GSSAPIStrictAcceptorCheck yes
+|#GSSAPIKeyExchange no
+|
+|# Set this to 'yes' to enable PAM authentication, account processing,
+|# and session processing. If this is enabled, PAM authentication will
+|# be allowed through the KbdInteractiveAuthentication and
+|# PasswordAuthentication.  Depending on your PAM configuration,
+|# PAM authentication via KbdInteractiveAuthentication may bypass
+|# the setting of "PermitRootLogin prohibit-password".
+|# If you just want the PAM account and session checks to run without
+|# PAM authentication, then enable this but set PasswordAuthentication
+|# and KbdInteractiveAuthentication to 'no'.
+|UsePAM yes
+|
+|#AllowAgentForwarding yes
+|#AllowTcpForwarding yes
+|#GatewayPorts no
+|X11Forwarding yes
+|#X11DisplayOffset 10
+|#X11UseLocalhost yes
+|#PermitTTY yes
+|PrintMotd no
+|#PrintLastLog yes
+|#TCPKeepAlive yes
+|#PermitUserEnvironment no
+|#Compression delayed
+|#ClientAliveInterval 0
+|#ClientAliveCountMax 3
+|#UseDNS no
+|#PidFile /run/sshd.pid
+|#MaxStartups 10:30:100
+|#PermitTunnel no
+|#ChrootDirectory none
+|#VersionAddendum none
+|
+|# no default banner path
+|#Banner none
+|
+|# Allow client to pass locale environment variables
+|AcceptEnv LANG LC_*
+|
+|# override default of no subsystems
+|Subsystem	sftp	/usr/lib/openssh/sftp-server
+|
+|# Example of overriding settings on a per-user basis
+|#Match User anoncvs
+|#	X11Forwarding no
+|#	AllowTcpForwarding no
+|#	PermitTTY no
+|#	ForceCommand cvs server
+
+#F /etc/ssh/sshd_config.d/lab.conf	0	root	644	1795702094	60	
+|PermitRootLogin prohibit-password
+|PasswordAuthentication no
+
+#V authorizedkeysfile	.ssh/authorized_keys .ssh/authorized_keys2
+#S ACCOUNTS
+#V cmd	passwd
+|root:x:0:0:root:/root:/bin/bash
+|daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+|bin:x:2:2:bin:/bin:/usr/sbin/nologin
+|sys:x:3:3:sys:/dev:/usr/sbin/nologin
+|sync:x:4:65534:sync:/bin:/bin/sync
+|games:x:5:60:games:/usr/games:/usr/sbin/nologin
+|man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
+|lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
+|mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
+|news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
+|uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin
+|proxy:x:13:13:proxy:/bin:/usr/sbin/nologin
+|www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+|backup:x:34:34:backup:/var/backups:/usr/sbin/nologin
+|list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin
+|irc:x:39:39:ircd:/run/ircd:/usr/sbin/nologin
+|_apt:x:42:65534::/nonexistent:/usr/sbin/nologin
+|nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+|sshd:x:100:65534::/run/sshd:/usr/sbin/nologin
+|sshbite:x:1000:1000::/home/sshbite:/bin/sh
+|deploy:x:1001:1001::/home/deploy:/bin/bash
+
+#S SHADOW
+#V cmd	shadow
+|root:*:
+|daemon:*:
+|bin:*:
+|sys:*:
+|sync:*:
+|games:*:
+|man:*:
+|lp:*:
+|mail:*:
+|news:*:
+|uucp:*:
+|proxy:*:
+|www-data:*:
+|backup:*:
+|list:*:
+|irc:*:
+|_apt:*:
+|nobody:*:
+|sshd:!:
+|sshbite:!:
+|deploy:!:
+
+#S USERS
+#V user	root
+#F /root/.ssh	0	root	700	1795702094	4096	root
+#V akf	/root/.ssh/authorized_keys
+#F /root/.ssh/authorized_keys	0	root	600	1795702094	566	root
+|ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC0aeOCiJer/l6fEXix4RKX6j0wqwtRiZSaKtYuPGotPt7r34sw1cknR1Iu2XS/C5DN+kc98G2EKpUGHO62RP1ItSam2H7RWGecXwAd6nNEFBUvOTAtMGRRdxDMZC0omOdV1oG0CmpfZ3FzvdNHWr1yuIb1iQoTfRuv9Kv1kdEa6Uh4p/wWLClgUptiD03mmxj6c8S7WfkoY9FIHsoXhAKNe92RE6ImzraxJbRuxeRXPQoBeS7rdncaUj/j1g8/h2mtE5XBq7L1YE+yjbMQMViFbi7Cws6y8lYLKCmmMu20QprU6/+y1mmbd2t3V34kfx5q81Vz5a8nuh5vw2DMi4HkMVSsNDr2AnryIyXYKeKtveK/lAvGJdbhbPmAOuOOwBmRsuE1lQiPrEOxn2xKYEbeRDw0W1e5ubp+1Gp8/lCdk24v6Aqjz6VVsFg5yyHXc84MKUpNPN+tibmSoadf9+DEKXbqqoUNjEX/7Ajy2J2iLX8BqtcfR1JlIuIW54dnvds= fleet-deploy
+
+#V akf	/root/.ssh/authorized_keys2
+#V user	sshbite
+#F /home/sshbite/.ssh	1000	sshbite	700	1795702094	4096	sshbite
+#V akf	/home/sshbite/.ssh/authorized_keys
+#F /home/sshbite/.ssh/authorized_keys	1000	sshbite	600	1795702094	95	sshbite
+|ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILVKJK+K8C6RonE5M9PnX7PHm/pvP47DK4SZOqd1P4fm sshbite-audit
+
+#V akf	/home/sshbite/.ssh/authorized_keys2
+#V user	deploy
+#F /home/deploy/.ssh	1001	deploy	700	1795702094	4096	deploy
+#F /home/deploy/.ssh/config	1001	deploy	644	1795702094	8	deploy
+|Host a3
+
+#F /home/deploy/.ssh/id_rsa	1001	deploy	644	1795702094	1811	deploy
+#H /home/deploy/.ssh/id_rsa	-----BEGIN OPENSSH PRIVATE KEY-----
+#K /home/deploy/.ssh/id_rsa	y	0	ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDF/3j1xLHSUoweNydzJY4bgxKBFU8I+4HADNxK990Uy7QmfNaH1ROEkh8Mljj1oxlQhfDu/EOpG0nnDaOaVhyJcr1LXaFQqRY00/lyfW2vDvShef5wBv50N6CDlIxf8BoAMb1lHgejO15qvmvF7U202miFSZTI8Nd4TeoezkAURp39qMFtFH8F6+GSa2hGKxDT29opN0zhXZyTN7Zplguwtgzx5o3wEOPmhRRoe87d7yJhg4G1vKAzFe1NTMIzB8saEV41DS54kGe2LVfMHsxfUVv8smGhY3YNJPO3/ZaIhBjgURAOScdupN1x0MVwJcTMUnhzhctV80aUeNrg1Rrd deploy@a1
+#K /home/deploy/.ssh/id_rsa	l	0	2048 SHA256:WgV4PRtGC8Q6BwfzB2hwf7WS/grF4fdob96/ymIQ51o deploy@a1 (RSA)
+#F /home/deploy/.ssh/known_hosts	1001	deploy	644	1795702094	376	deploy
+||1|+aFBjcGl5dbd5XZ/T/c10bRYZ6Y=|NK6ZGCsT3Qi1LEZ6WEwuBnGMvco= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKBDv4+guqNNTrSSYaPUK0cCFxy5EenJPKLI1zearUuk
+||1|5Sq9yzhyv9z+sgXF+1chLfIB/p4=|xzqNBzft8euRDVee9fLAfIqtH7g= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJDqDC5vbeu+ngX8P1t24XIRmtUjB00fzILkvaqgQ9Vi
+|172.30.1.5 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID/sbq+Iimhi7je22+U9y15jJ/37+NCH06PcVShHSmh/
+
+#V akf	/home/deploy/.ssh/authorized_keys
+#F /home/deploy/.ssh/authorized_keys	1001	deploy	600	1795702094	113	deploy
+|expiry-time="20991231" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIBySWS7Xj8igf9xGzjjrQcGieNYwfrf4WBYl2iof21l ops@jump
+
+#V akf	/home/deploy/.ssh/authorized_keys2
+#S SYSTEM
+#F /etc/ssh/ssh_config	0	root	644	1777976816	1650	
+|
+|# This is the ssh client system-wide configuration file.  See
+|# ssh_config(5) for more information.  This file provides defaults for
+|# users, and the values can be changed in per-user configuration files
+|# or on the command line.
+|
+|# Configuration data is parsed as follows:
+|#  1. command line options
+|#  2. user-specific file
+|#  3. system-wide file
+|# Any configuration value is only changed the first time it is set.
+|# Thus, host-specific definitions should be at the beginning of the
+|# configuration file, and defaults at the end.
+|
+|# Site-wide defaults for some commonly used options.  For a comprehensive
+|# list of available options, their meanings and defaults, please see the
+|# ssh_config(5) man page.
+|
+|Include /etc/ssh/ssh_config.d/*.conf
+|
+|Host *
+|#   ForwardAgent no
+|#   ForwardX11 no
+|#   ForwardX11Trusted yes
+|#   PasswordAuthentication yes
+|#   HostbasedAuthentication no
+|#   GSSAPIAuthentication no
+|#   GSSAPIDelegateCredentials no
+|#   GSSAPIKeyExchange no
+|#   GSSAPITrustDNS no
+|#   BatchMode no
+|#   CheckHostIP yes
+|#   AddressFamily any
+|#   ConnectTimeout 0
+|#   StrictHostKeyChecking ask
+|#   IdentityFile ~/.ssh/id_rsa
+|#   IdentityFile ~/.ssh/id_dsa
+|#   IdentityFile ~/.ssh/id_ecdsa
+|#   IdentityFile ~/.ssh/id_ed25519
+|#   Port 22
+|#   Ciphers aes128-ctr,aes192-ctr,aes256-ctr,aes128-cbc,3des-cbc
+|#   MACs hmac-md5,hmac-sha1,umac-64@openssh.com
+|#   EscapeChar ~
+|#   Tunnel no
+|#   TunnelDevice any:any
+|#   PermitLocalCommand no
+|#   VisualHostKey no
+|#   ProxyCommand ssh -q -W %h:%p gateway.example.com
+|#   RekeyLimit 1G 1h
+|#   UserKnownHostsFile ~/.ssh/known_hosts.d/%k
+|    SendEnv LANG LC_*
+|    HashKnownHosts yes
+|    GSSAPIAuthentication yes
+
+#S END
+#END 8

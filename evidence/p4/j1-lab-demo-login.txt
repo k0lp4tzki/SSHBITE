@@ -1,0 +1,2 @@
+old default password admin / sshbite-lab-demo: ['', 'Wrong username or password.']
+random password from the log: logged in, at http://sshbite:8722/s/1/

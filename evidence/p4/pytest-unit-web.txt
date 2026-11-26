@@ -1,0 +1,28 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0
+rootdir: /workspace
+configfile: pyproject.toml
+plugins: anyio-4.16.0
+collected 213 items
+
+tests/unit/test_authorized_keys.py ......                                [  2%]
+tests/unit/test_cli.py ........                                          [  6%]
+tests/unit/test_config.py ..............                                 [ 13%]
+tests/unit/test_derive.py ......                                         [ 15%]
+tests/unit/test_hostile.py .......                                       [ 19%]
+tests/unit/test_keys.py ..........................                       [ 31%]
+tests/unit/test_known_hosts.py ...                                       [ 32%]
+tests/unit/test_lint.py .......................................          [ 51%]
+tests/unit/test_matchers.py ....                                         [ 53%]
+tests/unit/test_records.py .....                                         [ 55%]
+tests/unit/test_scan_offline.py .........                                [ 59%]
+tests/unit/test_security_fixes.py .....................                  [ 69%]
+tests/unit/test_ssh_config_sshd.py ...                                   [ 70%]
+tests/unit/test_transport.py ........                                    [ 74%]
+tests/web/test_api_fixture.py ...                                        [ 76%]
+tests/web/test_api_lab.py ....................                           [ 85%]
+tests/web/test_auth.py ..............                                    [ 92%]
+tests/web/test_scale.py .                                                [ 92%]
+tests/web/test_security_web.py ................                          [100%]
+
+============================= 213 passed in 37.43s =============================

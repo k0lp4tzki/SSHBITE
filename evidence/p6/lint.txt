@@ -1,0 +1,8 @@
+$ ruff check .
+All checks passed!
+exit 0
+
+$ npm run check (svelte-check)
+1795722505477 WARNING "src/screens/Findings.svelte" 18:15 "This reference only captures the initial value of `scan`. Did you mean to reference it inside a closure instead?\nhttps://svelte.dev/e/state_referenced_locally"
+1795722505477 COMPLETED 143 FILES 0 ERRORS 14 WARNINGS 12 FILES_WITH_PROBLEMS
+exit 0

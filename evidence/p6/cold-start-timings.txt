@@ -1,0 +1,85 @@
+Cold start of the 2,000-host subnet heatmap (assessment §1: < 2 s)
+==================================================================
+
+Method (evidence/p6/cold_start.py): for every block a fresh `sshbite synth --hosts 2000 --seed 42` DB and a fresh
+`sshbite serve` process. "API" = urllib, login then GET /api/scans/1/heatmap?group_by=subnet four times.
+"Browser" = Chromium 1280x800; time from navigation until canvas.cells is drawn (data-rendered), plus the page's
+own "built in N ms" (performance.now() from the request to the drawn matrix), then three reloads.
+Machine: this workspace (no Docker). check-12 saw 4,744 ms on its own instance; I could not reproduce that figure
+here - the worst cold case on this machine was 0.98 s - so the numbers below show the effect of the fix, not
+check-12's environment.
+
+Cause
+-----
+1. Derivation on the first request / cold cache: the first heatmap request of a scan builds its ScanView
+   (2,000 hosts, 18,969 edge rows with JSON flags, natural sort): ~140-170 ms here. Nothing built it earlier
+   unless the Dashboard had already been opened.
+2. No single flight: the heatmap page asks for the matrix and the ranking at the same moment. Both requests
+   missed the cache and built the same ScanView in parallel threads under the GIL, so each took about twice
+   as long (browser: heatmap 674 ms and ranking 764 ms instead of ~110 ms). On a slower or busier machine this
+   doubles a several-times larger cost, which is consistent with 4.7 s.
+   (No index was missing: every query of the view uses the scan_id index; EXPLAIN QUERY PLAN checked.)
+
+Fix (sshbite/web/data.py Views, app.py, api.py list_scans)
+---------------------------------------------------------
+- single flight per scan: concurrent requests wait for one build;
+- warm-up: a daemon thread builds the views of the two newest completed scans at server start and whenever
+  the scan list is read (the UI reads it on every load), so a scan finished while the UI runs is warm too.
+  A failed warm-up only logs a warning; the request path builds the view as before.
+No change to the API, the data or the heatmap computation.
+
+BEFORE - commit 8a12ef1 backend (same script, same machine)
+-----------------------------------------------------------
+# Cold start, 2,000-host subnet heatmap - 2026-11-26 19:48:57 - tree a38c9b9 with sshbite/web/data.py, app.py, api.py checked out from 8a12ef1
+$ sshbite synth --hosts 2000 --seed 42 -> synthetic scan 1: 2000 hosts, 15000 authorized entries, 15000 access edges, 6802 findings | generate 0.6 s, derive 1.0 s, total 1.6 s
+## API, fresh process, fresh DB: GET /api/scans/1/heatmap?group_by=subnet
+  request 1:   210.1 ms wall (server compute 39.1 ms), 41 x 40 groups, 22019 bytes
+  request 2:    45.8 ms wall (server compute 35.6 ms), 41 x 40 groups, 22019 bytes
+  request 3:    76.1 ms wall (server compute 65.9 ms), 41 x 40 groups, 22019 bytes
+  request 4:    44.1 ms wall (server compute 34.0 ms), 41 x 40 groups, 22019 bytes
+$ sshbite synth --hosts 2000 --seed 42 -> synthetic scan 1: 2000 hosts, 15000 authorized entries, 15000 access edges, 6802 findings | generate 0.6 s, derive 0.9 s, total 1.5 s
+## Browser, fresh process, fresh DB: heatmap opened as the first page after login
+  first render:   917.4 ms until the matrix is drawn ("built in 842 ms" in the page)
+  reload 1: built in 204 ms
+  reload 2: built in 234 ms
+  reload 3: built in 233 ms
+$ sshbite synth --hosts 2000 --seed 42 -> synthetic scan 1: 2000 hosts, 15000 authorized entries, 15000 access edges, 6802 findings | generate 0.6 s, derive 0.9 s, total 1.5 s
+## Browser, fresh process, fresh DB: login -> Dashboard -> click Heatmap
+  first render:   203.0 ms until the matrix is drawn ("built in 143 ms" in the page)
+  reload 1: built in 542 ms
+  reload 2: built in 226 ms
+  reload 3: built in 204 ms
+## Browser: UI started on an empty DB, then synth writes the scan while it runs, then login -> heatmap
+$ sshbite synth --hosts 2000 --seed 42 (UI already running) -> synthetic scan 1: 2000 hosts, 15000 authorized entries, 15000 access edges, 6802 findings
+  first render:   980.5 ms until the matrix is drawn ("built in 820 ms" in the page)
+  reload 1: built in 259 ms
+  reload 2: built in 231 ms
+  reload 3: built in 231 ms
+
+AFTER - this branch
+-------------------
+# Cold start, 2,000-host subnet heatmap - 2026-11-26 19:48:29 - commit a38c9b9
+$ sshbite synth --hosts 2000 --seed 42 -> synthetic scan 1: 2000 hosts, 15000 authorized entries, 15000 access edges, 6802 findings | generate 0.6 s, derive 0.9 s, total 1.5 s
+## API, fresh process, fresh DB: GET /api/scans/1/heatmap?group_by=subnet
+  request 1:    57.3 ms wall (server compute 44.9 ms), 41 x 40 groups, 22019 bytes
+  request 2:    48.7 ms wall (server compute 38.3 ms), 41 x 40 groups, 22019 bytes
+  request 3:    79.2 ms wall (server compute 69.0 ms), 41 x 40 groups, 22019 bytes
+  request 4:    48.8 ms wall (server compute 38.6 ms), 41 x 40 groups, 22019 bytes
+$ sshbite synth --hosts 2000 --seed 42 -> synthetic scan 1: 2000 hosts, 15000 authorized entries, 15000 access edges, 6802 findings | generate 0.6 s, derive 0.9 s, total 1.5 s
+## Browser, fresh process, fresh DB: heatmap opened as the first page after login
+  first render:   351.1 ms until the matrix is drawn ("built in 234 ms" in the page)
+  reload 1: built in 253 ms
+  reload 2: built in 208 ms
+  reload 3: built in 226 ms
+$ sshbite synth --hosts 2000 --seed 42 -> synthetic scan 1: 2000 hosts, 15000 authorized entries, 15000 access edges, 6802 findings | generate 0.6 s, derive 0.9 s, total 1.5 s
+## Browser, fresh process, fresh DB: login -> Dashboard -> click Heatmap
+  first render:   236.8 ms until the matrix is drawn ("built in 180 ms" in the page)
+  reload 1: built in 321 ms
+  reload 2: built in 320 ms
+  reload 3: built in 226 ms
+## Browser: UI started on an empty DB, then synth writes the scan while it runs, then login -> heatmap
+$ sshbite synth --hosts 2000 --seed 42 (UI already running) -> synthetic scan 1: 2000 hosts, 15000 authorized entries, 15000 access edges, 6802 findings
+  first render:   507.5 ms until the matrix is drawn ("built in 395 ms" in the page)
+  reload 1: built in 317 ms
+  reload 2: built in 283 ms
+  reload 3: built in 273 ms

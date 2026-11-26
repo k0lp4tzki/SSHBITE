@@ -1,0 +1,112 @@
+# SSHBITE test lab (spec 9.2): 13 OpenSSH hosts behind the jump host.
+# Test-only keys, see keys/README.md. Start with lab/up.sh (or `docker compose -f lab/compose.yaml up -d --build`).
+name: sshbite-lab
+
+x-host: &host
+  restart: unless-stopped
+  stop_grace_period: 2s
+
+services:
+  jump:
+    <<: *host
+    build: {context: ., dockerfile: image/Dockerfile, args: {HOST: jump}}
+    image: sshbite-lab-jump
+    hostname: jump
+    ports: ["127.0.0.1:2222:22"]
+    networks:
+      lab_a: {ipv4_address: 172.30.1.5}
+      lab_b: {ipv4_address: 172.30.2.5}
+  a1:
+    <<: *host
+    build: {context: ., dockerfile: image/Dockerfile, args: {HOST: a1}}
+    image: sshbite-lab-a1
+    hostname: a1
+    networks:
+      lab_a: {ipv4_address: 172.30.1.11}
+  a2:
+    <<: *host
+    build: {context: ., dockerfile: image/Dockerfile, args: {HOST: a2}}
+    image: sshbite-lab-a2
+    hostname: a2
+    networks:
+      lab_a: {ipv4_address: 172.30.1.12}
+  a3:
+    <<: *host
+    build: {context: ., dockerfile: image/Dockerfile, args: {HOST: a3}}
+    image: sshbite-lab-a3
+    hostname: a3
+    networks:
+      lab_a: {ipv4_address: 172.30.1.13}
+  a4:
+    <<: *host
+    build: {context: ., dockerfile: image/Dockerfile, args: {HOST: a4}}
+    image: sshbite-lab-a4
+    hostname: a4
+    networks:
+      lab_a: {ipv4_address: 172.30.1.14}
+  a5:
+    <<: *host
+    build: {context: ., dockerfile: image/Dockerfile, args: {HOST: a5}}
+    image: sshbite-lab-a5
+    hostname: a5
+    networks:
+      lab_a: {ipv4_address: 172.30.1.15}
+  b1:
+    <<: *host
+    build: {context: ., dockerfile: image/Dockerfile, args: {HOST: b1}}
+    image: sshbite-lab-b1
+    hostname: b1
+    networks:
+      lab_b: {ipv4_address: 172.30.2.11}
+  b2:
+    <<: *host
+    build: {context: ., dockerfile: image/Dockerfile, args: {HOST: b2}}
+    image: sshbite-lab-b2
+    hostname: b2
+    networks:
+      lab_b: {ipv4_address: 172.30.2.12}
+  b3:
+    <<: *host
+    build: {context: ., dockerfile: image/Dockerfile, args: {HOST: b3}}
+    image: sshbite-lab-b3
+    hostname: b3
+    networks:
+      lab_b: {ipv4_address: 172.30.2.13}
+      lab_c: {ipv4_address: 172.30.3.13}
+  b4:
+    <<: *host
+    build: {context: ., dockerfile: image/Dockerfile, args: {HOST: b4}}
+    image: sshbite-lab-b4
+    hostname: b4
+    networks:
+      lab_b: {ipv4_address: 172.30.2.14}
+  b5:
+    <<: *host
+    build: {context: ., dockerfile: image/Dockerfile, args: {HOST: b5}}
+    image: sshbite-lab-b5
+    hostname: b5
+    networks:
+      lab_b: {ipv4_address: 172.30.2.15}
+  c1:
+    <<: *host
+    build: {context: ., dockerfile: image/Dockerfile, args: {HOST: c1}}
+    image: sshbite-lab-c1
+    hostname: c1
+    networks:
+      lab_c: {ipv4_address: 172.30.3.21}
+  c2:
+    <<: *host
+    build: {context: ., dockerfile: image/Dockerfile, args: {HOST: c2}}
+    image: sshbite-lab-c2
+    hostname: c2
+    networks:
+      lab_c: {ipv4_address: 172.30.3.22}
+
+networks:
+  lab_a:
+    ipam: {config: [{subnet: 172.30.1.0/24}]}
+  lab_b:
+    ipam: {config: [{subnet: 172.30.2.0/24}]}
+  lab_c:
+    internal: true          # c1, c2: not reachable from jump, only via b3
+    ipam: {config: [{subnet: 172.30.3.0/24}]}

@@ -1,0 +1,31 @@
+== 1. SSHBITE behind the TLS proxy, configured as in docs/operations.md
+config web: {'port': 50661, 'bind': '127.0.0.1', 'secure_cookie': True, 'trusted_proxies': ['127.0.0.1']}
+serve log: SSHBITE UI on http://127.0.0.1:50661/  (database /tmp/tmpat_mohlh/sshbite.db)
+proxy: https://127.0.0.1:60555/ -> http://127.0.0.1:50661/
+
+login through the proxy: HTTP 204
+Set-Cookie: sshbite_session=iSMFwPhiCwZWScQOGEjjwbgi13DhGqxsGpfY90CWXqc; HttpOnly; Max-Age=28800; Path=/; SameSite=strict; Secure
+
+== 2. per-IP limit counts the real client (X-Forwarded-For set by the proxy)
+client 127.0.0.2, 20 wrong logins (each with a spoofed X-Forwarded-For 9.9.9.N): [401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 401]
+client 127.0.0.2, 21st attempt with the right password: 429
+client 127.0.0.3 (another user behind the same proxy), right password: 204
+
+== 3. browser through the proxy (Chromium)
+browser cookie sshbite_session: {'secure': True, 'httpOnly': True, 'sameSite': 'Strict', 'path': '/'}
+screenshot c7-j1-proxy-dashboard-over-https.png
+
+== 4. for contrast: the same proxy without trusted_proxies
+client 127.0.0.2: 20 wrong logins; then client 127.0.0.3 with the right password: 429 (every client shares the proxy's address)
+
+== 5. bind rules of `sshbite serve` (in the container: SSHBITE_IN_CONTAINER=1)
+$ sshbite serve    (default bind, no TLS)
+  -> serving (stopped after 4 s): SSHBITE UI on http://0.0.0.0:50765/  (database /tmp/tmpat_mohlh/sshbite.db)
+$ sshbite serve --bind 0.0.0.0   (explicit --bind, no TLS, no secure_cookie)
+  -> exit 2: error: refusing to bind 0.0.0.0 without TLS: a non-loopback address needs --tls-cert and --tls-key, or TLS at a reverse proxy with web.secure_cookie: true (docs/operations.md), or --insecure-bind (the audit data is sensitive)
+$ sshbite serve --bind 0.0.0.0   (explicit --bind with web.secure_cookie: true)
+  -> serving (stopped after 4 s): SSHBITE UI on http://0.0.0.0:49117/  (database /tmp/tmpat_mohlh/sshbite.db)
+$ sshbite serve --bind 0.0.0.0 --insecure-bind   (explicit --bind with --insecure-bind)
+  -> serving (stopped after 4 s): 2026-11-26 17:04:08,065 WARNING sshbite.web: --insecure-bind: serving 0.0.0.0 over plain HTTP without a Secure cookie - passwords and session cookies cross the network in clear text | SSHBITE UI on http://0.0.0.0:50765/  (database /tmp/tmpat_mohlh/sshbite.db)
+
+all checks passed

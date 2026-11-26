@@ -1,0 +1,84 @@
+# Local run of the CI steps (.github/workflows/ci.yml) at commit 876d573, 2026-11-26T16:08:38Z
+# Workspace: Python 3.13.18 (CI uses 3.12), Node v24.22.3 (CI uses 22), no Docker:
+# the lab and the image run in the company's compose stack (stack up), reached as jump:22 / sshbite:8722.
+
+## job lint
+$ ruff check .
+All checks passed!
+exit 0
+$ (frontend) npm run check
+1795709324501 COMPLETED 140 FILES 0 ERRORS 14 WARNINGS 12 FILES_WITH_PROBLEMS
+exit 0
+$ sshbite collector show | grep '^====='
+===== collect.sh  sha256 6c262392665b6cd321c7ac52834a69c1e1fcf2fe171552b863742c4ec9940f05  lint: OK
+===== resolve.sh  sha256 f048726e442a3b417e391d5dc396eafa34813eb19bcca4725587c0d99f44f2ff  lint: OK
+===== literal commands sent on exec channels (privilege.mode: sudo / sudo-login)
+$ actionlint .github/workflows/ci.yml
+exit 0
+(docker compose config: not run here - no docker CLI; the stack built and started compose.yaml)
+
+## job unit
+$ pytest tests/unit tests/web -rs
+........................................................................ [ 40%]
+........................................................................ [ 81%]
+................................                                         [100%]
+176 passed in 31.17s
+
+## job e2e (lab from the stack; SSHBITE_LAB_ENTRY=jump:22)
+$ pytest tests/e2e -v -rs
+tests/e2e/test_lab.py::test_00_lab_reset_and_scripts PASSED              [  6%]
+tests/e2e/test_lab.py::test_00b_sshd_and_ssh_keygen_write_nothing PASSED [ 12%]
+tests/e2e/test_lab.py::test_01_pin_negative PASSED                       [ 18%]
+tests/e2e/test_lab.py::test_02_scan1_runs_read_only PASSED               [ 25%]
+tests/e2e/test_lab.py::test_03_scan1_hosts PASSED                        [ 31%]
+tests/e2e/test_lab.py::test_04_scan1_references PASSED                   [ 37%]
+tests/e2e/test_lab.py::test_05_scan1_access_edges PASSED                 [ 43%]
+tests/e2e/test_lab.py::test_06_scan1_evidence_edges PASSED               [ 50%]
+tests/e2e/test_lab.py::test_07_scan1_metrics PASSED                      [ 56%]
+tests/e2e/test_lab.py::test_08_scan1_findings PASSED                     [ 62%]
+tests/e2e/test_lab.py::test_09_scan1_parsing PASSED                      [ 68%]
+tests/e2e/test_lab.py::test_10_scan1_exports PASSED                      [ 75%]
+tests/e2e/test_lab.py::test_20_scan2 PASSED                              [ 81%]
+tests/e2e/test_lab.py::test_21_diff_1_2 PASSED                           [ 87%]
+tests/e2e/test_lab.py::test_30_scan3 PASSED                              [ 93%]
+tests/e2e/test_lab.py::test_31_reset_lab PASSED                          [100%]
+============================= 16 passed in 59.88s ==============================
+snapshot diffs (expected empty):
+  snapshot-scan1.diff: 0 bytes
+  snapshot-scan2.diff: 0 bytes
+  snapshot-scan3.diff: 0 bytes
+
+## job browser
+$ pytest tests/browser -v -rs
+tests/browser/test_ui.py::test_1_login_logout_wrong_password_and_lockout PASSED [  6%]
+tests/browser/test_ui.py::test_2_dashboard_counts_equal_api PASSED       [ 12%]
+tests/browser/test_ui.py::test_3_heatmap_host_grouping_jump_a2 PASSED    [ 18%]
+tests/browser/test_ui.py::test_4_subnet_heatmap_2000_hosts_fast_and_drilldown PASSED [ 25%]
+tests/browser/test_ui.py::test_5_host_discovered_via_and_routes PASSED   [ 31%]
+tests/browser/test_ui.py::test_6_key_dsa PASSED                          [ 37%]
+tests/browser/test_ui.py::test_7_label_persists_and_put_without_csrf_403 PASSED [ 43%]
+tests/browser/test_ui.py::test_8_synthetic_banner_on_every_screen PASSED [ 50%]
+tests/browser/test_ui.py::test_9_no_request_leaves_the_origin PASSED     [ 56%]
+tests/browser/test_ui.py::test_10_empty_states_on_empty_db PASSED        [ 62%]
+tests/browser/test_ui.py::test_empty_lists_and_filters PASSED            [ 68%]
+tests/browser/test_ui.py::test_c3_contrast_computed_in_both_themes[light] PASSED [ 75%]
+tests/browser/test_ui.py::test_c3_contrast_computed_in_both_themes[dark] PASSED [ 81%]
+tests/browser/test_ui.py::test_c4_severity_and_strength_have_glyph_and_label PASSED [ 87%]
+tests/browser/test_ui.py::test_c5_fingerprints_mono_and_exact_copy PASSED [ 93%]
+tests/browser/test_ui.py::test_c13_no_horizontal_page_scroll_at_1280_and_375 PASSED [100%]
+======================== 16 passed in 75.66s (0:01:15) =========================
+
+## job image
+docker build + run: done by 'stack up --fresh' from commit 876d573 (compose.yaml = lab + this image).
+The build log is not available to this workspace; container output: container-run.txt. Checks of the running image:
+$ grep uid container-run.txt
+sshbite-1  | uid=10001(sshbite) gid=10001(sshbite) groups=10001(sshbite)
+$ grep 'edges:' container-run.txt
+sshbite-1  | edges:    20 access (19 effective, 3 unknown origin); keys: 10
+$ curl -D - http://sshbite:8722/  (headers)
+HTTP/1.1 200 OK
+content-security-policy: default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-ancestors 'none'
+x-content-type-options: nosniff
+referrer-policy: no-referrer
+$ curl -X PUT http://sshbite:8722/api/keys/x/label  (no session)
+401

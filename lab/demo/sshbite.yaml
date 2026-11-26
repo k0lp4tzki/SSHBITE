@@ -1,0 +1,18 @@
+# SSHBITE config of the lab demo (compose.lab.yaml, service "sshbite"). Test material only.
+# Test-only: the pin is the lab jump host's committed host key (lab/keys/jump_host_ed25519.pub).
+# Only the entry point is configured - the crawl finds the rest.
+database: /data/sshbite.db
+entry:
+  host: 172.30.1.5
+  port: 22
+  host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID/sbq+Iimhi7je22+U9y15jJ/37+NCH06PcVShHSmh/"]
+audit:
+  user: sshbite
+  key_file: /data/lab_audit_ed25519
+crawl:
+  include: [172.30.1.0/24, 172.30.2.0/24, 172.30.3.0/24]
+  exclude: [172.30.2.14/32]
+limits:
+  connect_timeout: 5
+rules:
+  many_hosts_threshold: 5
