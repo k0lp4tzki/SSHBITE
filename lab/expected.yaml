@@ -112,7 +112,10 @@ scan1:
     root_authorized_key: 10
     key_on_many_hosts: 1
     key_unknown_origin: 3
-    private_key_unencrypted: 7
+    # 6, was 7: a1 deploy's id_rsa is 0644. ssh-keygen -y now runs as deploy (spec 7.2), and run by the key's
+    # owner it refuses a group/other-readable key ("bad permissions", as ssh would) - encrypted is "unknown".
+    # Fingerprint, private_key_bad_permissions and every edge of that key stay (ssh-keygen -l still works).
+    private_key_unencrypted: 6
     private_key_bad_permissions: 1
     duplicate_key_across_users: 1
     key_for_disabled_user: 1
