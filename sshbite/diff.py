@@ -122,7 +122,7 @@ def render_text(d: dict) -> str:
         for x in c["removed"]:
             lines.append(f"  - {_fmt(cat, x)}")
         for x in c["changed"]:
-            ch = ", ".join(f"{f}: {v['a']} -> {v['b']}" if f != "route" else
+            ch = ", ".join(f"{f}: {v['a'] or '-'} -> {v['b'] or '-'}" if f != "route" else
                            f"route: {' -> '.join(v['a'] or []) or '-'} => {' -> '.join(v['b'] or []) or '-'}"
                            for f, v in x["changes"].items())
             lines.append(f"  ~ {_fmt(cat, x)}: {ch}")

@@ -11,7 +11,7 @@ from ..parse.keys import classify_strength
 from . import j
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..crawl import Ref, Scanner, Target
+    from ..crawl import Scanner, Target
 
 CONNECTED = ("ok", "partial", "unreachable", "timeout", "auth_failed", "hostkey_mismatch", "hostkey_unknown",
              "collector_error", "output_limit", "alias")

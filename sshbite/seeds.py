@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import configparser
 import ipaddress
 import re
 from dataclasses import dataclass, field

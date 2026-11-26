@@ -1,0 +1,22 @@
+$ time sshbite synth --hosts 2000 --seed 42
+synthetic scan 1: 2000 hosts, 15000 authorized entries, 15000 access edges, 6802 findings
+generate 0.5 s, derive 1.0 s, total 1.6 s
+
+real	0m2.827s
+user	0m2.552s
+sys	0m0.195s
+
+$ sshbite scans list
+  id  started               status     hosts  findings  label
+   1  2026-11-26T14:32:59Z  completed   2000      6802  synthetic 2000 hosts, seed 42 [SYNTHETIC]
+
+# checks against spec 9.4 (SQL on the DB)
+synthetic scan flag:             1
+hosts:                           2000
+/24 subnets:                     40
+authorized entries:              15000
+fleet key on hosts:              1200
+unknown-origin keys:             300
+hub hosts with > 200 out_hosts:  5
+host names like syn-NNNN.synthetic.invalid: 2000
+access edges / findings:         15000 / 6802

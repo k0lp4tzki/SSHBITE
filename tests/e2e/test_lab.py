@@ -104,8 +104,9 @@ def _scan_bracketed(ctl, cfg, label: str, evidence, env: dict | None = None, con
     _SNAPSHOTS.append((label, before, after))
     diff = L.snapshot_diff(before, after)
     _write(evidence, f"snapshot-{label}.diff", diff)
-    _write(evidence, f"snapshot-{label}-before.txt",
-           "\n".join(f"### {h}\n{before[h]}" for h in sorted(before)))
+    if label == "scan1":  # one full sample, to show what the snapshot covers
+        _write(evidence, f"snapshot-{label}-before.txt",
+               "\n".join(f"### {h}\n{before[h]}" for h in sorted(before)))
     return proc, diff
 
 
@@ -398,6 +399,7 @@ def test_20_scan2(ctl, cfg, state, evidence):
     sid = conn.execute("SELECT max(id) FROM scan WHERE status='completed'").fetchone()[0]
     state["s2"] = sid
     rows = _host_rows(conn, sid)
+    _write(evidence, "scans-show-2.txt", L.sshbite(cfg["path"], "scans", "show", str(sid)).stdout)
     assert rows["c2"]["status"] == "hostkey_mismatch"
     f = conn.execute("SELECT severity, detail FROM finding WHERE scan_id=? AND rule='host_key_changed'", (sid,)).fetchall()
     assert len(f) == 1 and f[0]["severity"] == "critical"
@@ -459,6 +461,10 @@ def test_30_scan3(ctl, cfg, state, evidence):
     sid = conn.execute("SELECT max(id) FROM scan WHERE status='completed'").fetchone()[0]
     state["s3"] = sid
     rows = _host_rows(conn, sid)
+    _write(evidence, "scans-show-3.txt", L.sshbite(cfg["path"], "scans", "show", str(sid)).stdout)
+    p = L.sshbite(cfg["path"], "export", "--scan", str(sid), "--what", "hosts", "--format", "csv")
+    _write(evidence, "scan3-hosts.csv", p.stdout)
+    assert "sudo: a password is required" in [r for r in csv.DictReader(io.StringIO(p.stdout)) if r["host"] == "a4"][0]["reasons"]
     assert rows["c2"]["status"] == "ok"
     assert (rows["a4"]["status"], rows["a4"]["privilege"]) == ("partial", "unprivileged")
     assert conn.execute("SELECT count(*) FROM finding f JOIN host h ON h.id=f.host_id WHERE f.scan_id=?"

@@ -80,8 +80,8 @@ def render_scan_text(d: dict) -> str:
         f"scan {s['id']}{' [SYNTHETIC DATA]' if s['synthetic'] else ''}  {s['status']}  label: {s['label'] or '-'}",
         f"started {s['started_at']}  finished {s['finished_at'] or '-'}  entry {s['entry_host']}",
         f"tool {s['tool_version']}  collector sha256 {s['collector_sha256']}",
-        f"hosts: " + ", ".join(f"{v} {k}" for k, v in sorted((c.get('hosts') or {}).items())),
-        f"findings: " + ", ".join(f"{(c.get('findings') or {}).get(k, 0)} {k}" for k in SEVERITIES),
+        "hosts: " + ", ".join(f"{v} {k}" for k, v in sorted((c.get('hosts') or {}).items())),
+        "findings: " + ", ".join(f"{(c.get('findings') or {}).get(k, 0)} {k}" for k in SEVERITIES),
         f"access edges: {c.get('access_edges', 0)} ({c.get('effective_edges', 0)} effective, "
         f"{c.get('unknown_origin_edges', 0)} unknown origin); unresolved hashed known_hosts entries: "
         f"{d['unresolved_hashed_total']}",

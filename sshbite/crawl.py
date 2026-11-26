@@ -70,7 +70,6 @@ class Target:
     alias_of: "Target | None" = None
     needs_password: bool = False
     unresolved_hashed: int = 0
-    hostkey_verdict: str | None = None
     hostkey_detail: dict | None = None
     connect_ip: str | None = None
     groups: list[tuple[str, str]] = field(default_factory=list)
@@ -418,7 +417,7 @@ class Scanner:
             self._emit_progress(force=True)
             sem = asyncio.Semaphore(self.concurrency)
 
-            async def one(t: Target):
+            async def one(t: Target, sem: asyncio.Semaphore = sem):
                 async with sem:
                     await self._collect_target(t)
 

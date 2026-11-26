@@ -13,7 +13,7 @@ import click
 
 from . import __version__
 from .config import EXAMPLE_CONFIG, Config, check_files, load_config, resolve_config_path
-from .errors import ConfigError, EntryError, ScanLocked, SshbiteError
+from .errors import ConfigError, EntryError, SshbiteError
 from .privilege import RedactingFilter, SudoSecret
 
 log = logging.getLogger("sshbite")
@@ -520,7 +520,8 @@ def collector_show() -> None:
     from .privilege import commands
 
     click.echo("===== literal commands sent on exec channels (privilege.mode: sudo / sudo-login)")
-    seen = []
+    seen = [collector.resolve_command()]
+    click.echo(collector.resolve_command() + "   (name resolution; the names are its stdin data)")
     for mode in ("sudo", "sudo-login"):
         for c in commands(mode).values():
             if c not in seen:
@@ -544,6 +545,18 @@ def synth_cmd(ctx, n_hosts: int, seed: int) -> None:
                f"{res['access_edges']} access edges, {res['findings']} findings")
     click.echo(f"generate {res['generate_s']:.1f} s, derive {res['derive_s']:.1f} s, total {time.monotonic() - t0:.1f} s")
 
+
+def _register_web_commands() -> None:
+    """`serve` belongs to the web package (P2): sshbite/web/cli.py defines a click command `serve`."""
+    import importlib
+    import importlib.util
+
+    if importlib.util.find_spec(f"{__package__}.web.cli") is None:
+        return
+    main.add_command(importlib.import_module(f"{__package__}.web.cli").serve)
+
+
+_register_web_commands()
 
 if __name__ == "__main__":  # pragma: no cover
     main()

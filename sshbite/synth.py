@@ -69,7 +69,6 @@ def synth(conn, n_hosts: int = 2000, seed: int = 42, cfg=None) -> dict:
                 conn.execute("UPDATE host SET last_seen_scan=? WHERE id=?", (sid, hid))
             depth = 0 if i == 0 else 1 + (s % 4) + (1 if k > per_subnet // 2 else 0)
             hosts.append((hid, name, ip, f"10.66.{s}.0/24", depth))
-        ids = [h[0] for h in hosts]
         by_depth: dict[int, list[int]] = {}
         for idx, h in enumerate(hosts):
             by_depth.setdefault(h[4], []).append(idx)

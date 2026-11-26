@@ -85,10 +85,10 @@ def build(conn, variant: int = 1) -> tuple[int, dict]:
     for k in (K1, K2, K3, K4):
         upsert_key(conn, k[0], k[1], k[2], k[3], sid)
     # a reference A -> B from known_hosts, with a stale key
-    rid = conn.execute("INSERT INTO reference(scan_id, from_host_id, username, source, file, line_no, value, resolved_ips,"
+    conn.execute("INSERT INTO reference(scan_id, from_host_id, username, source, file, line_no, value, resolved_ips,"
                        " target_host_id, outcome) VALUES (?,?,?,?,?,?,?,?,?,?)",
                        (sid, hosts["A"], "alice", "known_hosts", "/home/alice/.ssh/known_hosts", 1, "10.0.0.2",
-                        j(["10.0.0.2"]), hosts["B"], "already")).lastrowid
+                        j(["10.0.0.2"]), hosts["B"], "already"))
     conn.execute("INSERT INTO known_host_entry(scan_id, host_id, username, file, line_no, hashed, patterns,"
                  " resolved_value, target_host_id, key_alg, key_fp) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                  (sid, hosts["A"], "alice", "/home/alice/.ssh/known_hosts", 1, 0, j(["10.0.0.2"]), "10.0.0.2",
