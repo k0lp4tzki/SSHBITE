@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import fnmatch
 import ipaddress
 from dataclasses import dataclass, field
 
-from . import cap
+from . import cap, ssh_pattern_match
 from .keys import PublicKey, looks_like_alg, parse_key_fields
 
 FLAG_OPTIONS = {
@@ -162,8 +161,7 @@ def _pattern_matches(pat: str, names: list[str], ips: list[str]) -> bool:
             except ValueError:
                 pass
         return False
-    p = pat.lower()
-    return any(fnmatch.fnmatchcase(v.lower(), p) for v in list(ips) + list(names))
+    return any(ssh_pattern_match(v, pat) for v in list(ips) + list(names))
 
 
 def from_matches(patterns: list[str], names: list[str], ips: list[str]) -> bool:

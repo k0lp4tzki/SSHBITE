@@ -25,8 +25,9 @@ def _setup_logging(verbose: int) -> None:
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     handler.addFilter(RedactingFilter(_SECRET))
+    handler.set_name("sshbite")
     root = logging.getLogger()
-    root.handlers[:] = [handler]
+    root.handlers[:] = [h for h in root.handlers if h.get_name() != "sshbite"] + [handler]
     root.setLevel(level)
     # asyncssh logs connection details at INFO; keep it quiet unless -vv
     logging.getLogger("asyncssh").setLevel(logging.WARNING if verbose < 2 else logging.DEBUG)

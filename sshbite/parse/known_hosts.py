@@ -105,7 +105,7 @@ def hash_host(name: str, salt: bytes) -> str:
 
 def entry_matches_host(entry: KnownHostEntry, names: list[str], port: int = 22) -> bool:
     """OpenSSH host matching for strict mode: any positive pattern match, no negated match."""
-    import fnmatch
+    from . import ssh_pattern_match
 
     cands = [hash_candidate(n, port) for n in names]
     if entry.hashed:
@@ -115,7 +115,7 @@ def entry_matches_host(entry: KnownHostEntry, names: list[str], port: int = 22) 
         neg = p.startswith("!")
         pat = p[1:] if neg else p
         for c in cands:
-            if fnmatch.fnmatchcase(c.lower(), pat.lower()):
+            if ssh_pattern_match(c, pat):
                 if neg:
                     return False
                 pos = True

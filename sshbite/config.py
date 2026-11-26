@@ -88,6 +88,17 @@ def _scope_item(value: str) -> str:
 ScopeItem = Annotated[str, AfterValidator(_scope_item)]
 
 
+def _pin(value: str) -> str:
+    from .parse.keys import parse_public_key_line
+
+    if not isinstance(value, str) or parse_public_key_line(value) is None:
+        raise ValueError("not an OpenSSH public key line ('<alg> <base64> [comment]', e.g. from ssh-keyscan)")
+    return value.strip()
+
+
+PinItem = Annotated[str, AfterValidator(_pin)]
+
+
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -95,7 +106,7 @@ class _Strict(BaseModel):
 class EntryCfg(_Strict):
     host: str
     port: int = Field(22, ge=1, le=65535)
-    host_keys: list[str] = Field(default_factory=list)
+    host_keys: list[PinItem] = Field(default_factory=list)
 
     @field_validator("host")
     @classmethod
@@ -104,15 +115,6 @@ class EntryCfg(_Strict):
             raise ValueError("not a host name or address")
         return v
 
-    @field_validator("host_keys")
-    @classmethod
-    def _keys(cls, v: list[str]) -> list[str]:
-        from .parse.keys import parse_public_key_line
-
-        for i, line in enumerate(v):
-            if parse_public_key_line(line) is None:
-                raise ValueError(f"host_keys[{i}]: not an OpenSSH public key line ('<alg> <base64> [comment]')")
-        return v
 
 
 class AuditCfg(_Strict):
@@ -152,10 +154,10 @@ class SeedsCfg(_Strict):
         total = 0
         for i, c in enumerate(v):
             if "/" not in c:
-                raise ValueError(f"cidrs[{i}]: not a CIDR")
+                raise ValueError(f"item {i} is not a CIDR")
             total += ipaddress.ip_network(c, strict=False).num_addresses
         if total > 65536:
-            raise ValueError(f"cidrs: {total} addresses in total, at most 65536 allowed")
+            raise ValueError(f"{total} addresses in total, at most 65536 allowed")
         return v
 
 
