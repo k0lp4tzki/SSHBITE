@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sshbite"
+version = "0.1.0"
+description = "Read-only SSH access audit: crawls from a verified entry point and maps who may connect from where to where"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "asyncssh>=2.17,<3",
+    "click>=8.1,<9",
+    "PyYAML>=6.0,<7",
+    "pydantic>=2.7,<3",
+    "argon2-cffi>=23.1",
+    "bcrypt>=4.1",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "playwright>=1.45"]
+
+[project.scripts]
+sshbite = "sshbite.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sshbite*"]
+
+[tool.setuptools.package-data]
+sshbite = ["collector/*.sh", "db/migrations/*.sql", "web/static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["e2e: end-to-end tests against the lab (real sshd)"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = ["frontend", "sshbite/web/static"]
+
+[tool.ruff.lint]
+# pyflakes and pycodestyle errors: real defects (undefined names, unused imports, syntax); no style rules
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E702", "E741"]  # semicolons and short names in a few compact parsers/tests

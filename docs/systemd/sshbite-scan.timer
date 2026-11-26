@@ -1,0 +1,12 @@
+# Nightly SSHBITE scan. systemctl daemon-reload && systemctl enable --now sshbite-scan.timer
+# Check: systemctl list-timers sshbite-scan.timer
+[Unit]
+Description=Nightly SSHBITE scan
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

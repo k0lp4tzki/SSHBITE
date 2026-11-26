@@ -1,0 +1,114 @@
+# sudo mail behaviour in the lab (Debian 12, sudo 1.9.13p3, Debian default sudoers incl. mail_badpass)
+# Run through the lab-control sshd as root (tests/e2e/lab.py LabControl). For each test a temporary
+# /etc/sudoers.d/zzp3mail set 'Defaults mailerpath=/run/fakemail', a script appending the mail to /tmp/p3mail.txt
+# (Debian builds sudo with --disable-root-mailer, so the mailer runs as the invoking user). Everything temporary
+# was removed afterwards (the final 'ls /etc/sudoers.d' of each block). b5 got a temporary password for the
+# 'no rule, correct password' case; /etc/shadow was restored from a copy. The "''" before 'Sorry' is an artefact of
+# the test's shell quoting of -p ''.
+
+######## a4
+== a4 (rule needs password) sudo -n:
+sudo: a password is required
+rc=1
+== a4 wrong password:
+''Sorry, try again.
+''
+sudo: no password was provided
+sudo: 1 incorrect password attempt
+rc=1
+== mail captured:
+args: -t
+To: root
+From: sshbite
+Auto-Submitted: auto-generated
+Subject: *** SECURITY information for a4 ***
+
+a4 : Nov 26 15:59:20 : sshbite : a password is required ; PWD=/root ; USER=root ; COMMAND=/bin/true
+
+----
+args: -t
+To: root
+From: sshbite
+Auto-Submitted: auto-generated
+Subject: *** SECURITY information for a4 ***
+
+a4 : Nov 26 15:59:22 : sshbite : 1 incorrect password attempt ; PWD=/root ; USER=root ; COMMAND=/bin/true
+
+----
+README
+sshbite
+
+######## b5
+== b5 (no rule) sudo -n:
+sudo: a password is required
+rc=1
+-- mail so far:
+(none)
+== b5 (no rule) correct password:
+''sshbite is not in the sudoers file.
+This incident has been reported to the administrator.
+rc=1
+== mail captured:
+args: -t
+To: root
+From: sshbite
+Auto-Submitted: auto-generated
+Subject: *** SECURITY information for b5 ***
+
+b5 : Nov 26 15:59:25 : sshbite : user NOT in sudoers ; PWD=/root ; USER=root ; COMMAND=/bin/true
+
+----
+README
+
+######## a1
+sshbite ALL=(root) NOPASSWD: ALL
+== a1 (NOPASSWD) sudo -n /bin/true, then sudo -n /bin/sh -s:
+rc=0
+0
+rc=0
+== mail captured:
+(none)
+README
+sshbite
+
+
+# Scripts used:
+## sudomail4.py
+import asyncio, sys
+sys.path.insert(0, "/workspace")
+from tests.e2e.lab import LabControl
+lc = LabControl({"b5": ["172.30.2.15"], "a4": ["172.30.1.14"]})
+on = r"""
+printf '#!/bin/sh\n{ echo "args: $*"; cat; echo ----; } >> /tmp/p3mail.txt\n' > /run/fakemail; chmod 755 /run/fakemail
+printf 'Defaults mailerpath=/run/fakemail\n' > /etc/sudoers.d/zzp3mail; chmod 440 /etc/sudoers.d/zzp3mail
+"""
+off = r"""
+sleep 2; echo "== mail captured:"; cat /tmp/p3mail.txt 2>/dev/null || echo "(none)"
+rm -f /etc/sudoers.d/zzp3mail /run/fakemail /tmp/p3mail.txt; ls /etc/sudoers.d
+"""
+def as_sshbite(label, cmd):
+    return f'echo "== {label}:"; su sshbite -s /bin/sh -c "{cmd}; echo rc=\\$?" 2>&1\n'
+a4 = on + as_sshbite("a4 (rule needs password) sudo -n", "sudo -n /bin/true") \
+        + as_sshbite("a4 wrong password", "printf 'wrong\\n' | sudo -S -k -p \\'\\' /bin/true") + off
+b5 = on + "cp -p /etc/shadow /run/shadow.orig; echo 'sshbite:p3test-pw' | chpasswd\n" \
+        + as_sshbite("b5 (no rule) sudo -n", "sudo -n /bin/true") \
+        + "sleep 1; echo '-- mail so far:'; cat /tmp/p3mail.txt 2>/dev/null || echo '(none)'\n" \
+        + as_sshbite("b5 (no rule) correct password", "printf 'p3test-pw\\n' | sudo -S -k -p \\'\\' /bin/true") \
+        + "cat /run/shadow.orig > /etc/shadow && rm /run/shadow.orig\n" + off
+print("######## a4"); print(asyncio.run(lc._run("a4", a4)))
+print("######## b5"); print(asyncio.run(lc._run("b5", b5)))
+## sudomail5.py
+import asyncio, sys
+sys.path.insert(0, "/workspace")
+from tests.e2e.lab import LabControl
+lc = LabControl({"a1": ["172.30.1.11"]})
+s = r"""
+printf '#!/bin/sh\n{ echo "args: $*"; cat; echo ----; } >> /tmp/p3mail.txt\n' > /run/fakemail; chmod 755 /run/fakemail
+printf 'Defaults mailerpath=/run/fakemail\n' > /etc/sudoers.d/zzp3mail; chmod 440 /etc/sudoers.d/zzp3mail
+cat /etc/sudoers.d/sshbite
+echo "== a1 (NOPASSWD) sudo -n /bin/true, then sudo -n /bin/sh -s:"
+su sshbite -s /bin/sh -c 'sudo -n /bin/true; echo rc=$?; echo id -u | sudo -n /bin/sh -s; echo rc=$?' 2>&1
+sleep 2; echo "== mail captured:"; cat /tmp/p3mail.txt 2>/dev/null || echo "(none)"
+rm -f /etc/sudoers.d/zzp3mail /run/fakemail /tmp/p3mail.txt; ls /etc/sudoers.d
+"""
+print("######## a1"); print(asyncio.run(lc._run("a1", s)))

@@ -1,0 +1,31 @@
+# One SSHBITE scan (pip install), started by sshbite-scan.timer. Copy both to /etc/systemd/system/.
+# Output goes to the journal: journalctl -u sshbite-scan.service
+[Unit]
+Description=SSHBITE scan (read-only SSH access audit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sshbite-app
+Group=sshbite-app
+Environment=SSHBITE_CONFIG=/etc/sshbite/sshbite.yaml
+# Only if sudo on the targets needs a password: a root-owned file, mode 0600, with one line
+#   SSHBITE_SUDO_PASSWORD=...
+# EnvironmentFile=/etc/sshbite/scan.env
+ExecStart=/usr/local/bin/sshbite scan --label nightly
+TimeoutStartSec=6h
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/sshbite
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+SystemCallArchitectures=native

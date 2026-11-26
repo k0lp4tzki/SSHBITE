@@ -1,0 +1,25 @@
+diff scan 1 -> scan 2
+
+hosts: 0 added, 0 removed, 1 changed
+  ~ c2 (hostkey_mismatch): status: ok -> hostkey_mismatch, privilege: root -> -, route: jump -> b3 -> c1 -> c2 => -
+
+keys: 1 added, 1 removed, 0 changed
+  + SHA256:gh7vGFXzaOfeTFQ51XPJESCQZZrNeYoqiIo7+tX5DLU ssh-ed25519 256 good new-unknown
+  - SHA256:GrNpjgltnfb1yfFOO9qmrVMSdTpEx5qgAV+O2A9czjU ssh-ed25519 256 good ops-ca
+
+placements: 1 added, 3 removed, 0 changed
+  + authorized b2:www SHA256:gh7vGFXzaOfeTFQ51XPJESCQZZrNeYoqiIo7+tX5DLU (/home/www/.ssh/authorized_keys:2)
+  - authorized c2:root SHA256:GrNpjgltnfb1yfFOO9qmrVMSdTpEx5qgAV+O2A9czjU (/root/.ssh/authorized_keys:1)
+  - authorized c2:svc SHA256:OsxPnUumA5TZLreiiMoeJU5AaUCrsfK5U2CzxkdUwPA (/home/svc/.ssh/authorized_keys:1)
+  - authorized a5:root SHA256:udc9qDdY4Kt6SaStdiwmguabv6Gl8LCVupPjvcypxbo (/root/.ssh/authorized_keys:1)
+
+edges: 1 added, 2 removed, 0 changed
+  + access unknown -> b2:www SHA256:gh7vGFXzaOfeTFQ51XPJESCQZZrNeYoqiIo7+tX5DLU [unknown_origin]
+  - access jump:ops -> a5:root SHA256:udc9qDdY4Kt6SaStdiwmguabv6Gl8LCVupPjvcypxbo [confirmed]
+  - access b3:ops2 -> c2:svc SHA256:OsxPnUumA5TZLreiiMoeJU5AaUCrsfK5U2CzxkdUwPA [confirmed]
+
+findings: 2 added, 2 removed, 0 changed
+  + high key_unknown_origin b2:www SHA256:gh7vGFXzaOfeTFQ51XPJESCQZZrNeYoqiIo7+tX5DLU /home/www/.ssh/authorized_keys:2
+  + critical host_key_changed c2
+  - high root_authorized_key a5:root SHA256:udc9qDdY4Kt6SaStdiwmguabv6Gl8LCVupPjvcypxbo /root/.ssh/authorized_keys:1
+  - info cert_authority_trusted c2:root SHA256:GrNpjgltnfb1yfFOO9qmrVMSdTpEx5qgAV+O2A9czjU /root/.ssh/authorized_keys:1

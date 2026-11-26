@@ -1,0 +1,60 @@
+$ sshbite init-config > sshbite.yaml && chmod 600 sshbite.yaml && head -5 sshbite.yaml
+database: /var/lib/sshbite/sshbite.db
+entry:
+  host: jump01.corp.example     # as reachable from the SSHBITE machine
+  port: 22
+  host_keys: ["ssh-ed25519 AAAAC3Nza..."]   # required; any match = verified
+[exit 0]
+
+# (edited sshbite.yaml: database, entry.host = jump, audit.key_file, crawl.include/exclude)
+
+$ sshbite -c sshbite.yaml config validate
+error: sshbite.yaml: entry.host_keys[0]: not an OpenSSH public key line ('<alg> <base64> [comment]', e.g. from ssh-keyscan)
+[exit 2]
+
+$ ssh-keyscan -t ed25519 jump 2>/dev/null | tee keyscan.txt; ssh-keygen -lf keyscan.txt
+jump ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID/sbq+Iimhi7je22+U9y15jJ/37+NCH06PcVShHSmh/
+256 SHA256:ynTb0gWnV8EppDctYzEhTtbjMnfZ2636k864CRGdTDg jump (ED25519)
+[exit 0]
+
+# fingerprint compared with the jump host's console: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+# (pinned it in entry.host_keys)
+
+$ sshbite -c sshbite.yaml config validate
+error: audit.key_file: /tmp/j1/audit_ed25519: mode is 0644, must be 0600 (chmod 600 /tmp/j1/audit_ed25519)
+[exit 2]
+
+$ chmod 600 audit_ed25519 && sshbite -c sshbite.yaml config validate --connect
+config OK: sshbite.yaml
+entry OK, pinned key matches, sudo: root
+[exit 0]
+
+$ sshbite -c wrong.yaml config validate --connect   # a wrong pin
+config OK: wrong.yaml
+error: ENTRY HOST KEY MISMATCH – scan aborted
+  offered: ssh-ed25519 SHA256:ynTb0gWnV8EppDctYzEhTtbjMnfZ2636k864CRGdTDg
+  pinned:  ssh-ed25519 SHA256:AxCjU2bypAdDa+DLDbGLS4PrQ19sBkV25Bj/jpW6mp4
+
+[exit 3]
+
+$ printf 'correct horse battery staple\ncorrect horse battery staple\n' | sshbite -c sshbite.yaml user add admin
+/state/home/.local/share/uv/python/cpython-3.12.16-linux-x86_64-gnu/lib/python3.12/getpass.py:91: GetPassWarning: Can not control echo on the terminal.
+  passwd = fallback_getpass(prompt, stream)
+Warning: Password input may be echoed.
+password: 
+Warning: Password input may be echoed.
+repeat password: 
+user admin added
+[exit 0]
+
+$ sshbite -c sshbite.yaml scan --dry-run
+entry:     jump:22 (1 pinned key(s))
+audit:     user sshbite, key /tmp/j1/audit_ed25519
+privilege: sudo; host keys: tofu
+crawl:     max depth 10, max hosts 1000, chain fallback on
+include:   172.30.1.0/24, 172.30.2.0/24, 172.30.3.0/24
+exclude:   172.30.2.14/32
+seeds:     0
+dry run: no connection made
+[exit 0]
+

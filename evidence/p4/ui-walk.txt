@@ -1,0 +1,45 @@
+lab instance (scan 1 from the lab): http://sshbite:8722
+  c1 route attempts: ['jump → c1 172.30.3.21: timeout', 'jump → b3 → c1 ok']
+  shot c6-01-host-c1-route-attempts-1440
+  a1 tabs: ['Overview', 'Users (3)', 'Access (2 in · 2 out)', 'Known by (2)', 'sshd', 'Accounts (2 of 21)', 'Findings (4)']
+  shot c6-11-host-a1-accounts-2-of-21
+  ?tab=bogus selected: Overview
+  shot c6-12-host-c1-tab-bogus-falls-back-to-overview
+  drawer columns: ['From', 'To', 'Key', 'Status', 'Effective', 'Flags'] row: jump:ops a2:root SHA256:udc9…pxbo OK confirmed yes root
+  shot c6-03-heatmap-drawer-jump-a2-1440
+  search active: search-opt-0
+  shot c6-08-search-legacy-dsa-arrowdown-selected
+  after Enter: http://sshbite:8722/s/1/keys/SHA256:yIQEm8CgzGzq9JAgp3eHPpdLrgGTK2EqO84qzNP9gOM
+  shot c6-09-key-k_dsa-after-enter
+  filtered export file: sshbite-scan1-findings-key_unknown_origin-high.csv
+  shot c6-15-findings-key_unknown_origin-high-1440
+  100 requests, 0 outside the origin; page errors: none
+  findings 1280: fingerprint line counts [1]
+  shot c6-04-findings-1280
+  crawl c1 attempts: ['jump → c1 172.30.3.21: timeout\njump → b3 → c1 ok']
+  shot c6-14-crawl-tree-1280-c1-attempts-open
+  43 requests, 0 outside the origin; page errors: none
+  shot c6-05-findings-375-dark
+  shot c6-05b-findings-375-dark-scrolled-sideways
+  shot c6-01b-host-c1-route-attempts-375-dark
+  41 requests, 0 outside the origin; page errors: none
+fixture instance (scans 1-3 of a real lab run): http://127.0.0.1:8804
+  c2 scan 2 tabs: {'Overview': False, 'Users': True, 'Access': True, 'Known by (1)': False, 'sshd': True, 'Accounts': True, 'Findings (1)': False}
+  c2 finding: Critical Host key changed c2 Verify out-of-band, then hostkey accept stored SHA256:6pwTM0ENKw1R/jWBzDYJ10BKhm93GjJ9wEu+Re7/wgM · presented SHA256:eSIvYRwsuUx7QEj0uExNChaGxKEzM66rPSeBUGhsdJ0
+  shot c6-02-host-c2-scan2-findings-tab
+  diff 1-2 hosts: Changed c2 status: OK → Host key changed privilege removed (was root) route removed (was jump → b3 → c1 → c2)
+  shot c6-13-diff-1-2-hosts-route-removed
+  42 requests, 0 outside the origin; page errors: none
+mixed instance (real scans + synthetic scan): http://127.0.0.1:8803
+  /scans banner: 1 top bar: Scan #4 · synthetic 2000 hosts, seed 42 · 26 Nov 2026 16:52 ▾
+  shot c6-06-scans-synthetic-scan-selected
+  /diff banner: 1
+  shot c6-07-diff-real-vs-synthetic
+  /scans with a real scan selected, banner: 0
+  86 requests, 0 outside the origin; page errors: none
+  crawl rows: 3,970 rows shown in DOM: 44
+  shot c6-10a-crawl-2000-expanded-top
+  focused late row: 3957  ▾ syn-0705.synthetic.invalid
+  shot c6-10-crawl-2000-scrolled-to-late-host
+  last row of the tree: 3969 10.66.27.12
+  32 requests, 0 outside the origin; page errors: none
