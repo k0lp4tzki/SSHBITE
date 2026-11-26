@@ -1,0 +1,26 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace
+configfile: pyproject.toml
+plugins: anyio-4.16.0
+collecting ... collected 16 items
+
+tests/browser/test_ui.py::test_1_login_logout_wrong_password_and_lockout PASSED [  6%]
+tests/browser/test_ui.py::test_2_dashboard_counts_equal_api PASSED       [ 12%]
+tests/browser/test_ui.py::test_3_heatmap_host_grouping_jump_a2 PASSED    [ 18%]
+tests/browser/test_ui.py::test_4_subnet_heatmap_2000_hosts_fast_and_drilldown PASSED [ 25%]
+tests/browser/test_ui.py::test_5_host_discovered_via_and_routes PASSED   [ 31%]
+tests/browser/test_ui.py::test_6_key_dsa PASSED                          [ 37%]
+tests/browser/test_ui.py::test_7_label_persists_and_put_without_csrf_403 PASSED [ 43%]
+tests/browser/test_ui.py::test_8_synthetic_banner_on_every_screen PASSED [ 50%]
+tests/browser/test_ui.py::test_9_no_request_leaves_the_origin PASSED     [ 56%]
+tests/browser/test_ui.py::test_10_empty_states_on_empty_db PASSED        [ 62%]
+tests/browser/test_ui.py::test_empty_lists_and_filters PASSED            [ 68%]
+tests/browser/test_ui.py::test_c3_contrast_computed_in_both_themes[light] PASSED [ 75%]
+tests/browser/test_ui.py::test_c3_contrast_computed_in_both_themes[dark] PASSED [ 81%]
+tests/browser/test_ui.py::test_c4_severity_and_strength_have_glyph_and_label PASSED [ 87%]
+tests/browser/test_ui.py::test_c5_fingerprints_mono_and_exact_copy PASSED [ 93%]
+tests/browser/test_ui.py::test_c13_no_horizontal_page_scroll_at_1280_and_375 PASSED [100%]
+
+======================== 16 passed in 75.84s (0:01:15) =========================

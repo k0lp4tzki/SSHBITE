@@ -199,4 +199,5 @@
   .expmenu a { padding: var(--s3) var(--s4); color: var(--text-primary); }
   .expmenu a:hover { background: var(--bg-hover); text-decoration: none; }
   @media (max-width: 1100px) { .stats, .lower { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 600px) { .tfrow { grid-template-columns: minmax(0, 1fr); gap: var(--s2); padding: var(--s3) var(--s4); } }
 </style>

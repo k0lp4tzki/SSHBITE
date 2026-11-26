@@ -112,7 +112,7 @@ def syn(browser, servers):
 def heat(page):
     c = page.locator("canvas.cells")
     c.wait_for(timeout=15000)
-    page.wait_for_function("document.querySelector('canvas.cells')?.dataset.rendered > 0", timeout=15000)
+    page.wait_for_selector('canvas.cells[data-rendered]:not([data-rendered="0"])', timeout=15000)
     return {k: c.get_attribute(f"data-{k}") for k in ("pitch", "gap", "rows", "cols", "rendered", "unknown-pos")}
 
 
@@ -431,10 +431,10 @@ def test_c4_severity_and_strength_have_glyph_and_label(lab):
     present = {k: v for k, v in shapes.items() if v}
     assert len(set(present.values())) == len(present) >= 4
     if EVIDENCE:
-        p.add_style_tag(content="html { filter: grayscale(1) !important; }")
+        p.evaluate("document.documentElement.style.filter = 'grayscale(1)'")
         lab.shot("c4-dashboard-greyscale", full=False)
         lab.go("/s/1/findings")
-        p.add_style_tag(content="html { filter: grayscale(1) !important; }")
+        p.evaluate("document.documentElement.style.filter = 'grayscale(1)'")
         lab.shot("c4-findings-greyscale", full=False)
 
 

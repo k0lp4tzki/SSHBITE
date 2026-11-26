@@ -440,6 +440,9 @@
   const rank = new Resource<any>();
   const R = $derived({ dir: route.query.get('rdir') ?? 'in', metric: route.query.get('rmetric') ?? 'hosts' });
   $effect(() => { R.dir; R.metric; rank.load(() => api(`/scans/${sid}/ranking` + qs({ direction: R.dir, metric: R.dir === 'out' && R.metric === 'unknown_keys' ? 'hosts' : R.metric, limit: 25 })), true); });
+  const rankSuffix = $derived(commonSuffix((rank.data?.items ?? []).map((x: any) => x.display_name)));
+  const tipSuffix = $derived(tipPairs ? commonSuffix(tipPairs.pairs.flatMap((x: any) => (x.src_host_id === null ? [x.dst] : [x.src, x.dst]))) : '');
+  const strip = (n: string, sfx: string) => (sfx && n.endsWith(sfx) ? n.slice(0, -sfx.length) : n);
   const rankMax = $derived(Math.max(1, ...(rank.data?.items ?? []).map((x: any) => x.value)));
 
   // ---- table view
@@ -590,7 +593,7 @@
         {#each rank.data.items as r, i}
           <li onmouseenter={() => (highlightHost = r.host_id)} onmouseleave={() => (highlightHost = null)}>
             <span class="num muted">{i + 1}</span>
-            <a class="mono trunc" href={hostHref(sid, r.host_id)} title={r.display_name}>{suffix && r.display_name.endsWith(suffix) ? r.display_name.slice(0, -suffix.length) : r.display_name}</a>
+            <a class="mono trunc" href={hostHref(sid, r.host_id)} title={r.display_name}>{strip(r.display_name, suffix || rankSuffix)}</a>
             <span class="num v">{n(r.value)}</span>
             <span class="rb"><span style:width="{(r.value / rankMax) * 100}%"></span></span>
           </li>
@@ -612,7 +615,7 @@
         <div class="meta muted tp">Top pairs</div>
         <ul class="pairs">
           {#each tipPairs.pairs as p}
-            <li class="mono"><span class="trunc">{p.src_host_id === null ? `? ${shortFp(p.src)} → ${p.dst}${p.dst_users?.[0] ? ':' + p.dst_users[0] : ''}` : `${suffix ? p.src.replace(suffix, '') : p.src} → ${suffix ? p.dst.replace(suffix, '') : p.dst}`}</span>
+            <li class="mono"><span class="trunc">{p.src_host_id === null ? `? ${shortFp(p.src)} → ${strip(p.dst, suffix || tipSuffix)}${p.dst_users?.[0] ? ':' + p.dst_users[0] : ''}` : `${strip(p.src, suffix || tipSuffix)} → ${strip(p.dst, suffix || tipSuffix)}`}</span>
               <span class="num secondary sans">{P.metric === 'keys' ? plural(p.keys, 'key') : plural(p.users, 'user')}</span></li>
           {/each}
         </ul>
