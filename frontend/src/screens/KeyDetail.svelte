@@ -31,11 +31,19 @@
   let orig = $state({ label: '', owner: '', note: '' });
   let meta = $state<any>(null);
   let saving = $state(false), saved = $state(false), saveErr = $state('');
+  // fill the form once per loaded key (not on every change of the form itself)
+  let filledFor = '';
   $effect(() => {
-    const l = d?.label ?? (res.errorCode === 'key_not_in_scan' ? null : undefined);
-    if (l === undefined) return;
-    orig = { label: l?.label ?? '', owner: l?.owner ?? '', note: l?.note ?? '' };
-    label = orig.label; owner = orig.owner; note = orig.note;
+    const data = res.data;
+    const missing = res.errorCode === 'key_not_in_scan';
+    if (!data && !missing) return;
+    const l = data ? data.label : null;
+    const key = `${fp}|${l?.updated_at ?? ''}`;
+    if (key === filledFor) return;
+    filledFor = key;
+    const o = { label: l?.label ?? '', owner: l?.owner ?? '', note: l?.note ?? '' };
+    orig = o;
+    label = o.label; owner = o.owner; note = o.note;
     meta = l;
   });
   const dirty = $derived(label !== orig.label || owner !== orig.owner || note !== orig.note);

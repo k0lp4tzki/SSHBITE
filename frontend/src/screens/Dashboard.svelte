@@ -107,7 +107,7 @@
         <div class="figs">
           {#each classes as c}
             {#if c.v > 0 || ['ok', 'critical', 'high'].includes(c.key)}
-              <a class="fig sev-{c.sev}" href={href(c)}><span class="figure">{n(c.v)}</span><span class="fl"><span class="g"><Glyph kind={c.glyph} /></span>{c.label}</span></a>
+              <a class="fig sev-{c.sev}" href={href(c)} data-stat="{title}:{c.key}"><span class="figure">{n(c.v)}</span><span class="fl"><span class="g"><Glyph kind={c.glyph} /></span>{c.label}</span></a>
             {/if}
           {/each}
         </div>

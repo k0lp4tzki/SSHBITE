@@ -136,7 +136,7 @@
     drawLabels();
     drawBars();
     drawOverlay();
-    renderMs = Math.round(performance.now() - t0);
+    renderMs = Math.max(1, Math.round(performance.now() - t0));
   }
 
   function plate(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
@@ -545,7 +545,9 @@
             <div class="corner c2"></div>
             <canvas class="rows" bind:this={cvRows} onclick={(e) => labelClick('row', e)} aria-hidden="true"></canvas>
             <div class="cellwrap">
-              <canvas class="cells" bind:this={cvCells} tabindex="0" role="grid"
+              <canvas class="cells" bind:this={cvCells} tabindex="0" role="grid" data-pitch={pitch} data-gap={gap} data-rendered={renderMs}
+                data-rows={order.rows.map((i) => hm.rows[i].label).join('|')} data-cols={order.cols.map((i) => hm.cols[i].label).join('|')}
+                data-unknown-pos={unknownRowPos}
                 aria-label="Access heatmap, {hm.rows.length} sources by {hm.cols.length} destinations"
                 onmousemove={onMove} onmouseleave={onLeave} onclick={onClick} onkeydown={onKey}
                 onfocus={() => { focused = true; announce(); }} onblur={() => (focused = false)}></canvas>
