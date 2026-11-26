@@ -58,6 +58,7 @@ Without Docker: `pip install` (Python 3.12) – see [install.md](docs/install.md
 scanning it, with the UI on http://127.0.0.1:8722/. Log in as `admin` with the password you set in
 `SSHBITE_DEMO_PASSWORD` (e.g. in `.env`), or – if you set none – the random password the container prints
 once: `docker compose -f compose.lab.yaml logs sshbite | grep 'LAB DEMO LOGIN'`.
+`docker compose up` at the top level starts the same lab demo (`compose.yaml` only includes `compose.lab.yaml`).
 
 > **Never use the lab outside a test.** `compose.lab.yaml`, `lab/demo/` and especially **`lab/keys/*`** –
 > private host keys of the lab hosts and the lab's **audit key**, committed on purpose – are test material
