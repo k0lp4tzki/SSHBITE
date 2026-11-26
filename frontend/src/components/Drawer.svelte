@@ -39,6 +39,8 @@
   .ht { display: flex; flex-direction: column; min-width: 0; }
   .content { overflow: auto; padding: var(--s4) 0; flex: 1; }
   .content :global(.table-wrap) { --sticky-bg: var(--bg-raised); }
+  .content :global(.table-wrap.sticky-first table.t > tbody > tr > td:first-child),
+  .content :global(.table-wrap.sticky-first table.t > thead > tr > th:first-child) { box-shadow: none; }
   .content :global(table.t th:first-child), .content :global(table.t td:first-child) { padding-left: var(--s6); }
   .content :global(table.t th:last-child), .content :global(table.t td:last-child) { padding-right: var(--s6); }
   footer { display: flex; gap: var(--s3); padding: var(--s4) var(--s6); border-top: 1px solid var(--border-subtle); }

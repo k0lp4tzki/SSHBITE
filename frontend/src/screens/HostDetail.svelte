@@ -423,8 +423,8 @@
   .reasons { margin: var(--s2) 0; padding-left: var(--s5); }
   /* Route attempts: its own section, 16 px above and below (the page gap) */
   .att .err { font-size: 12px; }
-  .strip .st { font-weight: 500; }
-  .strip .inner { margin-top: var(--s3); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r2);
+  .st { font-weight: 500; }
+  .inner { margin-top: var(--s3); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r2);
     overflow: hidden; max-width: 720px; }
   .hk { display: flex; flex-direction: column; gap: var(--s3); margin: var(--s3) 0; }
   .hk dt { font-size: 12px; line-height: 16px; color: var(--text-secondary); font-weight: 500; }

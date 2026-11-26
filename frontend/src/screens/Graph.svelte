@@ -415,7 +415,7 @@
   .dl-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--s3); }
   .dl-list li { border-top: 1px solid var(--border-subtle); padding-top: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
   .csearch { position: relative; }
-  .csearch .input { width: 220px; }
+  .csearch .input { width: 190px; }
   .cl { top: 36px; left: 0; min-width: 320px; max-height: 320px; overflow: auto; padding: var(--s2) 0; }
   .cl button { all: unset; box-sizing: border-box; display: flex; gap: var(--s3); align-items: center; width: 100%; height: 32px; padding: 0 var(--s4); cursor: pointer; }
   .cl button:hover, .cl button:focus-visible { background: var(--bg-hover); }

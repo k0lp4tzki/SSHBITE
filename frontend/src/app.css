@@ -163,6 +163,7 @@ textarea.input { height: auto; padding: var(--s3); resize: vertical; line-height
 .select { padding-right: var(--s7); appearance: none; cursor: pointer;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%23667085' stroke-width='1.5'/%3E%3C/svg%3E");
   background-position: right 10px center; background-repeat: no-repeat; }
+label.field .input { font-weight: 400; }
 label.field { display: flex; flex-direction: column; gap: var(--s2); font-size: 12px; line-height: 16px;
   color: var(--text-secondary); font-weight: 500; }
 /* inline control label: "Group by [select]" */
