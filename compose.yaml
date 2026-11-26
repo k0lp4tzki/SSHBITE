@@ -1,0 +1,4 @@
+# TEMPORARY - only so that the company's stack service (which looks for compose.yaml) can start the lab demo for
+# the evidence run of this package. Removed again in the next commit; the lab demo is compose.lab.yaml.
+include:
+  - compose.lab.yaml
