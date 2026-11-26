@@ -8,6 +8,7 @@ dist/
 /.env
 lab/.run/
 *.db
+!tests/fixtures/lab_scans.db
 *.db-wal
 *.db-shm
 node_modules/
