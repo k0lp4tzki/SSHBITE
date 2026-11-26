@@ -1,0 +1,6 @@
+$ cd /tmp/pytest-of-app/pytest-14/installed0/export && sha256sum -c SHA256SUMS
+authorized_keys.sshbite: OK
+sshbite-collect: OK
+sshbite-gate: OK
+sshbite-resolve: OK
+sudoers.d-sshbite: OK
