@@ -142,8 +142,8 @@ jobs:
       - name: the lab demo refuses the old published password
         run: |
           set +e
-          SSHBITE_DEMO_PASSWORD=sshbite-lab-demo docker compose -f compose.lab.yaml run --rm --no-deps -T sshbite \
-            > refused.txt 2>&1
+          docker run --rm -e SSHBITE_DEMO_PASSWORD=sshbite-lab-demo -v "$PWD/lab/demo:/etc/sshbite:ro" \
+            --entrypoint /bin/sh sshbite:ci /etc/sshbite/start.sh > refused.txt 2>&1
           code=$?
           set -e
           cat refused.txt

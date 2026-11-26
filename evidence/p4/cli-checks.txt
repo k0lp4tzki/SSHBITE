@@ -1,0 +1,61 @@
+### S5 - crawl scope warning (config without crawl.include)
+$ sshbite -c noinc.yaml config validate
+warning: crawl.include is empty: crawl targets and ports are taken from target data (known_hosts, ~/.ssh/config, from=) without restriction; set crawl.include to the networks and host names you mean to scan
+config OK: /tmp/dev/cli/noinc.yaml
+exit 0
+
+$ sshbite -c noinc.yaml scan --dry-run
+warning: crawl.include is empty: crawl targets and ports are taken from target data (known_hosts, ~/.ssh/config, from=) without restriction; set crawl.include to the networks and host names you mean to scan
+entry:     jump:22 (1 pinned key(s))
+audit:     user sshbite, key /workspace/lab/.run/audit_ed25519
+privilege: sudo; host keys: tofu
+crawl:     max depth 10, max hosts 1000, chain fallback on
+include:   (no restriction)
+
+$ sshbite -c lab/sshbite.lab.yaml config validate     (crawl.include set: no warning)
+config OK: lab/sshbite.lab.yaml
+exit 0
+
+### S7 - no password from a non-terminal stdin
+$ echo labsudo | sshbite -c lab/sshbite.lab.yaml scan --ask-sudo-password
+Usage: sshbite scan [OPTIONS]
+Try 'sshbite scan --help' for help.
+
+Error: --ask-sudo-password: refusing to read the sudo password: stdin is not a terminal, so the password could be echoed or logged. Run it in a terminal - in a container with `docker exec -it` (not just -i).
+exit 2
+
+$ printf "%s\n%s\n" "$PW" "$PW" | sshbite -c noinc.yaml user add admin
+Usage: sshbite user add [OPTIONS] NAME
+Try 'sshbite user add --help' for help.
+
+Error: refusing to read the password: stdin is not a terminal, so the password could be echoed or logged. Run it in a terminal - in a container with `docker exec -it` (not just -i), or pipe it with --password-stdin.
+exit 2
+
+$ printf "%s\n" "$PW" | sshbite -c noinc.yaml user add admin --password-stdin
+user admin added
+exit 0
+
+$ printf "%s\n%s\n" "$PW" "$PW" | sshbite -c noinc.yaml user passwd admin
+Usage: sshbite user passwd [OPTIONS] NAME
+Try 'sshbite user passwd --help' for help.
+
+Error: refusing to read the password: stdin is not a terminal, so the password could be echoed or logged. Run it in a terminal - in a container with `docker exec -it` (not just -i), or pipe it with --password-stdin.
+exit 2
+
+$ printf "%s\n" "$PW" | sshbite -c noinc.yaml user passwd admin --password-stdin
+password of admin changed; its sessions were ended and the lockout cleared
+exit 0
+
+### S3 - literal commands (sudo by absolute path)
+$ sshbite collector show | sed -n "/literal commands/,\$p"
+===== literal commands sent on exec channels (privilege.mode: sudo / sudo-login)
+/bin/sh -c 'while IFS= read -r n; do getent hosts -- "$n" | awk -v n="$n" '\''{print n"\t"$1}'\''; done'   (name resolution; the names are its stdin data)
+test -x /usr/bin/sudo && exec /usr/bin/sudo -n /bin/true; exec /bin/sudo -n /bin/true
+test -x /usr/bin/sudo && exec /usr/bin/sudo -n /bin/sh -s; exec /bin/sudo -n /bin/sh -s
+test -x /usr/bin/sudo && exec /usr/bin/sudo -S -k -p '' /bin/true; exec /bin/sudo -S -k -p '' /bin/true
+test -x /usr/bin/sudo && exec /usr/bin/sudo -S -k -p '' /bin/sh -s; exec /bin/sudo -S -k -p '' /bin/sh -s
+/bin/sh -s
+test -x /usr/bin/sudo && exec /usr/bin/sudo -n -i /bin/true; exec /bin/sudo -n -i /bin/true
+test -x /usr/bin/sudo && exec /usr/bin/sudo -n -i /bin/sh -s; exec /bin/sudo -n -i /bin/sh -s
+test -x /usr/bin/sudo && exec /usr/bin/sudo -S -k -p '' -i /bin/true; exec /bin/sudo -S -k -p '' -i /bin/true
+test -x /usr/bin/sudo && exec /usr/bin/sudo -S -k -p '' -i /bin/sh -s; exec /bin/sudo -S -k -p '' -i /bin/sh -s

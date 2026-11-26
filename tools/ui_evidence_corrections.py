@@ -4,7 +4,7 @@
                      --fixture URL --mixed URL [--password P]
 
 --lab      an instance with a real lab scan as scan 1 (e.g. the lab demo of compose.lab.yaml)
---fixture  an instance on a copy of tests/fixtures/lab_scans.db (scans 1-3 of a real lab run): scan 2 and diffs
+--fixture  an instance with scans 1-3 of a real lab run (the e2e run's DB, or tests/fixtures/lab_scans.db): scan 2, diffs
 --mixed    an instance with real scans plus `sshbite synth --hosts 2000 --seed 42` as the newest scan
 Every screen is checked for page errors; the script prints what it saw.
 """
