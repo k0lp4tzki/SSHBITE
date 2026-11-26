@@ -13,7 +13,7 @@
   import Notices from '../components/Notices.svelte';
   import Drawer from '../components/Drawer.svelte';
   import EdgeTable from '../components/EdgeTable.svelte';
-  import Glyph from '../components/Glyph.svelte';
+  import Field from '../components/Field.svelte';
   import ErrorPanel from '../components/ErrorPanel.svelte';
 
   let { scan }: { scan: any } = $props();
@@ -89,7 +89,7 @@
   function labelText(x: any): string {
     if (x.kind === 'other') return `Other (${x.groups} groups)`;
     if (x.kind === 'unknown') return 'Unknown origin';
-    if (x.kind === 'unknown_key') { const fp = x.fp.replace('SHA256:', ''); return `? SHA256:${fp.slice(0, 4)}…${fp.slice(-4)}`; }
+    if (x.kind === 'unknown_key') { const fp = x.fp.replace('SHA256:', ''); return `SHA256:${fp.slice(0, 4)}…${fp.slice(-4)}`; }
     if (x.kind === 'host' && suffix && x.label.endsWith(suffix)) return x.label.slice(0, -suffix.length);
     return x.label;
   }
@@ -139,9 +139,26 @@
     renderMs = Math.max(1, Math.round(performance.now() - t0));
   }
 
+  // the highlighted axis label sits on bg.raised with the popover shadow (design-revision §5.2)
   function plate(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+    ctx.save();
+    ctx.shadowColor = pal.dark ? 'rgba(0,0,0,.5)' : 'rgba(16,24,40,.14)';
+    ctx.shadowBlur = 8; ctx.shadowOffsetY = 2;
     ctx.fillStyle = pal.raised;
     ctx.fillRect(x, y, w, h);
+    ctx.restore();
+    if (pal.dark) { ctx.strokeStyle = pal.strong; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); }
+  }
+  // level meter (design-revision §3.2) drawn into a canvas: 4 bars 2 px wide, 1 px apart, 3/6/9/12 px high
+  function meter(ctx: CanvasRenderingContext2D, x: number, y: number, level: number) {
+    ctx.save();
+    ctx.fillStyle = pal.medium;
+    for (let i = 0; i < 4; i++) {
+      ctx.globalAlpha = i < level ? 1 : 0.25;
+      const h = (i + 1) * 3;
+      ctx.fillRect(x + i * 3, y + 12 - h, 2, h);
+    }
+    ctx.restore();
   }
 
   function drawLabels() {
@@ -161,24 +178,13 @@
       ctx.font = isCur ? `600 11px 'IBM Plex Sans Condensed', system-ui, sans-serif` : it.kind === 'other' ? `italic 400 11px 'IBM Plex Sans', system-ui, sans-serif` : `500 11px 'IBM Plex Sans Condensed', system-ui, sans-serif`;
       let maxw = GUTTER - 8;
       let lead = 0;
-      if (it.kind === 'unknown' || it.kind === 'unknown_key' || it.status === 'partial') lead = 14;
+      if (it.status === 'partial') lead = 16;
       const txt = fitText(ctx, labelText(it), maxw - lead);
       const tw = ctx.measureText(txt).width;
       if (isCur) plate(ctx, GUTTER - 6 - tw - lead - 4, y - 8, tw + lead + 8, 16);
       ctx.fillStyle = isCur ? pal.primary : it.kind === 'other' ? pal.muted : pal.secondary;
       ctx.fillText(txt, GUTTER - 6, y);
-      if (lead) {
-        const gx = GUTTER - 6 - tw - 12;
-        if (it.status === 'partial') { // diamond = partial
-          ctx.fillStyle = pal.medium;
-          ctx.beginPath(); ctx.moveTo(gx + 5, y - 5); ctx.lineTo(gx + 10, y); ctx.lineTo(gx + 5, y + 5); ctx.lineTo(gx, y); ctx.fill();
-        } else { // dashed circle with ? = unknown origin
-          ctx.strokeStyle = pal.secondary; ctx.setLineDash([2, 1.5]); ctx.lineWidth = 1.2;
-          ctx.beginPath(); ctx.arc(gx + 5, y, 4.5, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
-          ctx.fillStyle = pal.secondary; ctx.font = `600 8px 'IBM Plex Sans', sans-serif`; ctx.textAlign = 'center';
-          ctx.fillText('?', gx + 5, y + 0.5); ctx.textAlign = 'right';
-        }
-      }
+      if (lead) meter(ctx, GUTTER - 6 - tw - 14, y - 6, 2);   // partial: the level meter of Medium
     });
     // columns: rotated -90°, reading bottom-to-top, above the margin strip
     ctx = setupCanvas(cvCols!, W, COLLAB + TOPBAR);
@@ -195,14 +201,11 @@
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.font = isCur ? `600 11px 'IBM Plex Sans Condensed', system-ui, sans-serif` : it.kind === 'other' ? `italic 400 11px 'IBM Plex Sans', system-ui, sans-serif` : `500 11px 'IBM Plex Sans Condensed', system-ui, sans-serif`;
-      const lead = it.status === 'partial' ? 14 : 0;
+      const lead = it.status === 'partial' ? 16 : 0;
       const txt = fitText(ctx, labelText(it), COLLAB - 10 - lead);
       const tw = ctx.measureText(txt).width;
       if (isCur) plate(ctx, -2, -8, tw + lead + 6, 16);
-      if (lead) {
-        ctx.fillStyle = pal.medium;
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(5, -5); ctx.lineTo(10, 0); ctx.lineTo(5, 5); ctx.fill();
-      }
+      if (lead) { ctx.save(); ctx.rotate(Math.PI / 2); meter(ctx, -6, -12, 2); ctx.restore(); }
       ctx.fillStyle = isCur ? pal.primary : it.kind === 'other' ? pal.muted : pal.secondary;
       ctx.fillText(txt, lead, 0);
       ctx.restore();
@@ -302,7 +305,7 @@
     const ri = order.rows[p.r], ci = order.cols[p.c];
     return { row: hm.rows[ri], col: hm.cols[ci], v: val(ri, ci) };
   }
-  let drawer = $state<{ title: string; params: Record<string, any> } | null>(null);
+  let drawer = $state<{ title: string; params: Record<string, any>; src: { id: number; label: string } | null; dst: { id: number; label: string } } | null>(null);
   const drawerRes = new Resource<any>();
   function activate(p: { r: number; c: number }) {
     const { row, col, v } = cellAt(p);
@@ -312,7 +315,8 @@
       if (row.kind === 'unknown_key') { params.fp = row.fp; params.unknown_origin = true; }
       else if (row.kind === 'unknown') { params.unknown_origin = true; }
       else params.src_host_id = row.host_id;
-      drawer = { title: `${row.kind === 'host' ? row.label : labelText(row)} → ${col.label}`, params };
+      drawer = { title: `${row.kind === 'host' ? row.label : labelText(row)} → ${col.label}`, params,
+        src: row.kind === 'host' ? { id: row.host_id, label: row.label } : null, dst: { id: col.host_id, label: col.label } };
       drawerRes.load(() => api(`/scans/${sid}/edges` + qs(params)));
     } else {
       setQuery({ src: row.id, dst: col.id });
@@ -374,6 +378,7 @@
     return { x: Math.max(8, x), y: Math.max(8, y) };
   });
   const shortFp = (fp: string) => { const b = fp.replace(/^unknown:/, '').replace('SHA256:', ''); return `SHA256:${b.slice(0, 4)}…${b.slice(-4)}`; };
+  const LAYER_LABEL = $derived(P.layer === 'access' ? 'Access, effective only' : 'Evidence');
 
   // ---- keyboard grid (design §8)
   let live = $state('');
@@ -468,12 +473,16 @@
 
 <svelte:window onkeydown={globalKey} onclick={(e) => { if (!(e.target as HTMLElement).closest('.exp')) exportOpen = false; }} />
 
-<PageHead title="Heatmap · {P.layer === 'access' ? 'access, effective only' : 'evidence'}">
-  {#snippet sub()}{#if P.layer === 'evidence'}Evidence – known_hosts and ssh config references, not access{/if}{/snippet}
+<PageHead title="Heatmap">
+  {#snippet fields()}
+    <Field label="Layer" value={LAYER_LABEL} />
+    <Field label="Group by" value={hm && hm.level === 'hosts' && P.group_by !== 'host' ? 'Host (drill-down)' : GROUPS.find((g) => g[0] === P.group_by)?.[1] ?? P.group_by} />
+    <Field label="Metric" value={P.metric === 'hosts' ? 'Hosts' : P.metric === 'users' ? 'Users' : 'Keys'} />
+  {/snippet}
   {#snippet actions()}
     <button class="btn" aria-pressed={P.view === 'table'} onclick={() => setQuery({ view: P.view === 'table' ? null : 'table' })}>{P.view === 'table' ? 'Matrix view' : 'Table view'}</button>
     <div class="exp">
-      <button class="btn" aria-haspopup="menu" aria-expanded={exportOpen} onclick={() => (exportOpen = !exportOpen)}>Export edges ▾</button>
+      <button class="btn" aria-haspopup="menu" aria-expanded={exportOpen} onclick={() => (exportOpen = !exportOpen)}>Export edges<svg class="chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5" /></svg></button>
       {#if exportOpen}<div class="popover expmenu" role="menu">
         <a role="menuitem" href="/api/scans/{sid}/export/edges.csv?kind={P.layer}" download>Edges (CSV)</a>
         <a role="menuitem" href="/api/scans/{sid}/export/edges.json?kind={P.layer}" download>Edges (JSON)</a>
@@ -482,36 +491,35 @@
   {/snippet}
 </PageHead>
 <Notices {scan} partial />
-
-<div class="filters">
-  <label class="row meta secondary">Group by
-    <select class="select" value={P.group_by} onchange={(e) => setQuery({ group_by: (e.target as HTMLSelectElement).value, src: null, dst: null })}>
-      {#each GROUPS as [v, l]}<option value={v}>{l}</option>{/each}
-    </select></label>
-  <label class="row meta secondary">Metric
-    <select class="select" value={P.metric} onchange={(e) => setQuery({ metric: (e.target as HTMLSelectElement).value === 'hosts' ? null : (e.target as HTMLSelectElement).value })}>
-      <option value="hosts">Hosts</option><option value="users">Users</option><option value="keys" disabled={P.layer === 'evidence'}>Keys</option>
-    </select></label>
-  <div class="seg" role="radiogroup" aria-label="Layer">
-    <button role="radio" aria-checked={P.layer === 'access'} onclick={() => setQuery({ layer: null })}>Access</button>
-    <button role="radio" aria-checked={P.layer === 'evidence'} onclick={() => setQuery({ layer: 'evidence', metric: P.metric === 'keys' ? null : P.metric })}>Evidence</button>
-  </div>
-  {#if P.layer === 'access'}<label class="check"><input type="checkbox" checked={P.unknown} onchange={(e) => setQuery({ unknown: (e.target as HTMLInputElement).checked ? null : '0' })} />Unknown-origin row</label>{/if}
-  <div class="seg" role="radiogroup" aria-label="Sort">
-    <button role="radio" aria-checked={P.sort === 'volume'} onclick={() => setQuery({ sort: null }, true)}>Volume</button>
-    <button role="radio" aria-checked={P.sort === 'name'} onclick={() => setQuery({ sort: 'name' }, true)}>Name</button>
-  </div>
-</div>
-
-{#if crumbs}
-  <nav class="crumbs" aria-label="Breadcrumb">
-    <a href={location.pathname + qs({ group_by: route.query.get('group_by'), metric: route.query.get('metric'), layer: route.query.get('layer'), unknown: route.query.get('unknown'), sort: route.query.get('sort') })}>All groups</a>
-    <span class="muted">{' › '}</span><span class="mono" aria-current="page">{crumbs.src} → {crumbs.dst}</span>
-  </nav>
-{/if}
-
 <div class="grid-2 hmgrid">
-  <section class="panel matrix-panel" bind:this={pane}>
+  <section class="panel flush matrix-panel">
+    <div class="toolbar">
+      <label class="ctl">Group by
+        <select class="select" value={P.group_by} onchange={(e) => setQuery({ group_by: (e.target as HTMLSelectElement).value, src: null, dst: null })}>
+          {#each GROUPS as [v, l]}<option value={v}>{l}</option>{/each}
+        </select></label>
+      <label class="ctl">Metric
+        <select class="select" value={P.metric} onchange={(e) => setQuery({ metric: (e.target as HTMLSelectElement).value === 'hosts' ? null : (e.target as HTMLSelectElement).value })}>
+          <option value="hosts">Hosts</option><option value="users">Users</option><option value="keys" disabled={P.layer === 'evidence'}>Keys</option>
+        </select></label>
+      <div class="seg" role="radiogroup" aria-label="Layer">
+        <button role="radio" aria-checked={P.layer === 'access'} onclick={() => setQuery({ layer: null })}>Access</button>
+        <button role="radio" aria-checked={P.layer === 'evidence'} onclick={() => setQuery({ layer: 'evidence', metric: P.metric === 'keys' ? null : P.metric })}>Evidence</button>
+      </div>
+      <div class="seg" role="radiogroup" aria-label="Sort">
+        <button role="radio" aria-checked={P.sort === 'volume'} onclick={() => setQuery({ sort: null }, true)}>Volume</button>
+        <button role="radio" aria-checked={P.sort === 'name'} onclick={() => setQuery({ sort: 'name' }, true)}>Name</button>
+      </div>
+      {#if P.layer === 'access'}<label class="check"><input type="checkbox" checked={P.unknown} onchange={(e) => setQuery({ unknown: (e.target as HTMLInputElement).checked ? null : '0' })} />Unknown-origin row</label>{/if}
+    </div>
+    {#if crumbs}
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href={location.pathname + qs({ group_by: route.query.get('group_by'), metric: route.query.get('metric'), layer: route.query.get('layer'), unknown: route.query.get('unknown'), sort: route.query.get('sort') })}>All groups</a>
+        <svg class="sepc" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 3 7.5 6 4.5 9" fill="none" stroke="currentColor" stroke-width="1.5" /></svg><span aria-current="page">{crumbs.src} → {crumbs.dst}</span>
+      </nav>
+    {/if}
+    {#if P.layer === 'evidence'}<p class="evnote">Evidence – known_hosts and ssh config references, not access</p>{/if}
+    <div class="mbody" bind:this={pane}>
     {#if res.error}
       <ErrorPanel thing="the heatmap" message={res.error} retry={load} />
     {:else if !hm}
@@ -525,15 +533,15 @@
         <div class="table-wrap tv">
           <table class="t">
             <thead><tr>
-              <th aria-sort={tsort === 'src' ? 'ascending' : 'none'}><button class="sort" onclick={() => (tsort = 'src')}>Source{#if tsort === 'src'} ▲{/if}</button></th>
-              <th aria-sort={tsort === 'dst' ? 'ascending' : 'none'}><button class="sort" onclick={() => (tsort = 'dst')}>Destination{#if tsort === 'dst'} ▲{/if}</button></th>
-              <th class="r" aria-sort={tsort === 'value' ? 'descending' : 'none'}><button class="sort" onclick={() => (tsort = 'value')}>Value{#if tsort === 'value'} ▼{/if}</button></th>
+              <th aria-sort={tsort === 'src' ? 'ascending' : 'none'}><button class="sort" onclick={() => (tsort = 'src')}>Source{#if tsort === 'src'}{@render sortUp()}{/if}</button></th>
+              <th aria-sort={tsort === 'dst' ? 'ascending' : 'none'}><button class="sort" onclick={() => (tsort = 'dst')}>Destination{#if tsort === 'dst'}{@render sortUp()}{/if}</button></th>
+              <th class="r" aria-sort={tsort === 'value' ? 'descending' : 'none'}><button class="sort" onclick={() => (tsort = 'value')}>Value{#if tsort === 'value'}<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2.5v7M3 6.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>{/if}</button></th>
             </tr></thead>
             <tbody>
               {#each tableRows as t}
                 <tr class="clickable" onclick={() => tableActivate(t)}>
-                  <td class="mono">{#if t.row.kind === 'unknown' || t.row.kind === 'unknown_key'}<span class="sev-info unk"><Glyph kind="unknown" /></span>{/if}{t.src}</td>
-                  <td class="mono">{t.dst}</td>
+                  <td class="ent" class:unkrow={t.row.kind === 'unknown' || t.row.kind === 'unknown_key'}>{t.src}</td>
+                  <td>{t.dst}</td>
                   <td class="r num"><button class="linkish" onclick={(e) => { e.stopPropagation(); tableActivate(t); }}>{t.v}</button></td>
                 </tr>
               {:else}<tr><td class="empty" colspan="3">No access between scanned hosts in scan #{sid}.</td></tr>{/each}
@@ -563,37 +571,40 @@
       {/if}
       <div class="legend">
         <div class="bins" aria-label="Legend">
-          {#each BINS as b}<span class="bin"><span class="sw sw{b.step}"></span><span class="micro num">{b.label}</span></span>{/each}
+          {#each BINS as b}<span class="bin"><span class="sw sw{b.step}"></span><span class="axis num">{b.label}</span></span>{/each}
         </div>
-        <p class="meta secondary">Colour = {metricSentence}{#if P.layer === 'access' && P.unknown}{' · '}<span class="hatchsw" aria-hidden="true"></span> Hatched = unknown origin (no private key found){/if}</p>
-        <p class="meta secondary">{P.layer === 'access' ? 'Counts only effective access edges; self-access is not counted.' : 'Counts evidence edges.'}{#if suffix}{' · '}Hidden suffix: <span class="mono">{suffix}</span>{/if}
-          {#if renderMs}{' · '}<span class="num">{hm.hosts_total} hosts, built in {renderMs} ms</span>{/if}</p>
+        <p class="meta secondary">Colour = {metricSentence}</p>
+        {#if P.layer === 'access' && P.unknown}<p class="meta secondary"><span class="hatchsw" aria-hidden="true"></span> Hatched = unknown origin (no private key found)</p>{/if}
+        <p class="meta secondary">{P.layer === 'access' ? 'Counts only effective access edges; self-access is not counted.' : 'Counts evidence edges.'}</p>
+        {#if suffix}<p class="meta secondary">Hidden suffix: <span class="mono">{suffix}</span></p>{/if}
+        {#if renderMs}<p class="meta secondary num">{hm.hosts_total} hosts, built in {renderMs} ms</p>{/if}
         <p class="meta muted">{hostLevel ? 'Click a cell to list its edges; click a host label to open the host.' : 'Click a cell to drill down to host × host; click a label to drill into that group.'} Keyboard: arrow keys, Enter, Backspace, T.</p>
       </div>
     {/if}
+    </div>
   </section>
 
-  <aside class="panel ranking">
-    <h2 class="section-title">{R.dir === 'in' ? 'Most inbound' : 'Most outbound'}</h2>
+  <aside class="panel flush ranking">
+    <header><h2 class="section-title">{R.dir === 'in' ? 'Most inbound' : 'Most outbound'}</h2></header>
     <div class="row rk">
       <div class="seg" role="radiogroup" aria-label="Direction">
         <button role="radio" aria-checked={R.dir === 'in'} onclick={() => setQuery({ rdir: null }, true)}>Inbound</button>
         <button role="radio" aria-checked={R.dir === 'out'} onclick={() => setQuery({ rdir: 'out', rmetric: R.metric === 'unknown_keys' ? null : R.metric }, true)}>Outbound</button>
       </div>
-      <label class="row meta secondary">Metric
+      <label class="ctl">Metric
         <select class="select" value={R.metric} onchange={(e) => setQuery({ rmetric: (e.target as HTMLSelectElement).value === 'hosts' ? null : (e.target as HTMLSelectElement).value }, true)}>
           <option value="hosts">Hosts</option><option value="users">Users</option><option value="keys">Keys</option>
           {#if R.dir === 'in'}<option value="unknown_keys">Unknown-origin keys</option>{/if}
         </select></label>
     </div>
-    {#if rank.error}<ErrorPanel thing="the ranking" message={rank.error} />
+    {#if rank.error}<div class="rpad"><ErrorPanel thing="the ranking" message={rank.error} /></div>
     {:else if rank.data}
-      {#if rank.data.items.length === 0}<p class="secondary dense">{R.dir === 'in' ? 'No host can be reached from another scanned host.' : 'No host can reach another scanned host.'}</p>{/if}
+      {#if rank.data.items.length === 0}<p class="secondary dense rpad">{R.dir === 'in' ? 'No host can be reached from another scanned host.' : 'No host can reach another scanned host.'}</p>{/if}
       <ol class="rlist">
         {#each rank.data.items as r, i}
           <li onmouseenter={() => (highlightHost = r.host_id)} onmouseleave={() => (highlightHost = null)}>
             <span class="num muted">{i + 1}</span>
-            <a class="mono trunc" href={hostHref(sid, r.host_id)} title={r.display_name}>{strip(r.display_name, suffix || rankSuffix)}</a>
+            <a class="trunc" href={hostHref(sid, r.host_id)} title={r.display_name}>{strip(r.display_name, suffix || rankSuffix)}</a>
             <span class="num v">{n(r.value)}</span>
             <span class="rb"><span style:width="{(r.value / rankMax) * 100}%"></span></span>
           </li>
@@ -605,41 +616,52 @@
 
 {#if cur && tipCell && tipCell.v > 0 && hm && P.view !== 'table' && !drawer}
   <div class="tooltip" bind:this={tipEl} style:left="{tipPos.x}px" style:top="{tipPos.y}px" role="tooltip">
-    <div class="tt mono">{tipCell.row.kind === 'unknown' ? 'Unknown origin' : labelText(tipCell.row)} → {labelText(tipCell.col)}</div>
+    <div class="tt">{tipCell.row.kind === 'unknown' ? 'Unknown origin' : labelText(tipCell.row)} → {labelText(tipCell.col)}</div>
     {#if hostLevel && tipCell.row.kind === 'host'}
-      <div class="secondary num">{plural(tipCell.v, P.metric === 'hosts' ? 'host pair' : P.metric === 'users' ? 'user pair' : 'key')}{#if tipPairs?.pairs?.[0]}{' · '}{plural(tipPairs.pairs[0].users, 'user')} · {plural(tipPairs.pairs[0].keys, 'key')}{/if}</div>
-      <div class="meta muted">Click to list the edges</div>
+      <div class="num">{plural(tipCell.v, P.metric === 'hosts' ? 'host pair' : P.metric === 'users' ? 'user pair' : 'key')}</div>
+      {#if tipPairs?.pairs?.[0]}<div class="num">{plural(tipPairs.pairs[0].users, 'user')}</div><div class="num">{plural(tipPairs.pairs[0].keys, 'key')}</div>{/if}
+      <div class="meta muted hint">Click to list the edges</div>
     {:else}
-      <div class="secondary num">{n(tipCell.v)} {unitWord(tipCell.v)} · {P.layer === 'access' ? 'access, effective' : 'evidence'}</div>
+      <div class="num">{n(tipCell.v)} {unitWord(tipCell.v)}</div>
+      <div class="secondary">{P.layer === 'access' ? 'Access, effective' : 'Evidence'}</div>
       {#if tipPairs}
         <div class="meta muted tp">Top pairs</div>
         <ul class="pairs">
           {#each tipPairs.pairs as p}
-            <li class="mono"><span class="trunc">{p.src_host_id === null ? `? ${shortFp(p.src)} → ${strip(p.dst, suffix || tipSuffix)}${p.dst_users?.[0] ? ':' + p.dst_users[0] : ''}` : `${strip(p.src, suffix || tipSuffix)} → ${strip(p.dst, suffix || tipSuffix)}`}</span>
-              <span class="num secondary sans">{P.metric === 'keys' ? plural(p.keys, 'key') : plural(p.users, 'user')}</span></li>
+            <li><span class="trunc">{#if p.src_host_id === null}<span class="mono">{shortFp(p.src)}</span>{' → '}{strip(p.dst, suffix || tipSuffix)}{p.dst_users?.[0] ? ':' + p.dst_users[0] : ''}{:else}{strip(p.src, suffix || tipSuffix)} → {strip(p.dst, suffix || tipSuffix)}{/if}</span>
+              <span class="num secondary">{P.metric === 'keys' ? plural(p.keys, 'key') : plural(p.users, 'user')}</span></li>
           {/each}
         </ul>
       {:else}<div class="meta muted">Loading top pairs…</div>{/if}
-      <div class="meta muted">{hostLevel ? 'Click to list the edges' : 'Click to drill down'}</div>
+      <div class="meta muted hint">{hostLevel ? 'Click to list the edges' : 'Click to drill down'}</div>
     {/if}
   </div>
 {/if}
 
 {#if drawer}
-  <Drawer title={drawer.title} onclose={() => (drawer = null)}>
-    {#if drawerRes.error}<ErrorPanel thing="edges" message={drawerRes.error} />
-    {:else if !drawerRes.data}<p class="secondary">Loading edges…</p>
-    {:else}
-      <p class="meta secondary">{plural(drawerRes.data.total, P.layer === 'access' ? 'access edge' : 'evidence edge')}</p>
+  <Drawer title={drawer.title} sub={drawerRes.data ? plural(drawerRes.data.total, P.layer === 'access' ? 'access edge' : 'evidence edge') : 'Loading edges…'} onclose={() => (drawer = null)}>
+    {#if drawerRes.error}<div class="dpad"><ErrorPanel thing="edges" message={drawerRes.error} /></div>
+    {:else if drawerRes.data}
       <EdgeTable edges={drawerRes.data.items} scan={sid} evidence={P.layer === 'evidence'} compact empty="No edges between these hosts." />
     {/if}
+    {#snippet footer()}
+      {#if drawer?.src}<a class="btn" href={hostHref(sid, drawer.src.id)}>Open {drawer.src.label}</a>{/if}
+      {#if drawer?.dst}<a class="btn" href={hostHref(sid, drawer.dst.id)}>Open {drawer.dst.label}</a>{/if}
+    {/snippet}
   </Drawer>
 {/if}
 
+{#snippet sortUp()}<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 9.5v-7M3 5.5l3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>{/snippet}
+
 <style>
-  .crumbs { font-size: 13px; }
-  .hmgrid { align-items: start; }
-  .matrix-panel { min-width: 0; display: flex; flex-direction: column; gap: var(--s4); }
+  .chev { color: var(--text-muted); }
+  .crumbs { display: flex; align-items: center; gap: var(--s2); font-size: 13px; line-height: 20px; padding: var(--s3) var(--s5);
+    border-bottom: 1px solid var(--border-subtle); }
+  .sepc { color: var(--text-muted); }
+  .evnote { font-size: 12px; line-height: 16px; color: var(--text-secondary); padding: var(--s3) var(--s5) 0; }
+  .hmgrid { align-items: start; grid-template-columns: minmax(0, 1fr) 320px; }
+  .matrix-panel { min-width: 0; display: flex; flex-direction: column; }
+  .mbody { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s4); min-width: 0; }
   .scroller { overflow: auto; max-height: max(560px, calc(100vh - 150px)); min-height: 200px; position: relative; max-width: 100%; }
   .mgrid { display: grid; width: max-content; }
   .corner { background: var(--bg-surface); position: sticky; top: 0; z-index: 3; }
@@ -653,40 +675,42 @@
   .cells { cursor: pointer; }
   .cells:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
   .over { position: absolute; left: 0; top: 0; pointer-events: none; }
-  .building { border: 1px solid var(--border-strong); background: var(--bg-sunken); display: grid; place-items: center; max-width: 100%; }
-  .emptymsg { padding: var(--s7); text-align: center; color: var(--text-secondary); }
+  .building { border: 1px solid var(--border-subtle); background: var(--bg-subtle); display: grid; place-items: center; max-width: 100%; }
+  .emptymsg { padding: var(--s7) 0; color: var(--text-secondary); }
   .trunc-note { margin: 0; }
-  .legend { display: flex; flex-direction: column; gap: var(--s2); border-top: 1px solid var(--border-subtle); padding-top: var(--s3); }
-  .bins { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; }
-  .bin { display: inline-flex; gap: var(--s2); align-items: center; }
+  .legend { display: flex; flex-direction: column; gap: var(--s1); border-top: 1px solid var(--border-subtle); padding-top: var(--s4); }
+  .bins { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; margin-bottom: var(--s2); }
+  .bin { display: inline-flex; gap: var(--s2); align-items: center; color: var(--text-secondary); }
   .sw { width: 16px; height: 12px; display: inline-block; }
-  .sw0 { background: var(--bg-sunken); border: 1px solid var(--border-subtle); }
+  .sw0 { background: var(--bg-subtle); border: 1px solid var(--border-subtle); }
   .sw1 { background: var(--ramp-1); } .sw2 { background: var(--ramp-2); } .sw3 { background: var(--ramp-3); }
   .sw4 { background: var(--ramp-4); } .sw5 { background: var(--ramp-5); } .sw6 { background: var(--ramp-6); }
   .sw7 { background: var(--ramp-7); } .sw8 { background: var(--ramp-8); } .sw9 { background: var(--ramp-9); }
   .hatchsw { display: inline-block; width: 16px; height: 12px; vertical-align: -2px; background-color: var(--ramp-3);
     background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--text-primary) 20%, transparent) 0 1px, transparent 1px 4px); }
-  .ranking { display: flex; flex-direction: column; gap: var(--s4); }
-  .rk { gap: var(--s3); }
-  .rlist { list-style: none; margin: 0; padding: 0; }
-  .rlist li { display: grid; grid-template-columns: 24px minmax(0, 1fr) 40px 30%; gap: var(--s3); align-items: center; height: 28px; font-size: 13px;
-    padding: 0 var(--s2); border-radius: var(--r1); }
+  /* ranking (design-revision §5.2): 320 px, rows 32 px, rank in text.muted, bars in border.default */
+  .ranking { display: flex; flex-direction: column; }
+  .rk { gap: var(--s3); padding: var(--s3) var(--s5); border-bottom: 1px solid var(--border-subtle); }
+  .rpad { padding: var(--s4) var(--s5); }
+  .rlist { list-style: none; margin: 0; padding: var(--s2) var(--s3) var(--s3); }
+  .rlist li { display: grid; grid-template-columns: 20px minmax(0, 1fr) 36px 30%; gap: var(--s3); align-items: center; height: 32px; font-size: 13px;
+    padding: 0 var(--s3); border-radius: var(--r1); }
+  .rlist li a { font-weight: 500; }
   .rlist li:hover { background: var(--bg-hover); }
   .rlist .v { text-align: right; }
-  .rb span { display: block; height: 8px; background: var(--text-secondary); opacity: .45; }
-  .tooltip .tt { font-weight: 500; }
+  .rb span { display: block; height: 6px; background: var(--border-default); border-radius: 1px; }
+  /* tooltip (design-revision §5.2): one fact per line */
+  .tooltip .tt { font-weight: 600; }
+  .tooltip .hint { margin-top: var(--s1); }
   .tp { margin-top: var(--s2); }
-  .pairs { list-style: none; margin: 0 0 var(--s2); padding: 0; }
+  .pairs { list-style: none; margin: 0; padding: 0; }
   .pairs li { display: flex; justify-content: space-between; gap: var(--s4); font-size: 12px; line-height: 16px; }
   .pairs .trunc { max-width: 210px; }
-  .sans { font-family: var(--sans); }
-  .unk { color: var(--c); margin-right: var(--s2); }
-  .tv { max-height: calc(100vh - 290px); }
-  .linkish { all: unset; cursor: pointer; color: var(--accent); }
+  .pairs .mono { font-size: 12px; }
+  .unkrow { font-style: italic; }
+  .tv { max-height: calc(100vh - 290px); margin: 0 calc(-1 * var(--s5)); }
+  .linkish { all: unset; cursor: pointer; color: var(--accent); font-weight: 500; }
   .linkish:focus-visible { outline: 2px solid var(--accent); }
-  .exp { position: relative; }
-  .expmenu { right: 0; top: 36px; display: flex; flex-direction: column; padding: var(--s2) 0; min-width: 160px; z-index: 50; }
-  .expmenu a { padding: var(--s3) var(--s4); color: var(--text-primary); }
-  .expmenu a:hover { background: var(--bg-hover); text-decoration: none; }
-  @media (max-width: 1279px) { .scroller { max-height: none; } }
+  .dpad { padding: 0 var(--s6); }
+  @media (max-width: 1279px) { .scroller { max-height: none; } .hmgrid { grid-template-columns: minmax(0, 1fr); } }
 </style>

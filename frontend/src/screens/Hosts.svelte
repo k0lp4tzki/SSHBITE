@@ -14,7 +14,7 @@
   import Pagination from '../components/Pagination.svelte';
   import ErrorPanel from '../components/ErrorPanel.svelte';
   import Skeleton from '../components/Skeleton.svelte';
-  import Glyph from '../components/Glyph.svelte';
+  import Field from '../components/Field.svelte';
 
   let { scan }: { scan: any } = $props();
   const sid = scan.id;
@@ -43,10 +43,14 @@
 </script>
 
 <svelte:window onclick={(e) => { if (!(e.target as HTMLElement).closest('.exp')) exportOpen = false; }} />
-<PageHead title="Hosts · {res.data ? n(res.data.total) : '…'}">
+<PageHead title="Hosts">
+  {#snippet fields()}
+    <Field label="Showing">{#if res.data}{n(res.data.total)} of {n(Object.values(res.data.status_counts ?? {}).reduce((a: number, v: any) => a + v, 0))}{:else}…{/if}</Field>
+    <Field label="Scan">Scan #{sid} <span class="secondary">{scan.label || 'unlabelled'}</span></Field>
+  {/snippet}
   {#snippet actions()}
     <div class="exp">
-      <button class="btn" aria-haspopup="menu" aria-expanded={exportOpen} onclick={() => (exportOpen = !exportOpen)}>Export ▾</button>
+      <button class="btn" aria-haspopup="menu" aria-expanded={exportOpen} onclick={() => (exportOpen = !exportOpen)}>Export<svg class="chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5" /></svg></button>
       {#if exportOpen}<div class="popover expmenu" role="menu">
         <a role="menuitem" href="/api/scans/{sid}/export/hosts.csv{exportQs}" download>Hosts (CSV)</a>
         <a role="menuitem" href="/api/scans/{sid}/export/hosts.json{exportQs}" download>Hosts (JSON)</a>
@@ -56,21 +60,21 @@
 </PageHead>
 <Notices {scan} partial />
 
-<div class="filters">
+<section class="panel flush">
+<div class="toolbar">
   <input class="input qi" type="search" placeholder="Search name or IP" aria-label="Search name or IP" bind:value={qInput} oninput={onQ} />
   <MultiSelect label="Status" options={statusOpts} value={Q.status ? Q.status.split(',') : []} onchange={(v) => setQuery({ status: v.join(','), page: null })} />
   <MultiSelect label="Privilege" options={[{ value: 'root', label: 'root' }, { value: 'sudo_password', label: 'sudo password' }, { value: 'unprivileged', label: 'unprivileged' }, { value: 'none', label: 'not scanned' }]}
     value={Q.privilege ? Q.privilege.split(',') : []} onchange={(v) => setQuery({ privilege: v.join(','), page: null })} />
-  <label class="row meta secondary">Group by
+  <label class="ctl">Group by
     <select class="select" value={groupKind} onchange={(e) => setQuery({ group_kind: (e.target as HTMLSelectElement).value, group: null, page: null })}>
-      <option value="subnet">subnet</option><option value="ansible">Ansible group</option><option value="tag">tag</option><option value="depth">crawl depth</option>
+      <option value="subnet">Subnet</option><option value="ansible">Ansible group</option><option value="tag">Tag</option><option value="depth">Crawl depth</option>
     </select>
     <select class="select" aria-label="Group" value={Q.group} onchange={(e) => setQuery({ group_kind: groupKind, group: (e.target as HTMLSelectElement).value, page: null })}>
-      <option value="">= all</option>
+      <option value="">All groups</option>
       {#each groupVals as g}<option value={g}>{groupKind === 'depth' ? `Depth ${g}` : g}</option>{/each}
     </select>
   </label>
-  {#if filtered}<button class="btn ghost" onclick={clear}>Clear filters</button>{/if}
 </div>
 {#if filtered}
   <div class="applied">
@@ -78,16 +82,15 @@
     {#if Q.status}<button class="chip filter" onclick={() => setQuery({ status: null })}>Status: {Q.status.split(',').map((s) => STATUS_LABEL[s] ?? s).join(', ')} ×</button>{/if}
     {#if Q.privilege}<button class="chip filter" onclick={() => setQuery({ privilege: null })}>Privilege: {Q.privilege.split(',').map(privilege).join(', ')} ×</button>{/if}
     {#if Q.group}<button class="chip filter" onclick={() => setQuery({ group: null, group_kind: null })}>{groupKind}: {Q.group} ×</button>{/if}
+    <button class="btn ghost small" onclick={clear}>Clear filters</button>
   </div>
 {/if}
 
 {#if res.error}
-  <ErrorPanel thing="hosts" message={res.error} retry={load} />
+  <div class="pad"><ErrorPanel thing="hosts" message={res.error} retry={load} /></div>
 {:else if !res.data}
-  {#if res.slow}<div class="panel flush"><Skeleton /></div>{/if}
+  {#if res.slow}<Skeleton />{/if}
 {:else}
-  <Pagination total={res.data.total} page={Q.page} pageSize={Q.page_size} onchange={(p, s) => setQuery({ page: p > 1 ? p : null, size: s !== 100 ? s : null })} />
-  <section class="panel flush">
     <div class="table-wrap">
       <table class="t hosts">
         <thead><tr>
@@ -97,19 +100,19 @@
           <th>Group</th>
           <SortTh label="In" key="in_hosts" right defaultDesc sort={Q.sort} order={Q.order} onsort={(k, o) => setQuery({ sort: k, order: o === 'default' ? null : o })} />
           <SortTh label="Out" key="out_hosts" right defaultDesc sort={Q.sort} order={Q.order} onsort={(k, o) => setQuery({ sort: k, order: o === 'default' ? null : o })} />
-          <SortTh label="Unk" key="in_unknown_keys" right defaultDesc sort={Q.sort} order={Q.order} onsort={(k, o) => setQuery({ sort: k, order: o === 'default' ? null : o })} />
+          <SortTh label="Unknown" key="in_unknown_keys" right defaultDesc sort={Q.sort} order={Q.order} onsort={(k, o) => setQuery({ sort: k, order: o === 'default' ? null : o })} />
           <SortTh label="Findings" key="findings" defaultDesc sort={Q.sort} order={Q.order} onsort={(k, o) => setQuery({ sort: k, order: o === 'default' ? null : o })} />
           {#if Q.sort === 'unresolved_hashed'}<SortTh label="Unmatched hashed" key="unresolved_hashed" right defaultDesc sort={Q.sort} order={Q.order} onsort={(k, o) => setQuery({ sort: k, order: o === 'default' ? null : o })} />{/if}
         </tr></thead>
         <tbody>
           {#each res.data.items as h (h.host_id)}
             <tr>
-              <td class="mono"><a href={hostHref(sid, h.host_id)} title={h.display_name}>{endTrunc(h.display_name, 34)}</a>{#if h.status === 'partial'}<span class="pg sev-medium" title="Scanned partially"><Glyph kind="medium" /></span>{/if}</td>
-              <td class="mono" title={h.ips.join(', ')}>{h.ips[0] ?? '–'}{#if h.ips.length > 1}<span class="muted"> +{h.ips.length - 1}</span>{/if}</td>
+              <td class="ent"><a href={hostHref(sid, h.host_id)} title={h.display_name}>{endTrunc(h.display_name, 34)}</a></td>
+              <td class="num" title={h.ips.join(', ')}>{h.ips[0] ?? '–'}{#if h.ips.length > 1}<span class="muted">{' +'}{h.ips.length - 1}</span>{/if}</td>
               <td><StatusBadge status={h.status} /></td>
               <td>{privilege(h.privilege)}</td>
               <td class="r num">{h.depth ?? '–'}</td>
-              <td class="mono">{groupLabel(h)}</td>
+              <td>{groupLabel(h)}</td>
               <td class="r num">{h.metrics.in_hosts}</td>
               <td class="r num">{h.metrics.out_hosts}</td>
               <td class="r num">{h.metrics.in_unknown_keys}</td>
@@ -124,17 +127,13 @@
         </tbody>
       </table>
     </div>
-  </section>
   <Pagination total={res.data.total} page={Q.page} pageSize={Q.page_size} onchange={(p, s) => setQuery({ page: p > 1 ? p : null, size: s !== 100 ? s : null })} />
 {/if}
+</section>
 
 <style>
   .qi { width: 220px; }
+  .pad { padding: var(--s5); }
   .fs { display: inline-flex; gap: var(--s3); }
-  .pg { color: var(--c); margin-left: var(--s2); }
-  .exp { position: relative; }
-  .expmenu { right: 0; top: 36px; display: flex; flex-direction: column; padding: var(--s2) 0; min-width: 160px; }
-  .expmenu a { padding: var(--s3) var(--s4); color: var(--text-primary); }
-  .expmenu a:hover { background: var(--bg-hover); text-decoration: none; }
-  .hosts td:first-child { position: sticky; left: 0; background: inherit; }
+  .chev { color: var(--text-muted); }
 </style>

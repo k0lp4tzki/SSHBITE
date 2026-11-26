@@ -38,7 +38,7 @@
   {#if open}
     <ul class="popover lst" role="listbox">
       {#each items as i, k}
-        <li role="option" aria-selected={k === active}><button class:act={k === active} onclick={() => pick(i)}><span class="mono">{i.t}</span><span class="meta muted">{i.s}</span></button></li>
+        <li role="option" aria-selected={k === active}><button class:act={k === active} onclick={() => pick(i)}><span class:mono={kind === 'keys'} class="it">{i.t}</span><span class="meta secondary">{i.s}</span></button></li>
       {:else}<li class="none meta secondary">No match</li>{/each}
     </ul>
   {/if}
@@ -52,4 +52,5 @@
     padding: 0 var(--s4); cursor: pointer; }
   .lst button:hover, .lst button.act { background: var(--bg-hover); }
   .none { padding: var(--s3) var(--s4); }
+  .it { font-size: 13px; }
 </style>

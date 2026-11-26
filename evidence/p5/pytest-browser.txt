@@ -1,0 +1,39 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /workspace/.venv/bin/python
+rootdir: /workspace
+configfile: pyproject.toml
+plugins: anyio-4.16.0
+collecting ... collected 29 items
+
+tests/browser/test_ui.py::test_1_login_logout_wrong_password_and_lockout PASSED [  3%]
+tests/browser/test_ui.py::test_2_dashboard_counts_equal_api PASSED       [  6%]
+tests/browser/test_ui.py::test_3_heatmap_host_grouping_jump_a2 PASSED    [ 10%]
+tests/browser/test_ui.py::test_4_subnet_heatmap_2000_hosts_fast_and_drilldown PASSED [ 13%]
+tests/browser/test_ui.py::test_5_host_discovered_via_and_routes PASSED   [ 17%]
+tests/browser/test_ui.py::test_6_key_dsa PASSED                          [ 20%]
+tests/browser/test_ui.py::test_7_label_persists_and_put_without_csrf_403 PASSED [ 24%]
+tests/browser/test_ui.py::test_8_synthetic_banner_on_every_screen PASSED [ 27%]
+tests/browser/test_ui.py::test_9_no_request_leaves_the_origin PASSED     [ 31%]
+tests/browser/test_ui.py::test_10_empty_states_on_empty_db PASSED        [ 34%]
+tests/browser/test_ui.py::test_empty_lists_and_filters PASSED            [ 37%]
+tests/browser/test_ui.py::test_c3_contrast_computed_in_both_themes[light] PASSED [ 41%]
+tests/browser/test_ui.py::test_c3_contrast_computed_in_both_themes[dark] PASSED [ 44%]
+tests/browser/test_ui.py::test_c4_severity_and_strength_have_glyph_and_label PASSED [ 48%]
+tests/browser/test_ui.py::test_c5_fingerprints_mono_and_exact_copy PASSED [ 51%]
+tests/browser/test_ui.py::test_c13_no_horizontal_page_scroll_at_1280_and_375 PASSED [ 55%]
+tests/browser/test_ui.py::test_f1_route_attempts_on_host_detail_and_crawl_tree PASSED [ 58%]
+tests/browser/test_ui.py::test_f2_tabs_of_a_host_that_was_not_scanned PASSED [ 62%]
+tests/browser/test_ui.py::test_f4_synthetic_banner_on_scans_and_diff PASSED [ 65%]
+tests/browser/test_ui.py::test_f5_search_by_keyboard PASSED              [ 68%]
+tests/browser/test_ui.py::test_f3_fingerprints_and_narrow_tables PASSED  [ 72%]
+tests/browser/test_ui.py::test_f6_accounts_count_diff_route_removed PASSED [ 75%]
+tests/browser/test_ui.py::test_f6_crawl_tree_reaches_every_one_of_2000_hosts PASSED [ 79%]
+tests/browser/test_ui.py::test_r1_no_indigo_paper_or_green_in_computed_styles[light] PASSED [ 82%]
+tests/browser/test_ui.py::test_r1_no_indigo_paper_or_green_in_computed_styles[dark] PASSED [ 86%]
+tests/browser/test_ui.py::test_r3_only_the_type_scale_sizes PASSED       [ 89%]
+tests/browser/test_ui.py::test_r4_no_middle_dot_chains_and_no_trailing_arrows PASSED [ 93%]
+tests/browser/test_ui.py::test_r8_sidebar_reaches_the_bottom_on_the_crawl_tree PASSED [ 96%]
+tests/browser/test_ui.py::test_r_crawl_filter_finds_a_collapsed_host_at_2000 PASSED [100%]
+
+======================== 29 passed in 170.63s (0:02:50) ========================
+exit 0

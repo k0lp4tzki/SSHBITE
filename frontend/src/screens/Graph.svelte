@@ -16,7 +16,7 @@
   import Strip from '../components/Strip.svelte';
   import Fp from '../components/Fp.svelte';
   import StrengthChip from '../components/StrengthChip.svelte';
-  import Glyph from '../components/Glyph.svelte';
+  import Field from '../components/Field.svelte';
   import ErrorPanel from '../components/ErrorPanel.svelte';
 
   let { scan }: { scan: any } = $props();
@@ -182,15 +182,17 @@
     const r1 = l.source.r + 1, r2 = l.target.r + 3;
     return { x1: sx + ux * r1, y1: sy + uy * r1, x2: tx - ux * r2, y2: ty - uy * r2, ux, uy, len };
   }
-  const STROKE: Record<string, string> = { critical: 'var(--critical)', weak: 'var(--medium)', ok: 'var(--low)', good: 'var(--good)', unknown: 'var(--info)' };
+  // edge colours (design-revision §3.3): critical keys in the Critical colour, weak in Medium, all others text.secondary
+  const STROKE: Record<string, string> = { critical: 'var(--critical)', weak: 'var(--medium)', ok: 'var(--text-secondary)', good: 'var(--text-secondary)', unknown: 'var(--text-secondary)' };
   const colour = (l: L) => (l.cls === 'evidence' ? 'var(--text-secondary)' : l.cls === 'blocked' ? 'var(--text-muted)' : STROKE[l.strength ?? 'unknown']);
   const marker = (l: L) => (l.cls === 'evidence' ? 'url(#arr-ev)' : l.cls === 'blocked' ? 'url(#arr-blocked)' : `url(#arr-${l.strength ?? 'unknown'})`);
   const width = (l: L) => (l.cls === 'evidence' ? 1 : 1.5 + Math.min(l.count - 1, 3));
   const shortFp = (fp: string) => { const b = (fp ?? '').replace('SHA256:', ''); return `SHA256:${b.slice(0, 4)}…${b.slice(-4)}`; };
-  function nodeLabel(nd: N) { return nd.kind === 'unknown' ? `? ${shortFp(nd.fp!)}` : suffix && nd.label.endsWith(suffix) ? nd.label.slice(0, -suffix.length) : nd.label; }
+  function nodeLabel(nd: N) { return nd.kind === 'unknown' ? shortFp(nd.fp!) : suffix && nd.label.endsWith(suffix) ? nd.label.slice(0, -suffix.length) : nd.label; }
   const showLabel = (nd: N) => nd.dist === 0 || nodes.length <= 40 || (nd.dist === 1 && nodes.length <= 60) || activeNode === nd.id || adjacent.has(nd.id);
   const centreNode = $derived(nodes.find((x) => x.dist === 0));
-  const title = $derived(G.key ? `Graph · key ${shortFp(fpFromUrl(G.key))}` : `Graph · around ${centreNode ? nodeLabel(centreNode) : '…'}`);
+  const centreText = $derived(G.key ? `Key ${shortFp(fpFromUrl(G.key))}` : centreNode ? nodeLabel(centreNode) : '…');
+  const title = $derived(G.key ? `Graph around key ${shortFp(fpFromUrl(G.key))}` : `Graph around ${centreNode ? nodeLabel(centreNode) : '…'}`);
   const isolated = $derived(res.data && G.host && res.data.links.length === 0);
   let showList = $state(false);
 
@@ -206,47 +208,60 @@
   function pickCentre(p: Record<string, any>) { cq = ''; cres = null; setQuery({ host: null, key: null, ...p }); }
 </script>
 
-<PageHead {title}>
+<PageHead title="Graph">
+  {#snippet fields()}
+    {#if hasCentre}<Field label="Centre" value={centreText} />{/if}
+    <Field label="Hops" value={G.hops} />
+    <Field label="Layer" value={G.layer === 'access' ? 'Access' : G.layer === 'evidence' ? 'Evidence' : 'Access and evidence'} />
+    {#if res.data}<Field label="Nodes">{n(res.data.nodes.length)} of {n(res.data.total_nodes)}{res.data.truncated ? '+' : ''}</Field>{/if}
+  {/snippet}
   {#snippet actions()}
-    <div class="seg" role="radiogroup" aria-label="Hops">
-      {#each [1, 2] as h}<button role="radio" aria-checked={G.hops === h} onclick={() => setQuery({ hops: h === 1 ? null : h })}>Hops: {h}</button>{/each}
-    </div>
-    <div class="seg" role="radiogroup" aria-label="Layer">
-      {#each [['access', 'Access'], ['evidence', 'Evidence'], ['both', 'Both']] as [v, l]}<button role="radio" aria-checked={G.layer === v} onclick={() => setQuery({ layer: v === 'access' ? null : v })}>{l}</button>{/each}
-    </div>
+    {#if res.data}<button class="btn" aria-pressed={showList} onclick={() => (showList = !showList)}>Edge list</button>{/if}
   {/snippet}
 </PageHead>
 <Notices {scan} partial />
-
-<div class="filters">
-  <div class="csearch">
-    <input class="input" type="search" placeholder="Centre: search host or key" aria-label="Centre: search host or key" bind:value={cq} oninput={centreSearch} />
-    {#if cres}
-      <div class="popover cl">
-        {#each cres.hosts as h}<button onclick={() => pickCentre({ host: h.host_id })}><span class="mono">{h.display_name}</span></button>{/each}
-        {#each cres.keys as k}<button onclick={() => pickCentre({ key: fpUrl(k.fp) })}><Fp fp={k.fp} copy={false} /><span class="meta secondary">{k.label || k.comment || ''}</span></button>{/each}
-        {#if !cres.hosts.length && !cres.keys.length}<p class="meta secondary none">Nothing matches "{cq}" in scan #{sid}.</p>{/if}
-      </div>
-    {/if}
-  </div>
-  {#if res.data}
-    <span class="meta secondary num">Showing {n(res.data.nodes.length)} of {n(res.data.total_nodes)}{res.data.truncated ? '+' : ''} nodes{res.data.truncated ? ' – cut at 150.' : ''}</span>
-    <button class="btn ghost" onclick={fit}>Fit</button>
-    <button class="btn ghost" aria-pressed={showList} onclick={() => (showList = !showList)}>Edge list</button>
-  {/if}
-</div>
 
 {#if res.data?.truncated}
   <Strip role="info">Showing {res.data.nodes.length} nodes – the neighbourhood was cut at 150. Reduce hops or pick a more specific centre.</Strip>
 {/if}
 
 {#if !hasCentre}
-  <section class="empty-state"><h2 class="section-title">Pick a centre</h2><p>Pick a host or key to see who can reach it and where it can reach.</p></section>
+  <section class="empty-state"><h2>Pick a centre</h2><p>Pick a host or key to see who can reach it and where it can reach.</p>
+    <div class="csearch">
+      <input class="input" type="search" placeholder="Centre: search host or key" aria-label="Centre: search host or key" bind:value={cq} oninput={centreSearch} />
+      {#if cres}
+        <div class="popover cl">
+          {#each cres.hosts as h}<button onclick={() => pickCentre({ host: h.host_id })}><span>{h.display_name}</span></button>{/each}
+          {#each cres.keys as k}<button onclick={() => pickCentre({ key: fpUrl(k.fp) })}><Fp fp={k.fp} copy={false} /><span class="meta secondary">{k.label || k.comment || ''}</span></button>{/each}
+          {#if !cres.hosts.length && !cres.keys.length}<p class="meta secondary none">Nothing matches "{cq}" in scan #{sid}.</p>{/if}
+        </div>
+      {/if}
+    </div></section>
 {:else if res.error}
   <ErrorPanel thing="the graph" message={res.error} retry={load} />
 {:else}
   <div class="grid-2">
     <section class="panel flush gp">
+      <div class="toolbar">
+        <div class="csearch">
+          <input class="input" type="search" placeholder="Centre: search host or key" aria-label="Centre: search host or key" bind:value={cq} oninput={centreSearch} />
+          {#if cres}
+            <div class="popover cl">
+              {#each cres.hosts as h}<button onclick={() => pickCentre({ host: h.host_id })}><span>{h.display_name}</span><span class="meta secondary num">{h.ips?.[0] ?? ''}</span></button>{/each}
+              {#each cres.keys as k}<button onclick={() => pickCentre({ key: fpUrl(k.fp) })}><Fp fp={k.fp} copy={false} /><span class="meta secondary">{k.label || k.comment || ''}</span></button>{/each}
+              {#if !cres.hosts.length && !cres.keys.length}<p class="meta secondary none">Nothing matches "{cq}" in scan #{sid}.</p>{/if}
+            </div>
+          {/if}
+        </div>
+        <div class="seg" role="radiogroup" aria-label="Hops">
+          {#each [1, 2] as h}<button role="radio" aria-checked={G.hops === h} onclick={() => setQuery({ hops: h === 1 ? null : h })}>Hops: {h}</button>{/each}
+        </div>
+        <div class="seg" role="radiogroup" aria-label="Layer">
+          {#each [['access', 'Access'], ['evidence', 'Evidence'], ['both', 'Both']] as [v, l]}<button role="radio" aria-checked={G.layer === v} onclick={() => setQuery({ layer: v === 'access' ? null : v })}>{l}</button>{/each}
+        </div>
+        <span class="spacer"></span>
+        {#if res.data}<button class="btn ghost" onclick={fit}>Fit</button>{/if}
+      </div>
       {#if isolated}<div class="iso"><Strip role="info">{centreNode?.label} has no access edges to or from other scanned hosts.</Strip></div>{/if}
       {#if !res.data}<div class="loading secondary">Laying out the graph…</div>{/if}
       <svg bind:this={svg} class="g" viewBox="0 0 {WIDTH} {HEIGHT}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="{title}: {nodes.length} nodes, {links.length} edges. Use the edge list for a table.">
@@ -286,13 +301,16 @@
               onmouseenter={() => (hoverNode = nd.id)} onmouseleave={() => (hoverNode = null)} onfocus={() => (focusNode = nd.id)} onblur={() => (focusNode = null)}>
               {#if nd.kind === 'unknown'}
                 <rect x="-7" y="-7" width="14" height="14" transform="rotate(45)" class="unk" />
-                <text class="q" y="3.5">?</text>
               {:else}
                 {#if nd.dist === 0}<circle r={nd.r + 4} class="centre" />{/if}
                 <circle r={nd.r} class="host" class:ns />
                 {#if nd.status === 'partial'}<path d="M0,{-nd.r} A{nd.r},{nd.r} 0 0 1 0,{nd.r} Z" class="half" />{/if}
-                {#if nd.sev === 'critical'}<polygon transform="translate({nd.r * 0.7},{-nd.r - 8})" points="3,0 7,0 10,3 10,7 7,10 3,10 0,7 0,3" class="sg-critical" />
-                {:else if nd.sev === 'high'}<polygon transform="translate({nd.r * 0.7},{-nd.r - 8})" points="5,0 10,10 0,10" class="sg-high" />{/if}
+                {#if nd.sev === 'critical' || nd.sev === 'high'}
+                  <g class="sm sg-{nd.sev}" transform="translate({nd.r * 0.7},{-nd.r - 14})">
+                    <rect class="smbg" x="-2" y="-2" width="16" height="16" rx="3" />
+                    {#each [0, 1, 2, 3] as i}<rect x={i * 3 + 0.5} y={12 - (i + 1) * 3} width="2" height={(i + 1) * 3} fill-opacity={i < (nd.sev === 'critical' ? 4 : 3) ? 1 : 0.25} />{/each}
+                  </g>
+                {/if}
               {/if}
               {#if showLabel(nd)}
                 {@const t = nodeLabel(nd)}
@@ -307,12 +325,14 @@
         {#each tabOrder as nd}<button onfocus={() => (focusNode = nd.id)} onblur={() => (focusNode = null)} onclick={() => recentre(nd)} onkeydown={(e) => nodeKey(e, nd)}>{nodeLabel(nd)} (distance {nd.dist}); Enter re-centres, E steps through its edges</button>{/each}
       </div>
       <p class="legend meta secondary">
-        <span><svg width="28" height="8" aria-hidden="true"><line x1="0" y1="4" x2="28" y2="4" stroke="var(--text-primary)" stroke-width="1.5" /></svg> access</span>
+        <span><svg width="28" height="8" aria-hidden="true"><line x1="0" y1="4" x2="28" y2="4" stroke="var(--text-secondary)" stroke-width="1.5" /></svg> access</span>
         <span><svg width="28" height="8" aria-hidden="true"><line x1="0" y1="4" x2="28" y2="4" stroke="var(--text-secondary)" stroke-dasharray="4 3" /></svg> evidence</span>
         <span><svg width="28" height="10" aria-hidden="true"><line x1="0" y1="5" x2="28" y2="5" stroke="var(--text-muted)" stroke-width="1.5" /><line x1="14" y1="1" x2="14" y2="9" stroke="var(--text-muted)" stroke-width="1.5" /></svg> blocked</span>
-        <span><svg width="28" height="10" aria-hidden="true"><line x1="0" y1="5" x2="28" y2="5" stroke="var(--text-primary)" stroke-width="1.5" /><circle cx="14" cy="5" r="3" fill="var(--bg-surface)" stroke="var(--text-primary)" /></svg> from= restricted</span>
+        <span><svg width="28" height="10" aria-hidden="true"><line x1="0" y1="5" x2="28" y2="5" stroke="var(--text-secondary)" stroke-width="1.5" /><circle cx="14" cy="5" r="3" fill="var(--bg-surface)" stroke="var(--text-secondary)" /></svg> from= restricted</span>
         <span><svg width="14" height="14" aria-hidden="true"><rect x="3" y="3" width="8" height="8" transform="rotate(45 7 7)" fill="var(--bg-surface)" stroke="var(--text-secondary)" stroke-dasharray="2 1.5" /></svg> unknown origin</span>
-        <span>colour = key strength</span>
+        <span><svg width="28" height="8" aria-hidden="true"><line x1="0" y1="4" x2="28" y2="4" stroke="var(--critical)" stroke-width="1.5" /></svg> critical key</span>
+        <span><svg width="28" height="8" aria-hidden="true"><line x1="0" y1="4" x2="28" y2="4" stroke="var(--medium)" stroke-width="1.5" /></svg> weak key</span>
+        <span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" class="sg-critical">{#each [0, 1, 2, 3] as i}<rect x={i * 3 + 0.5} y={12 - (i + 1) * 3} width="2" height={(i + 1) * 3} fill="currentColor" />{/each}</svg> host with critical findings</span>
         {#if suffix}<span>Hidden suffix: <span class="mono">{suffix}</span></span>{/if}
         <span class="muted">Click a node to centre on it (Shift+click opens the host), drag to pin, scroll to zoom.</span>
       </p>
@@ -323,7 +343,7 @@
       {#if !selected}
         <p class="secondary dense">Click a node to centre on it, or an edge to see its keys.</p>
       {:else}
-        <p class="mono">{selected.source.kind === 'unknown' ? `? ${shortFp(selected.source.fp)}` : selected.source.label} → {selected.target.label}</p>
+        <p class="sel-t">{#if selected.source.kind === 'unknown'}<span class="mono">{shortFp(selected.source.fp)}</span>{:else}{selected.source.label}{/if} → {selected.target.label}</p>
         <dl class="dl">
           <dt>Kind</dt><dd>{selected.kind}</dd>
           <dt>Status</dt><dd>{EDGE_STATUS[selected.status] ?? selected.status}</dd>
@@ -334,7 +354,7 @@
           <ul class="dl-list">
             {#each details.data as e (e.id)}
               <li>
-                <div class="mono dense">{e.src ?? 'unknown'}{e.src_user ? ':' + e.src_user : ''} → {e.dst}{e.dst_user ? ':' + e.dst_user : ''}</div>
+                <div class="dense">{e.src ?? 'unknown'}{e.src_user ? ':' + e.src_user : ''} → {e.dst}{e.dst_user ? ':' + e.dst_user : ''}</div>
                 {#if e.fp}<div class="row"><Fp fp={e.fp} href={keyHref(sid, e.fp)} /><StrengthChip strength={e.strength} /></div>{/if}
                 {#if e.authorized_file}<div class="mono meta secondary">{fileLine(e.authorized_file, e.authorized_line)}</div>{/if}
                 {#if e.evidence_file}<div class="meta secondary">{SOURCE_LABEL[e.evidence_source] ?? e.evidence_source} <span class="mono">{fileLine(e.evidence_file, e.evidence_line)}</span></div>{/if}
@@ -343,7 +363,7 @@
             {/each}
           </ul>
         {:else if details.error}<ErrorPanel thing="edge details" message={details.error} />{/if}
-        {#if selected.target.host_id}<p class="meta"><a href={hostHref(sid, selected.target.host_id, 'access')}>Open {selected.target.label} › Access</a></p>{/if}
+        {#if selected.target.host_id}<p><a class="btn" href={hostHref(sid, selected.target.host_id, 'access')}>Open {selected.target.label}</a></p>{/if}
       {/if}
     </aside>
   </div>
@@ -354,7 +374,7 @@
       <div class="table-wrap"><table class="t">
         <thead><tr><th>From</th><th>To</th><th>Kind</th><th>Status</th><th>Strength</th><th class="r">Edges</th></tr></thead>
         <tbody>{#each links as l (l.id)}<tr>
-          <td class="mono">{nodeLabel(l.source)}</td><td class="mono">{l.target.label}</td><td>{l.kind}</td>
+          <td class="ent">{nodeLabel(l.source)}</td><td>{l.target.label}</td><td>{l.kind}</td>
           <td>{EDGE_STATUS[l.status] ?? l.status}{l.effective ? '' : ' (not effective)'}</td><td>{#if l.kind === 'access'}<StrengthChip strength={l.strength} />{:else}–{/if}</td>
           <td class="r num"><button class="btn ghost small" onclick={() => selectLink(l)}>{l.count}</button></td>
         </tr>{/each}</tbody>
@@ -372,7 +392,7 @@
   .link line.blocked { opacity: .5; }
   .link .mid { fill: var(--bg-surface); stroke-width: 1.5; }
   .link.sel line:not(.hit) { filter: drop-shadow(0 0 2px var(--accent)); }
-  .cnt { font: 500 11px var(--sans); fill: var(--text-primary); }
+  .cnt { font: 500 12px var(--sans); fill: var(--text-primary); }
   .dim { opacity: .2; }
   .node { cursor: pointer; }
   .node:focus { outline: none; }
@@ -382,19 +402,20 @@
   .half { fill: var(--text-muted); }
   .centre { fill: none; stroke: var(--accent); stroke-width: 2; }
   .unk { fill: var(--bg-surface); stroke: var(--text-secondary); stroke-width: 1.5; stroke-dasharray: 3 2; }
-  .q { font: 600 9px var(--sans); text-anchor: middle; fill: var(--text-secondary); }
   .plate { fill: var(--bg-surface); opacity: .8; }
-  .lbl { font: 400 11px var(--mono); fill: var(--text-primary); }
+  .lbl { font: 400 12px var(--sans); fill: var(--text-primary); }
   .lbl.ns { fill: var(--text-muted); }
-  .sg-critical { fill: var(--critical); }
-  .sg-high { fill: var(--high); }
+  .sg-critical { fill: var(--critical); color: var(--critical); }
+  .sg-high { fill: var(--high); color: var(--high); }
+  .smbg { fill: var(--bg-surface); fill-opacity: 1; }
+  .sel-t { font-weight: 600; }
   .legend { display: flex; flex-wrap: wrap; gap: var(--s4); padding: var(--s3) var(--s4); border-top: 1px solid var(--border-subtle); margin: 0; align-items: center; }
   .legend span { display: inline-flex; gap: var(--s2); align-items: center; }
   .det { display: flex; flex-direction: column; gap: var(--s3); }
   .dl-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--s3); }
   .dl-list li { border-top: 1px solid var(--border-subtle); padding-top: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
   .csearch { position: relative; }
-  .csearch .input { width: 280px; }
+  .csearch .input { width: 190px; }
   .cl { top: 36px; left: 0; min-width: 320px; max-height: 320px; overflow: auto; padding: var(--s2) 0; }
   .cl button { all: unset; box-sizing: border-box; display: flex; gap: var(--s3); align-items: center; width: 100%; height: 32px; padding: 0 var(--s4); cursor: pointer; }
   .cl button:hover, .cl button:focus-visible { background: var(--bg-hover); }

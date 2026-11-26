@@ -10,7 +10,7 @@
   import StrengthChip from '../components/StrengthChip.svelte';
   import KeyType from '../components/KeyType.svelte';
   import Fp from '../components/Fp.svelte';
-  import Glyph from '../components/Glyph.svelte';
+  import Field from '../components/Field.svelte';
   import MultiSelect from '../components/MultiSelect.svelte';
   import SortTh from '../components/SortTh.svelte';
   import Pagination from '../components/Pagination.svelte';
@@ -38,10 +38,14 @@
 </script>
 
 <svelte:window onclick={(e) => { if (!(e.target as HTMLElement).closest('.exp')) exportOpen = false; }} />
-<PageHead title="Keys · {res.data ? n(res.data.total) : '…'}">
+<PageHead title="Keys">
+  {#snippet fields()}
+    <Field label="Showing">{#if res.data}{n(res.data.total)} of {n(res.data.total_all ?? res.data.total)}{:else}…{/if}</Field>
+    <Field label="Scan">Scan #{sid} <span class="secondary">{scan.label || 'unlabelled'}</span></Field>
+  {/snippet}
   {#snippet actions()}
     <div class="exp">
-      <button class="btn" aria-haspopup="menu" aria-expanded={exportOpen} onclick={() => (exportOpen = !exportOpen)}>Export ▾</button>
+      <button class="btn" aria-haspopup="menu" aria-expanded={exportOpen} onclick={() => (exportOpen = !exportOpen)}>Export<svg class="chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5" /></svg></button>
       {#if exportOpen}<div class="popover expmenu" role="menu">
         <a role="menuitem" href="/api/scans/{sid}/export/keys.csv{exportQs}" download>Keys (CSV)</a>
         <a role="menuitem" href="/api/scans/{sid}/export/keys.json{exportQs}" download>Keys (JSON)</a>
@@ -51,7 +55,8 @@
 </PageHead>
 <Notices {scan} />
 
-<div class="filters">
+<section class="panel flush">
+<div class="toolbar">
   <input class="input qi" type="search" placeholder="Search fingerprint, comment or label" aria-label="Search fingerprint, comment or label" bind:value={qInput} oninput={onQ} />
   <MultiSelect label="Strength" options={['critical', 'weak', 'ok', 'good', 'unknown'].map((s) => ({ value: s, label: STRENGTH_LABEL[s], count: res.data?.strength_counts?.[s] ?? 0 }))}
     value={Q.strength ? Q.strength.split(',') : []} onchange={(v) => setQuery({ strength: v.join(','), page: null })} />
@@ -60,23 +65,21 @@
       <button role="radio" aria-checked={Q.origin === v} onclick={() => setQuery({ origin: v, page: null })}>{l}</button>
     {/each}
   </div>
-  {#if filtered}<button class="btn ghost" onclick={clear}>Clear filters</button>{/if}
 </div>
 {#if filtered}
   <div class="applied">
     {#if Q.q}<button class="chip filter" onclick={() => { qInput = ''; setQuery({ q: null }); }}>Search: {Q.q} ×</button>{/if}
     {#if Q.strength}<button class="chip filter" onclick={() => setQuery({ strength: null })}>Strength: {Q.strength.split(',').map((s) => STRENGTH_LABEL[s]).join(', ')} ×</button>{/if}
     {#if Q.origin}<button class="chip filter" onclick={() => setQuery({ origin: null })}>Origin: {Q.origin} ×</button>{/if}
+    <button class="btn ghost small" onclick={clear}>Clear filters</button>
   </div>
 {/if}
 
 {#if res.error}
-  <ErrorPanel thing="keys" message={res.error} retry={load} />
+  <div class="pad"><ErrorPanel thing="keys" message={res.error} retry={load} /></div>
 {:else if !res.data}
-  {#if res.slow}<div class="panel flush"><Skeleton /></div>{/if}
+  {#if res.slow}<Skeleton />{/if}
 {:else}
-  <Pagination total={res.data.total} page={Q.page} pageSize={Q.page_size} onchange={(p, s) => setQuery({ page: p > 1 ? p : null, size: s !== 100 ? s : null })} />
-  <section class="panel flush">
     <div class="table-wrap">
       <table class="t">
         <thead><tr>
@@ -93,15 +96,15 @@
         <tbody>
           {#each res.data.items as k (k.fp)}
             <tr>
-              <td><Fp fp={k.fp} href={keyHref(sid, k.fp)} /></td>
+              <td class="ent"><Fp fp={k.fp} href={keyHref(sid, k.fp)} /></td>
               <td><KeyType alg={k.alg} bits={k.bits} /></td>
               <td class="r num">{k.bits ?? '–'}</td>
               <td><StrengthChip strength={k.strength} /></td>
               <td>{#if k.label}<div>{k.label}</div>{:else}<span class="muted">–</span>{/if}{#if k.owner}<div class="meta secondary">{k.owner}</div>{/if}</td>
-              <td class="mono" title={k.comments.join(', ')}>{k.comments[0] ?? '–'}{#if k.comments.length > 1}<span class="muted"> +{k.comments.length - 1}</span>{/if}</td>
+              <td title={k.comments.join(', ')}>{k.comments[0] ?? '–'}{#if k.comments.length > 1}<span class="muted"> +{k.comments.length - 1}</span>{/if}</td>
               <td class="r num">{k.authorized_hosts}</td>
               <td class="r num">{k.private_holders}</td>
-              <td class="nowrap">{#if k.origin === 'known'}Known{:else}<span class="sev-info unk"><Glyph kind="unknown" /></span> Unknown{/if}{#if k.cert_authority} <span class="kchip">CA</span>{/if}</td>
+              <td class="nowrap">{#if k.origin === 'known'}Known{:else}<span class="state unknown">Unknown</span>{/if}{#if k.cert_authority}<span class="kchip ca">CA</span>{/if}</td>
             </tr>
           {:else}
             <tr><td class="empty" colspan="9">{#if filtered}No keys match these filters in scan #{sid}. <button class="btn small" onclick={clear}>Clear filters</button>{:else}No keys were found in scan #{sid}.{/if}</td></tr>
@@ -109,15 +112,13 @@
         </tbody>
       </table>
     </div>
-  </section>
   <Pagination total={res.data.total} page={Q.page} pageSize={Q.page_size} onchange={(p, s) => setQuery({ page: p > 1 ? p : null, size: s !== 100 ? s : null })} />
 {/if}
+</section>
 
 <style>
   .qi { width: 300px; }
-  .unk { color: var(--c); }
-  .exp { position: relative; }
-  .expmenu { right: 0; top: 36px; display: flex; flex-direction: column; padding: var(--s2) 0; min-width: 160px; }
-  .expmenu a { padding: var(--s3) var(--s4); color: var(--text-primary); }
-  .expmenu a:hover { background: var(--bg-hover); text-decoration: none; }
+  .pad { padding: var(--s5); }
+  .ca { margin-left: var(--s3); }
+  .chev { color: var(--text-muted); }
 </style>

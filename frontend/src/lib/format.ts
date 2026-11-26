@@ -37,9 +37,8 @@ export type Severity = (typeof SEVERITIES)[number];
 export const SEV_LABEL: Record<string, string> = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' };
 export const STRENGTHS = ['critical', 'weak', 'ok', 'good', 'unknown'] as const;
 export const STRENGTH_LABEL: Record<string, string> = { critical: 'Critical', weak: 'Weak', ok: 'OK', good: 'Good', unknown: 'Unknown' };
-/** strength -> colour class and glyph */
-export const STRENGTH_SEV: Record<string, string> = { critical: 'critical', weak: 'medium', ok: 'low', good: 'good', unknown: 'info' };
-export const STRENGTH_GLYPH: Record<string, string> = { critical: 'critical', weak: 'medium', ok: 'dot', good: 'good', unknown: 'unknown' };
+/** role -> filled bars of the level meter (design-revision §3.2) */
+export const LEVEL: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
 
 export const RULES: Record<string, string> = {
   key_strength_critical: 'Critical key algorithm ({alg} {bits})',
@@ -105,10 +104,6 @@ export function statusSev(status: string): string {
   if (status.startsWith('hostkey_')) return 'critical';
   return 'info';
 }
-export function statusGlyph(status: string): string {
-  const s = statusSev(status);
-  return s === 'low' ? 'dot' : s === 'info' ? 'low' : s;
-}
 export const NOT_SCANNED = ['excluded', 'out_of_scope', 'max_depth', 'max_hosts', 'unresolvable', 'alias', 'already', 'no_ssh'];
 export const PRIVILEGE_LABEL: Record<string, string> = { root: 'root', sudo_password: 'sudo password', unprivileged: 'unprivileged' };
 export const privilege = (p: string | null | undefined) => (p ? PRIVILEGE_LABEL[p] ?? p : '–');
@@ -149,7 +144,7 @@ export function viaText(v: any): string {
 }
 export function scanTitle(s: any): string {
   if (!s) return '';
-  return `Scan #${s.id} · ${s.label || 'unlabelled'} · ${fmtTime(s.started_at)}`;
+  return `Scan #${s.id} ${s.label || 'unlabelled'}, ${fmtTime(s.started_at)}`;
 }
 export function hostName(name: string | null | undefined, suffix = ''): string {
   if (!name) return '';

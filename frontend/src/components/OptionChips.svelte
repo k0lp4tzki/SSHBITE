@@ -14,7 +14,7 @@
 {:else}
   <span class="chips">
     {#each options as [name, value]}
-      <span class="kchip" class:outline={name === 'command'} title={text(name, value)}>{trunc(text(name, value))}</span>
+      <span class="kchip opt" class:outline={name === 'command'} title={text(name, value)}>{trunc(text(name, value))}</span>
     {/each}
   </span>
 {/if}
