@@ -31,7 +31,7 @@ log = logging.getLogger("sshbite.crawl")
 CONNECTED_STATUSES = ("ok", "partial", "unreachable", "timeout", "auth_failed", "hostkey_mismatch",
                       "hostkey_unknown", "collector_error", "output_limit")
 DATA_STATUSES = ("ok", "partial", "collector_error", "output_limit")
-_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
+_NAME_RE = re.compile(r"^[A-Za-z0-9._][A-Za-z0-9._-]{0,252}$")  # no leading '-': never an option
 
 
 def is_ip(value: str) -> bool:
@@ -573,52 +573,61 @@ class Scanner:
 
     def _derive_refs(self, hosts: list[Target]) -> list[Ref]:
         out: list[Ref] = []
-        dport = self.cfg.crawl.ssh_port
         for t in hosts:
-            d = t.data
-            assert d is not None
-            for rec in d.known_hosts:
-                e = rec.entry
-                if e.error or e.marker:
+            try:
+                out.extend(self._derive_refs_one(t))
+            except Exception as exc:  # hostile data of one host never fails the scan
+                log.warning("references of %s skipped: %s", t.display, exc)
+                t.partial_reasons.append(f"references not derived: {exc.__class__.__name__}")
+        return out
+
+    def _derive_refs_one(self, t: Target) -> list[Ref]:
+        out: list[Ref] = []
+        dport = self.cfg.crawl.ssh_port
+        d = t.data
+        assert d is not None
+        for rec in d.known_hosts:
+            e = rec.entry
+            if e.error or e.marker:
+                continue
+            source = "system_known_hosts" if rec.username == "" else "known_hosts"
+            if e.hashed:
+                self.pending_hashed.append(PendingHash(t, rec, source))
+                continue
+            for pat in e.patterns:
+                if not kh.is_plain_pattern(pat):
                     continue
-                source = "system_known_hosts" if rec.username == "" else "known_hosts"
-                if e.hashed:
-                    self.pending_hashed.append(PendingHash(t, rec, source))
-                    continue
-                for pat in e.patterns:
-                    if not kh.is_plain_pattern(pat):
+                h, p = kh.split_host_port(pat, dport)
+                out.append(self._new_ref(from_t=t, username=rec.username, source=source, file=rec.file,
+                                         line_no=e.line_no, value=h, port=p, kh_rec=rec))
+        for rec in d.ssh_configs:
+            e = rec.entry
+            if e.is_match:
+                continue
+            source = "system_ssh_config" if rec.username == "" else "ssh_config"
+            port = e.port or dport
+            if e.hostname and "%" not in e.hostname:
+                out.append(self._new_ref(from_t=t, username=rec.username, source=source, file=rec.file,
+                                         line_no=e.hostname_line or e.line_no, value=e.hostname, port=port))
+            elif not e.hostname and e.line_no > 0:
+                for pat in e.host_pattern.split():
+                    if has_wildcard(pat):
                         continue
-                    h, p = kh.split_host_port(pat, dport)
                     out.append(self._new_ref(from_t=t, username=rec.username, source=source, file=rec.file,
-                                             line_no=e.line_no, value=h, port=p, kh_rec=rec))
-            for rec in d.ssh_configs:
-                e = rec.entry
-                if e.is_match:
-                    continue
-                source = "system_ssh_config" if rec.username == "" else "ssh_config"
-                port = e.port or dport
-                if e.hostname and "%" not in e.hostname:
-                    out.append(self._new_ref(from_t=t, username=rec.username, source=source, file=rec.file,
-                                             line_no=e.hostname_line or e.line_no, value=e.hostname, port=port))
-                elif not e.hostname and e.line_no > 0:
-                    for pat in e.host_pattern.split():
-                        if has_wildcard(pat):
-                            continue
-                        out.append(self._new_ref(from_t=t, username=rec.username, source=source, file=rec.file,
-                                                 line_no=e.line_no, value=pat, port=port))
-                if e.proxyjump:
-                    for host, p in proxyjump_hops(e.proxyjump):
-                        if has_wildcard(host) or "%" in host:
-                            continue
-                        out.append(self._new_ref(from_t=t, username=rec.username, source="ssh_config_proxyjump",
-                                                 file=rec.file, line_no=e.proxyjump_line or e.line_no, value=host,
-                                                 port=p or dport))
-            for a in d.authorized:
-                if a.entry.key is None:
-                    continue
-                for v in literal_from_targets(a.entry.from_patterns):
-                    out.append(self._new_ref(from_t=t, username=a.username, source="from_option", file=a.file,
-                                             line_no=a.entry.line_no, value=v, port=dport))
+                                             line_no=e.line_no, value=pat, port=port))
+            if e.proxyjump:
+                for host, p in proxyjump_hops(e.proxyjump):
+                    if has_wildcard(host) or "%" in host:
+                        continue
+                    out.append(self._new_ref(from_t=t, username=rec.username, source="ssh_config_proxyjump",
+                                             file=rec.file, line_no=e.proxyjump_line or e.line_no, value=host,
+                                             port=p or dport))
+        for a in d.authorized:
+            if a.entry.key is None:
+                continue
+            for v in literal_from_targets(a.entry.from_patterns):
+                out.append(self._new_ref(from_t=t, username=a.username, source="from_option", file=a.file,
+                                         line_no=a.entry.line_no, value=v, port=dport))
         return out
 
     async def _resolve_refs(self, refs: list[Ref]) -> None:

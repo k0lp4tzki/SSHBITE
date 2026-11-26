@@ -48,6 +48,10 @@ def make_handler(mode: str, seen: list):
                 process.exit(1)
             return
         if cmd == "sudo -n /bin/sh -s":
+            if mode not in ("nopasswd", "sh_nopasswd"):
+                process.stderr.write("sudo: a password is required\n")
+                process.exit(1)
+                return
             process.stdout.write(ROOT_OUT.decode())
             process.exit(0)
             return
@@ -283,3 +287,16 @@ def test_seeds_hosts_file_and_cidr_probe(tmp_path, audit):
     assert rows["192.0.2.10"] == ("unreachable", "seed:hosts_file", 0)
     # the CIDR address did not answer the TCP probe through the entry: no_ssh, never connected to
     assert rows["198.51.100.7"] == ("no_ssh", "seed:cidr", 0)
+
+
+def test_nopasswd_only_for_sh_never_sends_the_password(tmp_path, audit):
+    """sudoers wants a password for /bin/true but has NOPASSWD for /bin/sh: the password line must not be sent,
+    or the root shell would run it as a command."""
+    key, kp = audit
+    with ServerThread("sh_nopasswd", key.public_data) as srv:
+        cfg = _config(tmp_path, srv, kp)
+        r = CliRunner().invoke(main, ["-c", cfg, "scan", "--no-crawl"], env={"SSHBITE_SUDO_PASSWORD": PASSWORD})
+        assert r.exit_code == 0, r.output
+        assert not [c for c in srv.seen if "-S" in c]
+    c = sqlite3.connect(tmp_path / "data" / "sshbite.db")
+    assert c.execute("SELECT status, privilege FROM host_scan").fetchone() == ("ok", "root")

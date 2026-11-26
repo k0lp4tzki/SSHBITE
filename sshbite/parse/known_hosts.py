@@ -77,8 +77,8 @@ def parse(text: str) -> list[KnownHostEntry]:
 
 def split_host_port(pattern: str, default_port: int = 22) -> tuple[str, int]:
     """'[h]:p' -> (h, p); 'h' -> (h, default)."""
-    m = re.match(r"^\[([^\]]+)\]:(\d{1,5})$", pattern)
-    if m:
+    m = re.match(r"^\[([^\]]+)\]:([0-9]{1,5})$", pattern)
+    if m and 0 < int(m.group(2)) < 65536:
         return m.group(1), int(m.group(2))
     return pattern, default_port
 

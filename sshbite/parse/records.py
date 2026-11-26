@@ -78,9 +78,10 @@ def parse_mode(s: str) -> int | None:
 
 def _int(s: str) -> int | None:
     try:
-        return int(s)
+        v = int(s)
     except (TypeError, ValueError):
         return None
+    return v if -(1 << 63) <= v < (1 << 63) else None
 
 
 def parse(text: str, truncated: bool = False) -> Collected:

@@ -204,8 +204,12 @@ def build(c: Collected, audit_fp: str | None = None) -> HostData:
             first, exp = shadow[p[0]]
             acc.pw_state = "locked" if first in ("!", "*") else "hash" if first == "$" else "none" if first == "" \
                 else "hash"
-            if exp.strip().isdigit():
-                acc.expiry = (datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(days=int(exp))).strftime("%Y-%m-%d")
+            if exp.strip().isascii() and exp.strip().isdigit():
+                try:
+                    acc.expiry = (datetime(1970, 1, 1, tzinfo=timezone.utc)
+                                  + timedelta(days=int(exp))).strftime("%Y-%m-%d")
+                except (OverflowError, ValueError):
+                    acc.expiry = None
         if acc.username not in d.accounts:
             d.accounts[acc.username] = acc
 
@@ -281,7 +285,9 @@ def build(c: Collected, audit_fp: str | None = None) -> HostData:
 
 
 def _int(s: str) -> int | None:
+    """An integer that fits SQLite's 64-bit column, else None (untrusted input)."""
     try:
-        return int(s)
+        v = int(s)
     except (TypeError, ValueError):
         return None
+    return v if -(1 << 63) <= v < (1 << 63) else None

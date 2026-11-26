@@ -65,7 +65,7 @@ def parse(text: str, file: str) -> tuple[list[SshConfigEntry], list[tuple[int, s
         elif k == "user" and cur.user is None:
             cur.user = v
         elif k == "port" and cur.port is None:
-            if v.isdigit() and 0 < int(v) < 65536:
+            if v.isascii() and v.isdigit() and 0 < int(v) < 65536:
                 cur.port = int(v)
         elif k == "identityfile":
             cur.identity_files.append(v)
@@ -94,12 +94,14 @@ def proxyjump_hops(value: str) -> list[tuple[str, int | None]]:
         if "@" in hop:
             hop = hop.rsplit("@", 1)[1]
         port = None
-        m = re.match(r"^\[([^\]]+)\](?::(\d+))?$", hop)
+        m = re.match(r"^\[([^\]]+)\](?::([0-9]{1,5}))?$", hop, re.ASCII)
         if m:
             hop, port = m.group(1), int(m.group(2)) if m.group(2) else None
         elif hop.count(":") == 1:
             h, p = hop.split(":")
-            if p.isdigit():
+            if p.isascii() and p.isdigit() and len(p) <= 5:
                 hop, port = h, int(p)
+        if port is not None and not 0 < port < 65536:
+            continue
         hops.append((hop, port))
     return hops

@@ -35,6 +35,12 @@ class SudoSecret:
     def get(self) -> str | None:
         return self._value
 
+    def set(self, value: str | None) -> None:
+        """The password is one line for sudo -S: CR or LF would hand the rest to the root shell."""
+        if value and ("\n" in value or "\r" in value):
+            raise ValueError("the sudo password must not contain a line break")
+        self._value = value or None
+
     def __bool__(self) -> bool:
         return bool(self._value)
 
@@ -117,6 +123,13 @@ async def collect(conn, script: bytes, mode: str, secret: SudoSecret, max_bytes:
         err = probe.stderr
         if PASSWORD_REQUIRED.search(err):
             pw = secret.get()
+            # sudoers may want a password for /bin/true but not for /bin/sh (NOPASSWD: /bin/sh): then sudo
+            # would not read the password line and the shell would run it. Try the NOPASSWD path first,
+            # with empty stdin (the shell exits at once).
+            sh_nopw = await run(conn, cmds["run"], None, max_bytes=65536) if pw else None
+            if sh_nopw is not None and sh_nopw.rc == 0:
+                res = await run(conn, cmds["run"], script, max_bytes=max_bytes)
+                return CollectOutcome("root", res)
             if pw:
                 line = (pw + "\n").encode("utf-8")
                 p2 = await run(conn, cmds["pw_probe"], line, max_bytes=65536)

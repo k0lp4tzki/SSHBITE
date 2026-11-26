@@ -1,5 +1,5 @@
 LC_ALL=C; export LC_ALL; PATH=/usr/sbin:/usr/bin:/sbin:/bin; set -u
-B=b95dd735488f
+B=01fba7910d9e
 # SSHBITE collector. Fixed, read-only POSIX sh script, sent verbatim on stdin.
 # It reads files and prints records to stdout. It writes no file, starts no
 # network connection and builds no command from target data. B above is the
@@ -208,7 +208,11 @@ printf '%s\n' "$PW" | {
     fi
     val user "$u"
     d="$home/.ssh"
-    if [ -d "$d" ]; then
+    if [ -L "$d" ]; then
+      # a user controls ~/.ssh: never follow a link (it could point at /root/.ssh or /etc)
+      fhdr "$d" "$u"
+      printf '#X %s\tsymlink not followed\n' "$d"
+    elif [ -d "$d" ]; then
       fhdr "$d" "$u"
       if [ -r "$d" ] && [ -x "$d" ]; then
         ls -A -- "$d" 2>/dev/null | head -n 101 | {
@@ -235,6 +239,10 @@ printf '%s\n' "$PW" | {
               *"$NL$p$NL"*) continue ;;
             esac
             fhdr "$p" "$u"
+            if [ -L "$p" ]; then
+              printf '#X %s\tsymlink not followed\n' "$p"
+              continue
+            fi
             [ -f "$p" ] || continue
             case "$e" in
               known_hosts* | config | *.pub) content "$p" ;;
@@ -249,7 +257,10 @@ printf '%s\n' "$PW" | {
     printf '%s' "$akfs" | while IFS= read -r p; do
       [ -n "$p" ] || continue
       val akf "$p"
-      if [ -f "$p" ]; then
+      if [ -L "$p" ] || [ -L "${p%/*}" ]; then
+        fhdr "$p" "$u"
+        printf '#X %s\tsymlink not followed\n' "$p"
+      elif [ -f "$p" ]; then
         fhdr "$p" "$u"
         content "$p"
       elif [ -e "$p" ]; then

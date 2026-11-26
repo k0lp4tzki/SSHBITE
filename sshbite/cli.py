@@ -180,10 +180,13 @@ def scan_cmd(ctx, max_depth, max_hosts, concurrency, timeout, no_crawl, ask_sudo
         return
     if ask_sudo_password:
         pw = click.prompt("sudo password", hide_input=True, default="", show_default=False, err=True)
-        _SECRET._value = pw or None
-    elif os.environ.get("SSHBITE_SUDO_PASSWORD"):
-        _SECRET._value = os.environ["SSHBITE_SUDO_PASSWORD"]
+    else:
+        pw = os.environ.get("SSHBITE_SUDO_PASSWORD") or None
     os.environ.pop("SSHBITE_SUDO_PASSWORD", None)
+    try:
+        _SECRET.set(pw)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from None
     conn = _db(cfg)
     started = time.monotonic()
     scanner = Scanner(cfg, conn, _SECRET, opts, echo=lambda s: click.echo(s))
