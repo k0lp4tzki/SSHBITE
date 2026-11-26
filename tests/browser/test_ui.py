@@ -57,10 +57,12 @@ def browser():
 class Session:
     """A logged-in page that records every request it makes."""
 
-    def __init__(self, browser, base: str, scheme: str = "dark", width: int = 1440, height: int = 900, login=True):
+    def __init__(self, browser, base: str, scheme: str = "dark", width: int = 1440, height: int = 900, login=True,
+                 reduced: bool = False):
         self.base = base
         self.ctx = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme,
-                                       permissions=["clipboard-read", "clipboard-write"])
+                                       permissions=["clipboard-read", "clipboard-write"],
+                                       reduced_motion="reduce" if reduced else "no-preference")
         self.page = self.ctx.new_page()
         self.requests: list[str] = []
         self.errors: list[str] = []
@@ -881,3 +883,128 @@ def test_r_crawl_filter_finds_a_collapsed_host_at_2000(syn):
               if h["display_name"].startswith(target))["ips"][0]
     p.get_by_label("Filter by host name or IP").fill(ip)
     p.locator("tr.hit td.hcell .hn", has_text=target).first.wait_for()
+
+
+# ---------------------------------------------------------------- check-12 polish
+
+_GRAPH_JS = """() => {
+  const svg = document.querySelector('svg.g'), pane = svg.getBoundingClientRect();
+  const c = document.querySelector('svg.g g.node[data-centre]');
+  const m = c.querySelector('circle.host, rect.unk').getBoundingClientRect();
+  const nodes = [...document.querySelectorAll('svg.g g.node')].map((g) => g.getBoundingClientRect());
+  return { pane: [pane.left, pane.top, pane.width, pane.height], centre: [m.left + m.width / 2, m.top + m.height / 2],
+    box: [Math.min(...nodes.map((r) => r.left)), Math.min(...nodes.map((r) => r.top)),
+          Math.max(...nodes.map((r) => r.right)), Math.max(...nodes.map((r) => r.bottom))],
+    k: +svg.dataset.fit };
+}"""
+
+
+def _graph_settled(p):
+    p.wait_for_selector("svg.g[data-fit] g.node[data-centre]", timeout=15000)
+    p.wait_for_timeout(1900)            # the layout settles within 1.5 s, then fits once more
+    return p.evaluate(_GRAPH_JS)
+
+
+@pytest.mark.parametrize("scheme,reduced", [("light", False), ("dark", False), ("light", True)])
+def test_g1_graph_centre_in_the_middle_and_fitted(browser, servers, scheme, reduced):
+    """check-12 F1: the centre node's centre is within 10 % of the pane centre; the graph fills the pane with
+    about 40 px margin, at most 1.5x; Fit does the same. Host centres a2 and jump (2 hops), key centre K_DSA."""
+    s = Session(browser, servers["lab"].base, scheme=scheme, width=1280, height=800, reduced=reduced)
+    p = s.page
+    ids = _host_ids(s, 1)
+    for name, path in (("a2", f"/s/1/graph?host={ids['a2']}"), ("K_DSA", f"/s/1/graph?key={u(key_fp('k_dsa'))}"),
+                       ("jump-2", f"/s/1/graph?host={ids['jump']}&hops=2")):
+        s.go(path, wait="svg.g")
+        g = _graph_settled(p)
+        x, y, w, h = g["pane"]
+        cx, cy = g["centre"]
+        assert abs(cx - (x + w / 2)) <= 0.1 * w and abs(cy - (y + h / 2)) <= 0.1 * h, (name, g)
+        assert 0 < g["k"] <= 1.5, (name, g)
+        l, t, r, b = g["box"]
+        assert l >= x + 20 and r <= x + w - 20 and t >= y + 20 and b <= y + h - 20, (name, g)   # inside, with margin
+        # it fills the pane: on one axis the graph reaches the 40 px margin (or the 1.5x cap is reached)
+        fills = min(t - y, y + h - b) <= 56 or min(l - x, x + w - r) <= 56
+        assert fills or g["k"] >= 1.49, (name, g)
+        # Fit after a pan returns to the same view
+        box = p.locator("svg.g").bounding_box()
+        p.mouse.move(box["x"] + 30, box["y"] + 30)
+        p.mouse.down()
+        p.mouse.move(box["x"] + 130, box["y"] + 90, steps=4)
+        p.mouse.up()
+        moved = p.evaluate(_GRAPH_JS)
+        assert abs(moved["centre"][0] - cx) > 50
+        p.get_by_role("button", name="Fit", exact=True).click()
+        p.wait_for_timeout(100)
+        again = p.evaluate(_GRAPH_JS)
+        assert abs(again["centre"][0] - cx) < 2 and abs(again["centre"][1] - cy) < 2, (name, again, g)
+        s.shot(f"g1-graph-{name}-{scheme}{'-reduced' if reduced else ''}", full=False)
+    s.close()
+
+
+def test_g2_users_tab_columns_line_up_and_nothing_is_cut(browser, servers):
+    """check-12 F2: on a2's Users tab every table kind has the same column grid in every user panel, and at
+    1280 px no cell is cut off (Origin included)."""
+    s = Session(browser, servers["lab"].base, scheme="light", width=1280, height=800)
+    p = s.page
+    s.go(f"/s/1/hosts/{_host_ids(s, 1)['a2']}?tab=users", wait="section.user")
+    r = p.evaluate("""() => {
+      const out = {};
+      for (const t of document.querySelectorAll('section.user table.t')) {
+        const head = [...t.querySelectorAll('thead th')];
+        const key = head.map((h) => h.textContent.trim()).join('|');
+        (out[key] ||= []).push(head.map((h) => Math.round(h.getBoundingClientRect().left)));
+      }
+      const cut = [...document.querySelectorAll('section.user table.t td')].filter((td) => td.scrollWidth > td.clientWidth + 1)
+        .map((td) => td.textContent.trim());
+      const wraps = [...document.querySelectorAll('section.user .table-wrap')].filter((w) => w.scrollWidth > w.clientWidth + 1).length;
+      return { out, cut, wraps };
+    }""")
+    auth = r["out"]["File:line|Strength|Type|Fingerprint|Comment|Options|Origin"]
+    assert len(auth) >= 3 and all(x == auth[0] for x in auth), auth
+    for k, v in r["out"].items():
+        assert all(x == v[0] for x in v), (k, v)
+    assert not r["cut"] and r["wraps"] == 0, r
+    # option chips share the chip border
+    colours = p.evaluate("[...new Set([...document.querySelectorAll('.kchip')].map((c) => getComputedStyle(c).borderTopColor))]")
+    assert len(colours) == 1, colours
+    s.close()
+
+
+def test_g3_dashboard_recommendation_readable_and_tabs_at_375(browser, servers):
+    """check-12 F3/F4: the dashboard shows each top recommendation in full (up to two lines) at 1280 px; at
+    375 px the host tab bar shows that more tabs follow and scrolls them into view."""
+    s = Session(browser, servers["lab"].base, scheme="light", width=1280, height=800)
+    p = s.page
+    s.go("/s/1/", wait="ol.tf li")
+    rec = p.evaluate("[...document.querySelectorAll('ol.tf .c4 .clamp')].map((e) => [e.textContent, e.scrollHeight <= e.clientHeight + 1, e.getAttribute('title')])")
+    assert any(t == "Replace with ed25519, remove this line/file" for t, _, _ in rec)
+    assert all(full and title == t for t, full, title in rec), rec
+    s.close()
+    s = Session(browser, servers["lab"].base, scheme="light", width=375, height=812)
+    p = s.page
+    s.go(f"/s/1/hosts/{_host_ids(s, 1)['a2']}", wait="[role=tablist]")
+    right = p.get_by_role("button", name="Scroll tabs right")
+    right.wait_for()
+    assert p.get_by_role("button", name="Scroll tabs left").count() == 0
+    right.click()
+    p.get_by_role("button", name="Scroll tabs left").wait_for()
+    p.get_by_role("tab", name="Findings").click()
+    p.wait_for_timeout(200)
+    inside = p.evaluate("""() => { const bar = document.querySelector('[role=tablist]').getBoundingClientRect();
+      const t = document.querySelector('[role=tab][aria-selected=true]').getBoundingClientRect();
+      return t.left >= bar.left - 1 && t.right <= bar.right + 1; }""")
+    assert inside
+    assert p.evaluate("document.documentElement.scrollWidth") <= 375
+    s.close()
+
+
+def test_g4_drilldown_group_by_says_so(syn):
+    """check-12 F6: in the drill-down the Group by control reads 'Host (drill-down)'; choosing a grouping leaves it."""
+    p = syn.page
+    syn.go("/s/1/heatmap?src=10.66.16.0%2F24&dst=10.66.17.0%2F24")
+    heat(p)
+    sel = p.get_by_label("Group by")
+    assert sel.evaluate("(e) => e.options[e.selectedIndex].text") == "Host (drill-down)"
+    sel.select_option("subnet")
+    p.wait_for_url(re.compile(r".*group_by=subnet$"))
+    assert len(heat(p)["cols"].split("|")) == 40

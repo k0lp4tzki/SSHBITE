@@ -1,6 +1,6 @@
 <script lang="ts">
   // Graph (design §5.6): neighbourhood of a host or key, d3-force radial layout, frozen after settling.
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { forceCollide, forceLink, forceManyBody, forceRadial, forceSimulation, type Simulation } from 'd3-force';
   import { zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom';
   import { select } from 'd3-selection';
@@ -40,7 +40,6 @@
   let ring1 = 160, ring2 = 320;
   let suffix = $state('');
   let sim: Simulation<any, any> | null = null;
-  const WIDTH = 960, HEIGHT = 680;
   const SRANK: Record<string, number> = { critical: 0, weak: 1, unknown: 2, ok: 3, good: 4 };
 
   function linkClass(l: any): string {
@@ -55,7 +54,13 @@
     const d = res.data;
     if (!d) return;
     sim?.stop();
+    userMoved = false;
     const ns: N[] = d.nodes.map((x: any) => ({ ...x, r: x.kind === 'unknown' ? 9 : Math.min(16, 6 + 2 * Math.sqrt(x.degree)) }));
+    // a key centre comes back without a dist-0 node: the key's own (unknown-origin) node is the centre, if it is drawn
+    if (d.center_key && !ns.some((x) => x.dist === 0)) {
+      const kn = ns.find((x) => x.kind === 'unknown' && x.fp === d.center_key);
+      if (kn) kn.dist = 0;
+    }
     const byId = new Map(ns.map((x) => [x.id, x]));
     const merged = new Map<string, L>();
     for (const l of d.links) {
@@ -82,12 +87,13 @@
     ns.forEach((x) => { if (!rings.has(x.dist)) rings.set(x.dist, []); rings.get(x.dist)!.push(x); });
     rings.forEach((arr, dist) => arr.forEach((x, i) => {
       if (x.fx !== undefined && x.fx !== null) return;
-      const a = (i / arr.length) * Math.PI * 2;
+      // start a quarter turn off the horizontal, so labels (right of each node) do not sit on the edges of a line
+      const a = (i / arr.length) * Math.PI * 2 - Math.PI / 2 + Math.PI / (2 * Math.max(1, arr.length));
       const rr = dist === 0 ? 0 : dist === 1 ? ring1 : ring2;
       x.x = Math.cos(a) * rr; x.y = Math.sin(a) * rr;
     }));
     sim = forceSimulation(ns as any)
-      .force('link', forceLink(ls as any).distance(80).strength(0.04))
+      .force('link', forceLink(ls as any).distance(80).strength((l: any) => (l.source.dist === 0 || l.target.dist === 0 ? 0.04 : 0.004)))
       .force('charge', forceManyBody().strength(-220))
       .force('collide', forceCollide((x: any) => x.r + 6))
       .force('radial', forceRadial((x: any) => (x.dist === 0 ? 0 : x.dist === 1 ? ring1 : ring2), 0, 0).strength(1))
@@ -96,12 +102,13 @@
     links = ls;
     if (reduced) {
       for (let i = 0; i < 300; i++) sim.tick();
-      frame++;
-      tick().then(fit);
+      untrack(() => frame++);   // reading frame here would make this effect depend on it (endless loop)
+      tick().then(() => requestAnimationFrame(() => fit()));
     } else {
       const started = performance.now();
-      sim.on('tick', () => { frame++; if (performance.now() - started > 1500) { sim?.stop(); fit(); } });
-      sim.on('end', fit);
+      // the view follows the layout while it settles (unless the user zoomed or panned), then fits once more
+      sim.on('tick', () => { frame++; if (!userMoved) fit(); if (performance.now() - started > 1500) { sim?.stop(); if (!userMoved) fit(); } });
+      sim.on('end', () => { if (!userMoved) fit(); });
       sim.alpha(1).restart();
     }
     selected = null;
@@ -113,29 +120,61 @@
   let svg: SVGSVGElement | undefined = $state();
   let viewport: SVGGElement | undefined = $state();
   let zb: ZoomBehavior<SVGSVGElement, unknown> | null = null;
-  let transform = $state('');
+  // the zoom moves and spreads the positions only; circles, marks and 12 px labels keep their size
+  let T = $state({ x: 0, y: 0, k: 1 });
   $effect(() => {
     if (!svg) return;
-    zb = zoom<SVGSVGElement, unknown>().scaleExtent([0.4, 3]).on('zoom', (e) => { transform = e.transform.toString(); });
+    zb = zoom<SVGSVGElement, unknown>().scaleExtent([0.05, 4]).on('zoom', (e) => { T = { x: e.transform.x, y: e.transform.y, k: e.transform.k }; if (!fitting && e.sourceEvent) userMoved = true; });
     select(svg).call(zb).on('dblclick.zoom', null);
+    untrack(() => { if (nodes.length) fit(); });
   });
+  // Fit (check-12 F1): the centre node (fixed at 0,0) goes to the middle of the pane, horizontally and vertically;
+  // the scale spreads the positions so the whole graph - circles, labels and severity marks - fills the pane with a
+  // 40 px margin. Small graphs are not spread beyond 1.5×. Coordinates are CSS pixels of the pane (no viewBox).
+  const FIT_MARGIN = 40, FIT_MAX = 1.5, FIT_MIN = 0.05;
+  let userMoved = false;   // the user zoomed or panned: a resize keeps their view
   function fit() {
     if (!svg || !zb || !nodes.length) return;
-    const xs = nodes.map((x) => x.x ?? 0), ys = nodes.map((x) => x.y ?? 0);
-    const minX = Math.min(...xs) - 60, maxX = Math.max(...xs) + 160, minY = Math.min(...ys) - 40, maxY = Math.max(...ys) + 40;
     const box = svg.getBoundingClientRect();
-    const k = Math.max(0.4, Math.min(1.6, Math.min(box.width / (maxX - minX), box.height / (maxY - minY))));
-    const t = zoomIdentity.translate(box.width / 2 - k * (minX + maxX) / 2, box.height / 2 - k * (minY + maxY) / 2).scale(k);
-    select(svg).call(zb.transform, t);
+    if (box.width < 10 || box.height < 10) return;
+    const c = centreNode;
+    const ox = c?.x ?? 0, oy = c?.y ?? 0;
+    const halfW = box.width / 2 - FIT_MARGIN, halfH = box.height / 2 - FIT_MARGIN;
+    // each node's extent around its position stays constant on screen: circle, centre ring, label plate, severity mark
+    let k = FIT_MAX;
+    for (const nd of nodes) {
+      const x = (nd.x ?? 0) - ox, y = (nd.y ?? 0) - oy;
+      const r = nd.kind === 'unknown' ? (nd.dist === 0 ? 16 : 10) : nd.r + (nd.dist === 0 ? 4 : 0);
+      const right = showLabel(nd) ? nd.r + 4 + nodeLabel(nd).length * 6.7 + 6 : r;
+      const up = nd.sev === 'critical' || nd.sev === 'high' ? nd.r + 16 : Math.max(r, 8);
+      const down = Math.max(r, 8);
+      if (x > 0.5) k = Math.min(k, (halfW - right) / x);
+      if (x < -0.5) k = Math.min(k, (halfW - r) / -x);
+      if (y < -0.5) k = Math.min(k, (halfH - up) / -y);
+      if (y > 0.5) k = Math.min(k, (halfH - down) / y);
+    }
+    k = Math.max(FIT_MIN, k);
+    fitting = true;
+    select(svg).call(zb.transform, zoomIdentity.translate(box.width / 2 - k * ox, box.height / 2 - k * oy).scale(k));
+    fitting = false;
+    userMoved = false;
+    fitted = { k, w: box.width, h: box.height };
   }
+  let fitting = false;
+  let fitted = $state<{ k: number; w: number; h: number } | null>(null);
+  $effect(() => {
+    if (!svg) return;
+    const ro = new ResizeObserver(() => { if (!userMoved) fit(); });
+    ro.observe(svg);
+    return () => ro.disconnect();
+  });
   function dragAction(el: SVGGElement, nd: N) {
     const d = drag<SVGGElement, unknown>()
       .clickDistance(4)
       .on('start', () => { sim?.alphaTarget(0); })
-      .on('drag', (e) => { nd.fx = (nd.fx ?? nd.x ?? 0) + e.dx / currentScale(); nd.fy = (nd.fy ?? nd.y ?? 0) + e.dy / currentScale(); nd.x = nd.fx; nd.y = nd.fy; frame++; });
+      .on('drag', (e) => { nd.fx = (nd.fx ?? nd.x ?? 0) + e.dx / T.k; nd.fy = (nd.fy ?? nd.y ?? 0) + e.dy / T.k; nd.x = nd.fx; nd.y = nd.fy; frame++; });
     select(el).call(d);
   }
-  function currentScale() { const m = transform.match(/scale\(([\d.]+)\)/); return m ? +m[1] : 1; }
 
   // ---- interaction
   let hoverNode = $state<string | null>(null);
@@ -174,13 +213,14 @@
   function selectLink(l: L) { selected = l; loadEdgeDetails(l); }
 
   // ---- geometry helpers
-  const px = (nd: N, _f: number) => nd.x ?? 0;
+  const sx = (nd: N, _f = 0) => T.x + T.k * (nd.x ?? 0);
+  const sy = (nd: N, _f = 0) => T.y + T.k * (nd.y ?? 0);
   function ends(l: L, _f = 0) {
-    const sx = l.source.x ?? 0, sy = l.source.y ?? 0, tx = l.target.x ?? 0, ty = l.target.y ?? 0;
-    const dx = tx - sx, dy = ty - sy, len = Math.max(1, Math.hypot(dx, dy));
+    const x0 = sx(l.source), y0 = sy(l.source), tx = sx(l.target), ty = sy(l.target);
+    const dx = tx - x0, dy = ty - y0, len = Math.max(1, Math.hypot(dx, dy));
     const ux = dx / len, uy = dy / len;
     const r1 = l.source.r + 1, r2 = l.target.r + 3;
-    return { x1: sx + ux * r1, y1: sy + uy * r1, x2: tx - ux * r2, y2: ty - uy * r2, ux, uy, len };
+    return { x1: x0 + ux * r1, y1: y0 + uy * r1, x2: tx - ux * r2, y2: ty - uy * r2, ux, uy, len };
   }
   // edge colours (design-revision §3.3): critical keys in the Critical colour, weak in Medium, all others text.secondary
   const STROKE: Record<string, string> = { critical: 'var(--critical)', weak: 'var(--medium)', ok: 'var(--text-secondary)', good: 'var(--text-secondary)', unknown: 'var(--text-secondary)' };
@@ -264,7 +304,7 @@
       </div>
       {#if isolated}<div class="iso"><Strip role="info">{centreNode?.label} has no access edges to or from other scanned hosts.</Strip></div>{/if}
       {#if !res.data}<div class="loading secondary">Laying out the graph…</div>{/if}
-      <svg bind:this={svg} class="g" viewBox="0 0 {WIDTH} {HEIGHT}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="{title}: {nodes.length} nodes, {links.length} edges. Use the edge list for a table.">
+      <svg bind:this={svg} class="g" data-fit={fitted ? `${fitted.k.toFixed(3)}` : undefined} role="img" aria-label="{title}: {nodes.length} nodes, {links.length} edges. Use the edge list for a table.">
         <defs>
           {#each ['critical', 'weak', 'ok', 'good', 'unknown'] as s}
             <marker id="arr-{s}" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill={STROKE[s]} /></marker>
@@ -272,7 +312,7 @@
           <marker id="arr-blocked" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="var(--text-muted)" /></marker>
           <marker id="arr-ev" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M1,1 L7,4 L1,7" fill="none" stroke="var(--text-secondary)" stroke-width="1" /></marker>
         </defs>
-        <g bind:this={viewport} transform={transform}>
+        <g bind:this={viewport}>
                     {#each links as l (l.id)}
             {@const e = ends(l, frame)}
             {@const dim = activeNode && !(l.source.id === activeNode || l.target.id === activeNode)}
@@ -295,11 +335,12 @@
           {#each nodes as nd (nd.id)}
             {@const dim = activeNode && !adjacent.has(nd.id)}
             {@const ns = nd.status && NOT_SCANNED.concat(['unreachable', 'timeout', 'auth_failed', 'hostkey_mismatch', 'hostkey_unknown']).includes(nd.status)}
-            <g class="node" class:dim transform="translate({px(nd, frame)},{nd.y ?? 0})" use:dragAction={nd}
+            <g class="node" class:dim data-centre={nd.dist === 0 ? '' : undefined} transform="translate({sx(nd, frame)},{sy(nd, frame)})" use:dragAction={nd}
               tabindex={-1} role="button" aria-label="{nodeLabel(nd)}{nd.status ? ', ' + (STATUS_LABEL[nd.status] ?? nd.status) : ''}"
               onclick={(e) => recentre(nd, e)} onkeydown={(e) => nodeKey(e, nd)}
               onmouseenter={() => (hoverNode = nd.id)} onmouseleave={() => (hoverNode = null)} onfocus={() => (focusNode = nd.id)} onblur={() => (focusNode = null)}>
               {#if nd.kind === 'unknown'}
+                {#if nd.dist === 0}<rect x="-11" y="-11" width="22" height="22" transform="rotate(45)" class="centre" />{/if}
                 <rect x="-7" y="-7" width="14" height="14" transform="rotate(45)" class="unk" />
               {:else}
                 {#if nd.dist === 0}<circle r={nd.r + 4} class="centre" />{/if}
@@ -402,7 +443,7 @@
   .half { fill: var(--text-muted); }
   .centre { fill: none; stroke: var(--accent); stroke-width: 2; }
   .unk { fill: var(--bg-surface); stroke: var(--text-secondary); stroke-width: 1.5; stroke-dasharray: 3 2; }
-  .plate { fill: var(--bg-surface); opacity: .8; }
+  .plate { fill: var(--bg-surface); opacity: .9; }
   .lbl { font: 400 12px var(--sans); fill: var(--text-primary); }
   .lbl.ns { fill: var(--text-muted); }
   .sg-critical { fill: var(--critical); color: var(--critical); }

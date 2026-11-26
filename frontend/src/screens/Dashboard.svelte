@@ -150,9 +150,9 @@
               <span class="c2"><a class="title plain" href={findingHref(f)}>{ruleTitle(f.rule, f)}</a></span>
               <span class="c3">
                 <span class="loc">{#if f.host}<a href={hostHref(sid, f.host_id)}>{f.host}</a>{:else}<span class="muted">all hosts</span>{/if}{#if f.username}<span class="usr">{f.username}</span>{/if}</span>
-                {#if f.file}<span class="mono path" title={fileLine(f.file, f.line)}>{midTrunc(fileLine(f.file, f.line), 40)}</span>{/if}
+                {#if f.file}<span class="mono path" title={fileLine(f.file, f.line)}>{midTrunc(fileLine(f.file, f.line), 20)}</span>{/if}
               </span>
-              <span class="c4 secondary" title={f.recommendation}>{f.recommendation}</span>
+              <span class="c4 secondary"><span class="clamp" title={f.recommendation}>{f.recommendation}</span></span>
             </li>
           {/each}
         </ol>
@@ -203,8 +203,8 @@
   .hb { height: 6px; padding-left: var(--s3); display: block; }
   .hb span { display: block; height: 6px; background: var(--border-default); border-radius: 1px; }
   .hb span.zero { width: 1px !important; }
-  .lower { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: var(--s5); align-items: start; }
-  .tfh, .tf li { display: grid; grid-template-columns: 104px minmax(0, 1.5fr) minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--s4);
+  .lower { display: grid; grid-template-columns: minmax(0, 2.4fr) minmax(260px, 1fr); gap: var(--s5); align-items: start; }
+  .tfh, .tf li { display: grid; grid-template-columns: 96px minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1.25fr); gap: var(--s4);
     padding: 0 var(--s5); }
   .tfh { height: 36px; align-items: center; background: var(--bg-subtle); border-bottom: 1px solid var(--border-default);
     font-size: 12px; line-height: 16px; font-weight: 500; color: var(--text-secondary); }
@@ -219,7 +219,9 @@
   .loc a { font-weight: 500; }
   .usr { color: var(--text-secondary); }
   .path { font-size: 12px; line-height: 16px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .c4 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Recommendation: up to two lines, then "…" with the full text in the title (as in Findings) */
+  .c4 { min-width: 0; }
+  .clamp { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .emptyrow { padding: var(--s6) var(--s5); color: var(--text-secondary); }
   .io .rk + .rk { border-top: 1px solid var(--border-subtle); }
   .io header { display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: var(--s4) var(--s5) var(--s2); }
@@ -237,6 +239,5 @@
   @media (max-width: 700px) {
     .tfh { display: none; }
     .tf li { grid-template-columns: minmax(0, 1fr); gap: var(--s1); padding: var(--s3) var(--s4); }
-    .c4 { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
   }
 </style>

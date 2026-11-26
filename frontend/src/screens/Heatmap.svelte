@@ -161,55 +161,74 @@
     ctx.restore();
   }
 
+  // Axis labels. A highlighted label (hovered row/column, or the host under the pointer elsewhere) is drawn last, on
+  // an opaque plate; labels closer than CLEAR px to it are left out, so no other text shows through or beside it
+  // (check-12 F6: in the 2,000-host drill-down the rows are 6 px apart).
+  const CLEAR = 15;
   function drawLabels() {
     if (!hm || !cvRows) return;
     const cr = cur?.r, cc = cur?.c;
+    const FONT_HL = `600 11px 'IBM Plex Sans Condensed', system-ui, sans-serif`;
+    const fontOf = (it: any) => it.kind === 'other' ? `italic 400 11px 'IBM Plex Sans', system-ui, sans-serif` : `500 11px 'IBM Plex Sans Condensed', system-ui, sans-serif`;
     // rows
     let ctx = setupCanvas(cvRows, GUTTER, H);
     ctx.clearRect(0, 0, GUTTER, H);
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'right';
     const hlRow = highlightHost !== null ? order.rows.findIndex((i) => hm.rows[i].host_id === highlightHost) : -1;
-    order.rows.forEach((ri, pr) => {
-      const it = hm.rows[ri];
-      const isCur = pr === cr || pr === hlRow;
-      if (!isCur && pr % labelEvery !== 0 && it.kind !== 'unknown' && it.kind !== 'other') return;
-      const y = rowY(pr) + (pitch - gap) / 2;
-      ctx.font = isCur ? `600 11px 'IBM Plex Sans Condensed', system-ui, sans-serif` : it.kind === 'other' ? `italic 400 11px 'IBM Plex Sans', system-ui, sans-serif` : `500 11px 'IBM Plex Sans Condensed', system-ui, sans-serif`;
-      let maxw = GUTTER - 8;
-      let lead = 0;
-      if (it.status === 'partial') lead = 16;
-      const txt = fitText(ctx, labelText(it), maxw - lead);
+    const hlRows = [cr, hlRow].filter((x): x is number => x !== undefined && x !== null && x >= 0);
+    const rowMid = (pr: number) => rowY(pr) + (pitch - gap) / 2;
+    const drawRow = (pr: number, isCur: boolean) => {
+      const it = hm.rows[order.rows[pr]];
+      const y = rowMid(pr);
+      ctx.font = isCur ? FONT_HL : fontOf(it);
+      const lead = it.status === 'partial' ? 16 : 0;
+      const txt = fitText(ctx, labelText(it), GUTTER - 8 - lead);
       const tw = ctx.measureText(txt).width;
-      if (isCur) plate(ctx, GUTTER - 6 - tw - lead - 4, y - 8, tw + lead + 8, 16);
+      if (isCur) plate(ctx, GUTTER - 6 - tw - lead - 4, y - 9, tw + lead + 8, 18);
       ctx.fillStyle = isCur ? pal.primary : it.kind === 'other' ? pal.muted : pal.secondary;
       ctx.fillText(txt, GUTTER - 6, y);
       if (lead) meter(ctx, GUTTER - 6 - tw - 14, y - 6, 2);   // partial: the level meter of Medium
+    };
+    order.rows.forEach((ri, pr) => {
+      const it = hm.rows[ri];
+      if (hlRows.includes(pr)) return;
+      if (pr % labelEvery !== 0 && it.kind !== 'unknown' && it.kind !== 'other') return;
+      if (hlRows.some((h) => Math.abs(rowMid(h) - rowMid(pr)) < CLEAR)) return;
+      drawRow(pr, false);
     });
+    hlRows.forEach((pr) => drawRow(pr, true));
     // columns: rotated -90°, reading bottom-to-top, above the margin strip
     ctx = setupCanvas(cvCols!, W, COLLAB + TOPBAR);
     ctx.clearRect(0, 0, W, COLLAB + TOPBAR);
     const hlCol = highlightHost !== null ? order.cols.findIndex((i) => hm.cols[i].host_id === highlightHost) : -1;
-    order.cols.forEach((ci, pc) => {
-      const it = hm.cols[ci];
-      const isCur = pc === cc || pc === hlCol;
-      if (!isCur && pc % labelEvery !== 0 && it.kind !== 'other') return;
-      const x = pc * pitch + (pitch - gap) / 2;
+    const hlCols = [cc, hlCol].filter((x): x is number => x !== undefined && x !== null && x >= 0);
+    const colMid = (pc: number) => pc * pitch + (pitch - gap) / 2;
+    const drawCol = (pc: number, isCur: boolean) => {
+      const it = hm.cols[order.cols[pc]];
       ctx.save();
-      ctx.translate(x, COLLAB - 6);
+      ctx.translate(colMid(pc), COLLAB - 6);
       ctx.rotate(-Math.PI / 2);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.font = isCur ? `600 11px 'IBM Plex Sans Condensed', system-ui, sans-serif` : it.kind === 'other' ? `italic 400 11px 'IBM Plex Sans', system-ui, sans-serif` : `500 11px 'IBM Plex Sans Condensed', system-ui, sans-serif`;
+      ctx.font = isCur ? FONT_HL : fontOf(it);
       const lead = it.status === 'partial' ? 16 : 0;
       const txt = fitText(ctx, labelText(it), COLLAB - 10 - lead);
       const tw = ctx.measureText(txt).width;
-      if (isCur) plate(ctx, -2, -8, tw + lead + 6, 16);
+      if (isCur) plate(ctx, -2, -9, tw + lead + 6, 18);
       if (lead) { ctx.save(); ctx.rotate(Math.PI / 2); meter(ctx, -6, -12, 2); ctx.restore(); }
       ctx.fillStyle = isCur ? pal.primary : it.kind === 'other' ? pal.muted : pal.secondary;
       ctx.fillText(txt, lead, 0);
       ctx.restore();
+    };
+    order.cols.forEach((ci, pc) => {
+      const it = hm.cols[ci];
+      if (hlCols.includes(pc)) return;
+      if (pc % labelEvery !== 0 && it.kind !== 'other') return;
+      if (hlCols.some((h) => Math.abs(colMid(h) - colMid(pc)) < CLEAR)) return;
+      drawCol(pc, false);
     });
+    hlCols.forEach((pc) => drawCol(pc, true));
     drawTopBars(ctx);
   }
 
@@ -468,6 +487,8 @@
   const crumbs = $derived(hm && hm.level === 'hosts' ? { src: hm.src_label, dst: hm.dst_label } : null);
   let exportOpen = $state(false);
   const metricSentence = $derived(P.metric === 'hosts' ? 'distinct host pairs' : P.metric === 'users' ? 'user pairs' : 'keys');
+  const DRILL = '__drill';
+  const inDrill = $derived(!!hm && hm.level === 'hosts' && P.group_by !== 'host');
   const GROUPS: [string, string][] = [['host', 'Host'], ['subnet', 'Subnet'], ['ansible', 'Ansible group'], ['tag', 'Tag'], ['depth', 'Crawl depth']];
 </script>
 
@@ -476,7 +497,7 @@
 <PageHead title="Heatmap">
   {#snippet fields()}
     <Field label="Layer" value={LAYER_LABEL} />
-    <Field label="Group by" value={hm && hm.level === 'hosts' && P.group_by !== 'host' ? 'Host (drill-down)' : GROUPS.find((g) => g[0] === P.group_by)?.[1] ?? P.group_by} />
+    <Field label="Group by" value={inDrill ? 'Host (drill-down)' : GROUPS.find((g) => g[0] === P.group_by)?.[1] ?? P.group_by} />
     <Field label="Metric" value={P.metric === 'hosts' ? 'Hosts' : P.metric === 'users' ? 'Users' : 'Keys'} />
   {/snippet}
   {#snippet actions()}
@@ -495,7 +516,9 @@
   <section class="panel flush matrix-panel">
     <div class="toolbar">
       <label class="ctl">Group by
-        <select class="select" value={P.group_by} onchange={(e) => setQuery({ group_by: (e.target as HTMLSelectElement).value, src: null, dst: null })}>
+        <!-- in a drill-down the control says so (check-12 F6); picking a grouping leaves the drill-down -->
+        <select class="select" value={inDrill ? DRILL : P.group_by} onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v !== DRILL) setQuery({ group_by: v, src: null, dst: null }); }}>
+          {#if inDrill}<option value={DRILL}>Host (drill-down)</option>{/if}
           {#each GROUPS as [v, l]}<option value={v}>{l}</option>{/each}
         </select></label>
       <label class="ctl">Metric

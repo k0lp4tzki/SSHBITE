@@ -117,6 +117,7 @@ def create_app(database: str, session_hours: float = 8, tls: bool = False, guard
     app.state.trusted_proxies = [ipaddress.ip_network(p, strict=False) for p in (trusted_proxies or [])]
     app.state.guard = guard or Guard()
     app.state.views = Views()
+    app.state.views.warm(database)   # the newest scans' heatmap views, off the first request (assessment §1)
 
     @app.middleware("http")
     async def headers(request: Request, call_next):

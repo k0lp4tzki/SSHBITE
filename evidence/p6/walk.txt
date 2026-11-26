@@ -1,0 +1,21 @@
+graph a2 light: pane [662, 520], centre offset from pane centre [0, 0] px, node margins l/t/r/b [82, 40, 162, 51] px, scale 1.495
+graph k_dsa light: pane [662, 520], centre offset from pane centre [0, 0] px, node margins l/t/r/b [153, 65, 129, 82] px, scale 1.5
+graph jump-hops2 light: pane [662, 520], centre offset from pane centre [0, 0] px, node margins l/t/r/b [104, 40, 100, 54] px, scale 0.675
+graph a2 dark: pane [662, 520], centre offset from pane centre [0, 0] px, node margins l/t/r/b [82, 40, 162, 51] px, scale 1.495
+graph a2 light prefers-reduced-motion: centre offset [0, 0] px, margins [82, 40, 162, 52], scale 1.495
+users tab File:line|Strength|Type|Fingerprint|Comment|Options|Origin: column x per panel [[257, 492, 581, 669, 825, 925, 1082], [257, 492, 581, 669, 825, 925, 1082], [257, 492, 581, 669, 825, 925, 1082]]
+users tab File:line|Host|HostName|User|Port|IdentityFile|ProxyJump: column x per panel [[257, 492, 616, 771, 871, 946, 1120], [257, 492, 616, 771, 871, 946, 1120]]
+users tab File:line|Pattern|Resolved host|Key|Match: column x per panel [[257, 492, 691, 861, 1095]]
+users tab: cells cut off 0
+dashboard recommendations: ["Replace with ed25519, remove this line/file", "Replace with ed25519, remove this line/file", "Replace with ed25519, remove this line/file", "Replace with ed25519, remove this line/file", "Identify the owner, else remove", "Identify the owner, else remove", "Identify the owner, else remove", "Set prohibit-password or no", "chmod 600; treat the key as exposed", "Remove, or restrict with from=; use personal accounts + sudo"]
+findings K_DSA row, Finding cell: "Critical key algorithm (dsa 1024)\n\u201cQA legacy dsa - remove\u201d\nauthorized key"
+sshd: PermitRootLogin=Sans; yesHigh=Sans; sshd-T=Sans; /etc/ssh/sshd_config.d/l=Mono
+sshd: PasswordAuthentication=Sans; no=Sans; sshd-T=Sans; /etc/ssh/sshd_config.d/l=Mono
+sshd: PubkeyAuthentication=Sans; yes=Sans; sshd-T=Sans; –=Sans
+sshd: AuthorizedKeysFile=Sans; .ssh/authorized_keys .ss=Mono; sshd-T=Sans; –=Sans
+sshd: TrustedUserCAKeys=Sans; none=Sans; sshd-T=Sans; –=Sans
+known by (hashed): (hashed)=Sans
+page errors: [] ; off-origin requests: []
+375 px: page width 375 selected tab Findings (5)
+drill-down: Group by shows "Host (drill-down)" ; hovered syn-0819.synthetic.invalid -> syn-0895.synthetic.invalid, pitch 8 px
+search field after 12 Tab presses: Search hosts, keys, users | solid 2px rgb(10, 108, 116) offset 2px

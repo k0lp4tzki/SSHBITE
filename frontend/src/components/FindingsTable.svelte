@@ -18,7 +18,8 @@
           <td class="c-sev"><SevBadge severity={f.severity} /></td>
           <td class="c-f">
             <div class="l1 ttl">{ruleTitle(f.rule, f)}</div>
-            {#if det || f.label}<div class="l2" title={det}>{#if f.label}<span class="lab">“{endTrunc(f.label, 28)}”</span> {/if}{det}</div>{/if}
+            {#if f.label}<div class="l2 lab" title={f.label}>“{endTrunc(f.label, 40)}”</div>{/if}
+            {#if det}<div class="l2" title={det}>{det}</div>{/if}
           </td>
           <td class="loc">
             <div class="l1 nowrap">
@@ -48,7 +49,7 @@
   .l2 { font-size: 12px; line-height: 16px; color: var(--text-secondary); margin-top: 2px; }
   .c-f { min-width: 230px; }
   .c-f .l2 { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-  .lab { color: var(--text-primary); }
+  .c-f .l2.lab { color: var(--text-primary); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .loc { white-space: nowrap; }
   .hl { font-weight: 500; }
   .usr { color: var(--text-secondary); margin-left: var(--s3); }
