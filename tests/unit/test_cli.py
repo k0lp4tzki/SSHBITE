@@ -34,7 +34,10 @@ def test_init_config_prints_example():
     assert r.exit_code == 0 and r.output == EXAMPLE_CONFIG
 
 
-def test_user_add_passwd_remove(cfgfile, tmp_path):
+def test_user_add_passwd_remove(cfgfile, tmp_path, monkeypatch):
+    from sshbite import cli as cli_mod
+
+    monkeypatch.setattr(cli_mod, "_stdin_is_tty", lambda: True)   # the interactive prompt (S7: refused without a TTY)
     r = run("-c", cfgfile, "user", "add", "admin", input="short\nshort\n")
     assert r.exit_code != 0 and "at least 12" in r.output
     r = run("-c", cfgfile, "user", "add", "admin", input="correct horse battery\ncorrect horse battery\n")

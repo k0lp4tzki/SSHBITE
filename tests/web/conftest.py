@@ -34,12 +34,13 @@ def free_port() -> int:
 
 
 class Server:
-    def __init__(self, db_path: str, tls: bool = False, guard: Guard | None = None):
+    def __init__(self, db_path: str, tls: bool = False, guard: Guard | None = None, **app_kw):
         self.db_path = db_path
-        self.app = create_app(db_path, session_hours=8, tls=tls, guard=guard)
+        self.app = create_app(db_path, session_hours=8, tls=tls, guard=guard, **app_kw)
         self.port = free_port()
         self.base = f"http://127.0.0.1:{self.port}"
-        cfg = uvicorn.Config(self.app, host="127.0.0.1", port=self.port, log_level="error", access_log=False)
+        cfg = uvicorn.Config(self.app, host="127.0.0.1", port=self.port, log_level="error", access_log=False,
+                             proxy_headers=False)   # as `sshbite serve`: client_ip() alone reads X-Forwarded-For
         self.server = uvicorn.Server(cfg)
         self.thread = threading.Thread(target=self.server.run, daemon=True)
 

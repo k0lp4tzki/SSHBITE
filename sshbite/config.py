@@ -30,6 +30,7 @@ audit:
   key_passphrase_env: null
 privilege:
   mode: sudo        # sudo: sudo -n /bin/sh -s | sudo-login: sudo -n -i /bin/sh -s | none
+  password_scope: []  # CIDRs / hostname globs that may receive the sudo password; empty = every host
 crawl:
   max_depth: 10
   max_hosts: 1000
@@ -62,7 +63,12 @@ rules:
   ignore_audit_key: true
 grouping:
   tags: [{name: dmz, match: ["10.1.0.0/16", "web-*"]}]   # first match wins, else "untagged"
-web: {bind: 127.0.0.1, port: 8722, session_hours: 8}
+web:
+  bind: 127.0.0.1
+  port: 8722
+  session_hours: 8
+  secure_cookie: false          # true behind a TLS reverse proxy (always true with --tls-cert)
+  trusted_proxies: []           # proxy IPs/CIDRs whose X-Forwarded-For names the client
 """
 
 _GLOB_RE = re.compile(r"^[A-Za-z0-9.*?\[\]!_:-]{1,253}$")
@@ -125,6 +131,13 @@ class AuditCfg(_Strict):
 
 class PrivilegeCfg(_Strict):
     mode: Literal["sudo", "sudo-login", "none"] = "sudo"
+    # hosts (CIDRs / name globs) that may receive the sudo password; empty = every host
+    password_scope: list[ScopeItem] = Field(default_factory=list)
+
+    @field_validator("password_scope", mode="before")
+    @classmethod
+    def _none_list(cls, v: Any) -> Any:
+        return [] if v is None else v
 
 
 class CrawlCfg(_Strict):
@@ -215,10 +228,32 @@ class GroupingCfg(_Strict):
     tags: list[TagCfg] = Field(default_factory=list)
 
 
+def _proxy_item(value: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("not an IP address or CIDR")
+    try:
+        ipaddress.ip_network(value.strip(), strict=False)
+    except ValueError:
+        raise ValueError("not an IP address or CIDR") from None
+    return value.strip()
+
+
+ProxyItem = Annotated[str, AfterValidator(_proxy_item)]
+
+
 class WebCfg(_Strict):
     bind: str = "127.0.0.1"
     port: int = Field(8722, ge=1, le=65535)
     session_hours: float = Field(8, gt=0, le=24 * 30)
+    # TLS ends at a reverse proxy: mark the session cookie Secure (always on with --tls-cert)
+    secure_cookie: bool = False
+    # peers whose X-Forwarded-For (last hop) is used as the client address for the per-IP login limit
+    trusted_proxies: list[ProxyItem] = Field(default_factory=list)
+
+    @field_validator("trusted_proxies", mode="before")
+    @classmethod
+    def _none_list(cls, v: Any) -> Any:
+        return [] if v is None else v
 
 
 class Config(_Strict):
@@ -353,6 +388,16 @@ def check_audit_key_file(cfg: Config) -> str | None:
     if not os.access(p, os.R_OK):
         return f"audit.key_file: {p}: not readable by this user"
     return None
+
+
+CRAWL_UNRESTRICTED_WARNING = (
+    "crawl.include is empty: crawl targets and ports are taken from target data (known_hosts, ~/.ssh/config, "
+    "from=) without restriction; set crawl.include to the networks and host names you mean to scan")
+
+
+def scope_warnings(cfg: Config) -> list[str]:
+    """Warnings about the crawl scope, printed by `config validate` and `scan` (the default stays unrestricted)."""
+    return [] if cfg.crawl.include else [CRAWL_UNRESTRICTED_WARNING]
 
 
 def check_files(cfg: Config) -> CheckResult:

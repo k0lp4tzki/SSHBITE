@@ -50,7 +50,7 @@ jobs:
       - name: compose files are valid
         run: |
           docker compose -f docs/compose.example.yaml config -q
-          docker compose config -q
+          docker compose -f compose.lab.yaml config -q
 
   unit:
     runs-on: ubuntu-24.04
@@ -135,10 +135,24 @@ jobs:
           docker run --rm sshbite:ci sshbite --version
           docker run --rm sshbite:ci sshbite collector show | grep '^=====.*lint: OK'
           test "$(docker image inspect -f '{{.Config.User}}' sshbite:ci)" = "10001:10001"
-      - name: the image scans the lab and serves the UI (compose.yaml = lab + image)
+      - name: the runtime image has no test dependencies (requirements-runtime.lock)
         run: |
-          docker compose up -d --build --wait --wait-timeout 600
-          docker compose logs sshbite | tee demo.txt
+          docker run --rm --entrypoint pip sshbite:ci list | tee pip-list.txt
+          ! grep -Eiq '^(pytest|playwright|pluggy|iniconfig|greenlet|pyee) ' pip-list.txt
+      - name: the lab demo refuses the old published password
+        run: |
+          set +e
+          SSHBITE_DEMO_PASSWORD=sshbite-lab-demo docker compose -f compose.lab.yaml run --rm --no-deps -T sshbite \
+            > refused.txt 2>&1
+          code=$?
+          set -e
+          cat refused.txt
+          test "$code" != 0 && grep -q 'refusing to start' refused.txt
+      - name: the image scans the lab and serves the UI (compose.lab.yaml = lab + image)
+        run: |
+          docker compose -f compose.lab.yaml up -d --build --wait --wait-timeout 600
+          docker compose -f compose.lab.yaml logs sshbite | tee demo.txt
+          grep -q 'LAB DEMO LOGIN (shown only now):  user admin   password ' demo.txt
           grep -q 'entry OK, pinned key matches, sudo: root' demo.txt
           grep -q 'edges:    20 access (19 effective, 3 unknown origin)' demo.txt
           curl -fsS -D headers.txt -o index.html http://127.0.0.1:8722/
@@ -148,7 +162,8 @@ jobs:
           test "$code" = 401 -o "$code" = 403
       - uses: actions/upload-artifact@v4
         if: always()
-        with: {name: image-logs, path: "docker-build.txt\nid.txt\ndemo.txt\nheaders.txt", if-no-files-found: ignore}
+        with: {name: image-logs, path: "docker-build.txt\nid.txt\npip-list.txt\nrefused.txt\ndemo.txt\nheaders.txt",
+               if-no-files-found: ignore}
       - name: stop
         if: always()
-        run: docker compose down -v
+        run: docker compose -f compose.lab.yaml down -v

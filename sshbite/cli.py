@@ -12,7 +12,7 @@ import time
 import click
 
 from . import __version__
-from .config import EXAMPLE_CONFIG, Config, check_files, load_config, resolve_config_path
+from .config import EXAMPLE_CONFIG, Config, check_files, load_config, resolve_config_path, scope_warnings
 from .errors import ConfigError, EntryError, SshbiteError
 from .privilege import RedactingFilter, SudoSecret
 
@@ -105,7 +105,7 @@ def config_validate(ctx: click.Context, connect: bool) -> None:
     path = resolve_config_path(ctx.obj["config_path"])
     cfg = load_config(ctx.obj["config_path"])
     res = check_files(cfg)
-    for w in res.warnings:
+    for w in [*res.warnings, *scope_warnings(cfg)]:
         click.echo(f"warning: {w}", err=True)
     if res.errors:
         for e in res.errors:
@@ -119,7 +119,7 @@ def config_validate(ctx: click.Context, connect: bool) -> None:
 
 async def _check_entry(cfg: Config) -> str:
     from .config import load_audit_key
-    from .privilege import PASSWORD_REQUIRED
+    from .privilege import PASSWORD_REQUIRED, commands
     from .transport import Hop, HostKeyPolicy, RouteError, Transport, run
 
     if not cfg.entry.host_keys:
@@ -142,8 +142,7 @@ async def _check_entry(cfg: Config) -> str:
         if mode == "none":
             sudo = "not used (privilege.mode none)"
         else:
-            i = " -i" if mode == "sudo-login" else ""
-            r = await run(conn, f"sudo -n{i} /bin/true", None, max_bytes=65536)
+            r = await run(conn, commands(mode)["probe"], None, max_bytes=65536)
             if r.rc == 0:
                 sudo = "root"
             elif PASSWORD_REQUIRED.search(r.stderr):
@@ -175,10 +174,14 @@ def scan_cmd(ctx, max_depth, max_hosts, concurrency, timeout, no_crawl, ask_sudo
     cfg = _cfg(ctx)
     opts = ScanOptions(max_depth=max_depth, max_hosts=max_hosts, concurrency=concurrency, timeout=timeout,
                        no_crawl=no_crawl, label=label)
+    for w in scope_warnings(cfg):
+        click.echo(f"warning: {w}", err=True)
     if dry_run:
         _dry_run(cfg, opts)
         return
     if ask_sudo_password:
+        if not _stdin_is_tty():
+            raise click.UsageError(f"--ask-sudo-password: refusing to read the sudo password: {NO_TTY_HINT}.")
         pw = click.prompt("sudo password", hide_input=True, default="", show_default=False, err=True)
     else:
         pw = os.environ.get("SSHBITE_SUDO_PASSWORD") or None
@@ -436,37 +439,68 @@ def user_group() -> None:
     """UI logins (argon2id)."""
 
 
-def _prompt_password() -> str:
-    pw = click.prompt("password", hide_input=True, confirmation_prompt="repeat password", err=True)
+def _stdin_is_tty() -> bool:
+    try:
+        return sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+NO_TTY_HINT = ("stdin is not a terminal, so the password could be echoed or logged. "
+               "Run it in a terminal - in a container with `docker exec -it` (not just -i)")
+
+
+def _check_password_len(pw: str) -> str:
     if len(pw) < 12:
         raise click.UsageError("the password must have at least 12 characters")
     return pw
 
 
+def _prompt_password(password_stdin: bool) -> str:
+    if password_stdin:
+        line = sys.stdin.readline()
+        pw = line[:-1] if line.endswith("\n") else line
+        if pw.endswith("\r"):
+            pw = pw[:-1]
+        if not pw:
+            raise click.UsageError("--password-stdin: no password on stdin")
+        return _check_password_len(pw)
+    if not _stdin_is_tty():
+        raise click.UsageError(f"refusing to read the password: {NO_TTY_HINT}, or pipe it with --password-stdin.")
+    pw = click.prompt("password", hide_input=True, confirmation_prompt="repeat password", err=True)
+    return _check_password_len(pw)
+
+
+_PW_STDIN = click.option("--password-stdin", is_flag=True,
+                         help="Read the password as one line from stdin (for scripts; no prompt, no echo)")
+
+
 @user_group.command("add")
 @click.argument("name")
+@_PW_STDIN
 @click.pass_context
-def user_add(ctx, name: str) -> None:
+def user_add(ctx, name: str, password_stdin: bool) -> None:
     from .users import add_user, validate_username
 
     validate_username(name)
     conn = _db(_cfg(ctx))
     if conn.execute("SELECT 1 FROM app_user WHERE username=?", (name,)).fetchone():
         raise click.UsageError(f"user {name} exists already (use `sshbite user passwd {name}`)")
-    add_user(conn, name, _prompt_password())
+    add_user(conn, name, _prompt_password(password_stdin))
     click.echo(f"user {name} added")
 
 
 @user_group.command("passwd")
 @click.argument("name")
+@_PW_STDIN
 @click.pass_context
-def user_passwd(ctx, name: str) -> None:
+def user_passwd(ctx, name: str, password_stdin: bool) -> None:
     from .users import set_password
 
     conn = _db(_cfg(ctx))
     if not conn.execute("SELECT 1 FROM app_user WHERE username=?", (name,)).fetchone():
         raise click.UsageError(f"no user {name}")
-    set_password(conn, name, _prompt_password())
+    set_password(conn, name, _prompt_password(password_stdin))
     click.echo(f"password of {name} changed; its sessions were ended and the lockout cleared")
 
 

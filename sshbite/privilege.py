@@ -1,12 +1,17 @@
 """Privilege handling (spec 3.4): sudo probe, optional sudo password, unprivileged fallback.
 
-Only these literal commands are ever sent to a target, each on its own exec channel:
+Only these literal commands are ever sent to a target, each on its own exec channel. SUDO stands for
+the fixed prefix `test -x /usr/bin/sudo && exec /usr/bin/sudo ARGS; exec /bin/sudo ARGS`: sudo is always
+called by its absolute path, never through the account's PATH, and /bin/sudo is only used where
+/usr/bin/sudo does not exist.
 
-    sudo -n /bin/true                 sudo -n -i /bin/true            (probe; -i for sudo-login)
-    sudo -n /bin/sh -s                sudo -n -i /bin/sh -s           (collector via NOPASSWD sudo)
-    sudo -S -k -p '' /bin/true        sudo -S -k -p '' -i /bin/true   (password probe)
-    sudo -S -k -p '' /bin/sh -s       sudo -S -k -p '' -i /bin/sh -s  (collector via password)
+    SUDO -n /bin/true                 SUDO -n -i /bin/true            (probe; -i for sudo-login)
+    SUDO -n /bin/sh -s                SUDO -n -i /bin/sh -s           (collector via NOPASSWD sudo)
+    SUDO -S -k -p '' /bin/true        SUDO -S -k -p '' -i /bin/true   (password probe)
+    SUDO -S -k -p '' /bin/sh -s       SUDO -S -k -p '' -i /bin/sh -s  (collector via password)
     /bin/sh -s                                                        (unprivileged collector)
+
+The password is only sent to hosts inside privilege.password_scope (empty = every host).
 
 -k makes sudo ignore (and not write) cached credentials, so the password line on
 stdin is always consumed by sudo itself and can never reach the shell as a
@@ -100,18 +105,30 @@ def _first_line(text: str, secret: SudoSecret) -> str:
     return ""
 
 
+SUDO_PATH = "/usr/bin/sudo"
+SUDO_FALLBACK = "/bin/sudo"
+OUTSIDE_SCOPE = "sudo password not sent (outside privilege.password_scope)"
+
+
+def sudo_cmd(args: str) -> str:
+    """sudo by absolute path: /usr/bin/sudo, or /bin/sudo only if the first is not executable (fixed test -x)."""
+    return f"test -x {SUDO_PATH} && exec {SUDO_PATH} {args}; exec {SUDO_FALLBACK} {args}"
+
+
 def commands(mode: str) -> dict[str, str]:
     i = " -i" if mode == "sudo-login" else ""
     return {
-        "probe": f"sudo -n{i} /bin/true",
-        "run": f"sudo -n{i} /bin/sh -s",
-        "pw_probe": f"sudo -S -k -p ''{i} /bin/true",
-        "pw_run": f"sudo -S -k -p ''{i} /bin/sh -s",
+        "probe": sudo_cmd(f"-n{i} /bin/true"),
+        "run": sudo_cmd(f"-n{i} /bin/sh -s"),
+        "pw_probe": sudo_cmd(f"-S -k -p ''{i} /bin/true"),
+        "pw_run": sudo_cmd(f"-S -k -p ''{i} /bin/sh -s"),
         "plain": "/bin/sh -s",
     }
 
 
-async def collect(conn, script: bytes, mode: str, secret: SudoSecret, max_bytes: int) -> CollectOutcome:
+async def collect(conn, script: bytes, mode: str, secret: SudoSecret, max_bytes: int,
+                  password_allowed: bool = True) -> CollectOutcome:
+    """password_allowed=False: the host is outside privilege.password_scope - never send it the password."""
     cmds = commands(mode)
     reasons: list[str] = []
     needs_password = False
@@ -123,6 +140,9 @@ async def collect(conn, script: bytes, mode: str, secret: SudoSecret, max_bytes:
         err = probe.stderr
         if PASSWORD_REQUIRED.search(err):
             pw = secret.get()
+            withheld = bool(pw) and not password_allowed
+            if withheld:
+                pw = None
             # sudoers may want a password for /bin/true but not for /bin/sh (NOPASSWD: /bin/sh): then sudo
             # would not read the password line and the shell would run it. Try the NOPASSWD path first,
             # with empty stdin (the shell exits at once).
@@ -139,6 +159,9 @@ async def collect(conn, script: bytes, mode: str, secret: SudoSecret, max_bytes:
                     return CollectOutcome("sudo_password", res)
                 reasons.append(_first_line(err, secret) or "sudo: a password is required")
                 reasons.append("sudo password not accepted: " + (_first_line(p2.stderr, secret) or f"exit {p2.rc}"))
+            elif withheld:
+                reasons.append(_first_line(err, secret) or "sudo: a password is required")
+                reasons.append(OUTSIDE_SCOPE)
             else:
                 needs_password = True
                 reasons.append(_first_line(err, secret) or "sudo: a password is required")

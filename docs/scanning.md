@@ -66,9 +66,20 @@ The normal case is the crawl from the entry host alone – no host list needed. 
 |---|---|---|
 | `crawl.max_depth` (10) | `--max-depth N` | Hosts further away are listed as `max_depth`. |
 | `crawl.max_hosts` (1000) | `--max-hosts N` | More hosts are listed as `max_hosts`. |
-| `crawl.include` | – | If set, only matching hosts (CIDR or name glob) are scanned; others are `out_of_scope`. |
+| `crawl.include` | – | If set, only matching hosts (CIDR or name glob) are scanned; others are `out_of_scope`. If empty, `config validate` and `scan` warn (below). |
 | `crawl.exclude` | – | Matching hosts are never connected to, only listed as `excluded`. Exclude wins over include and over seeds. |
 | – | `--no-crawl` | Scan only the entry host and the seeds. |
+
+Without `crawl.include` the crawl goes wherever the targets' own files point: addresses **and ports** come
+from known_hosts, `~/.ssh/config` and `from=` options of the scanned hosts. That is the default the owner
+asked for, but after an incident those files may have been planted, so `config validate` and every `scan`
+print:
+
+```
+warning: crawl.include is empty: crawl targets and ports are taken from target data (known_hosts, ~/.ssh/config, from=) without restriction; set crawl.include to the networks and host names you mean to scan
+```
+
+Set `crawl.include` to your networks and host name patterns to limit the crawl to them.
 
 Every reference is kept, whether scanned or not: the crawl tree in the UI (Scans → crawl tree) and
 `sshbite scans show ID` list each host with depth, the file and line it was discovered in, and its route.
@@ -98,8 +109,13 @@ sshbite scan --ask-sudo-password             # prompts once, without echo
 docker exec -it sshbite sshbite scan --ask-sudo-password
 ```
 
-or non-interactively, e.g. from a timer: `SSHBITE_SUDO_PASSWORD=… sshbite scan` (see
-[operations.md](operations.md)). The same password is tried on every host that asks for one. It is kept
+`--ask-sudo-password` needs a terminal: without one (a pipe, `docker exec -i` without `-t`) it refuses,
+because the password could be echoed. Non-interactively, e.g. from a timer, `SSHBITE_SUDO_PASSWORD=… sshbite
+scan` works but is **not recommended** – the value is visible in `/proc/<pid>/environ` and, if passed to a
+container, in `docker inspect` (see [operations.md](operations.md#the-sudo-password)). The same password is
+tried on every host that asks for one, unless `privilege.password_scope` limits it to some hosts.
+A compromised host can imitate a sudo prompt and capture the password: use one that only the audit account
+has, and rotate it after the scan. It is kept
 in memory for the scan only, removed from the environment, redacted from logs, and never written to the
 database. A host where sudo is refused or the password is wrong is scanned unprivileged and marked
 `partial`, with the reason (e.g. `sudo: a password is required`). If hosts needed a password and none was

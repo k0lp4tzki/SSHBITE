@@ -19,8 +19,11 @@ from click.testing import CliRunner
 
 from sshbite import collector
 from sshbite.cli import main
+from sshbite.privilege import commands
 
 from .conftest import FIX
+
+CMD = commands("sudo")
 
 PASSWORD = "s3cr3t-Sudo-PW-4711"
 
@@ -40,14 +43,14 @@ def make_handler(mode: str, seen: list):
         cmd = process.command or ""
         seen.append(cmd)
         data = await process.stdin.read() if cmd.endswith("-s") or "-S" in cmd else ""
-        if cmd == "sudo -n /bin/true":
+        if cmd == CMD["probe"]:
             if mode == "nopasswd":
                 process.exit(0)
             else:
                 process.stderr.write("sudo: a password is required\n")
                 process.exit(1)
             return
-        if cmd == "sudo -n /bin/sh -s":
+        if cmd == CMD["run"]:
             if mode not in ("nopasswd", "sh_nopasswd"):
                 process.stderr.write("sudo: a password is required\n")
                 process.exit(1)
@@ -55,7 +58,7 @@ def make_handler(mode: str, seen: list):
             process.stdout.write(ROOT_OUT.decode())
             process.exit(0)
             return
-        if cmd == "sudo -S -k -p '' /bin/true":
+        if cmd == CMD["pw_probe"]:
             first = data.split("\n", 1)[0]
             if first == PASSWORD:
                 process.stderr.write(f"debug: misbehaving sudo echoes {first}\n")
@@ -64,7 +67,7 @@ def make_handler(mode: str, seen: list):
                 process.stderr.write(f"Sorry, try again. (got {first})\nsudo: 1 incorrect password attempt\n")
                 process.exit(1)
             return
-        if cmd == "sudo -S -k -p '' /bin/sh -s":
+        if cmd == CMD["pw_run"]:
             first, script = data.split("\n", 1)
             assert first == PASSWORD and script.startswith("LC_ALL=C;")
             process.stderr.write(f"warning: the password was {first}\n")
@@ -167,7 +170,7 @@ def test_password_never_in_logs_or_db(tmp_path, audit, caplog):
         r = runner.invoke(main, ["-vv", "-c", cfg, "scan", "--no-crawl"], env={"SSHBITE_SUDO_PASSWORD": PASSWORD},
                           catch_exceptions=False)
         assert r.exit_code == 0, r.output
-        assert "sudo -S -k -p '' /bin/sh -s" in srv.seen
+        assert CMD["pw_run"] in srv.seen
     out = r.output + (r.stderr if hasattr(r, "stderr") and r.stderr_bytes is not None else "")
     assert PASSWORD not in out
     assert "sudo -S -k -p" in caplog.text or "asyncssh" in caplog.text or len(caplog.records) > 10, "no logs captured"
@@ -201,7 +204,7 @@ def test_needs_password_summary_and_partial(tmp_path, audit):
         r = CliRunner().invoke(main, ["-c", cfg, "scan", "--no-crawl"], env={"SSHBITE_SUDO_PASSWORD": ""})
         assert r.exit_code == 0, r.output
         assert "1 host needs a sudo password: rerun with --ask-sudo-password" in r.output
-        assert "sudo -S -k -p '' /bin/true" not in srv.seen
+        assert CMD["pw_probe"] not in srv.seen
     c = sqlite3.connect(tmp_path / "data" / "sshbite.db")
     assert c.execute("SELECT status, privilege FROM host_scan").fetchone() == ("partial", "unprivileged")
     assert c.execute("SELECT count(*) FROM finding WHERE rule='partial_scan'").fetchone()[0] == 1
@@ -215,7 +218,7 @@ def test_nopasswd_root_and_summary(tmp_path, audit):
         assert r.exit_code == 0, r.output
         assert "scan 1 completed" in r.output and "scan id:  1" in r.output
         assert "depth 0:" in r.output
-        assert srv.seen[:2] == ["sudo -n /bin/true", "sudo -n /bin/sh -s"]
+        assert srv.seen[:2] == [CMD["probe"], CMD["run"]]
         # entry failure: wrong pin -> exit 3, aborted scan, no host rows
         bad = yaml.safe_load(open(cfg))
         bad["entry"]["host_keys"] = [asyncssh.generate_private_key("ssh-ed25519").export_public_key("openssh").decode()]

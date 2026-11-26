@@ -25,7 +25,7 @@ from ..export import COLUMNS, ROWS, ExportFilter, to_csv, to_json
 from ..report import discovered_via
 from . import auth
 from . import data as D
-from .app import ApiError
+from .app import ApiError, client_ip
 
 router = APIRouter()
 
@@ -114,7 +114,7 @@ class LoginBody(BaseModel):
 @router.post("/login", status_code=204)
 def login(body: LoginBody, request: Request, conn: sqlite3.Connection = Depends(get_db)):
     guard: auth.Guard = request.app.state.guard
-    ip = request.client.host if request.client else "?"
+    ip = client_ip(request)
     if guard.ip_blocked(ip):
         raise ApiError(429, "rate_limited", "Too many attempts from this address. Wait 15 minutes and try again.")
     if len(body.username) > 64 or len(body.password) > 1024:
@@ -130,7 +130,7 @@ def login(body: LoginBody, request: Request, conn: sqlite3.Connection = Depends(
     token, _csrf, _exp = auth.create_session(conn, res.user_id, request.app.state.session_hours)
     response = Response(status_code=204)
     response.set_cookie(auth.COOKIE, token, max_age=int(request.app.state.session_hours * 3600), path="/",
-                        httponly=True, samesite="strict", secure=bool(request.app.state.tls))
+                        httponly=True, samesite="strict", secure=bool(request.app.state.secure_cookie))
     return response
 
 
@@ -139,7 +139,7 @@ def logout(request: Request, s=Depends(session), conn: sqlite3.Connection = Depe
     auth.delete_session(conn, request.cookies.get(auth.COOKIE))
     response = Response(status_code=204)
     response.delete_cookie(auth.COOKIE, path="/", httponly=True, samesite="strict",
-                           secure=bool(request.app.state.tls))
+                           secure=bool(request.app.state.secure_cookie))
     return response
 
 

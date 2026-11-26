@@ -8,7 +8,7 @@
 | `frontend/` | The UI: Svelte 5 + TypeScript + Vite. `npm run build` writes `sshbite/web/static/` |
 | `lab/` | The test lab: 13 OpenSSH hosts behind a jump host (docker compose) |
 | `tests/` | `unit/`, `web/` (HTTP API), `e2e/` (against the lab), `browser/` (Playwright) |
-| `Dockerfile`, `compose.yaml` | The image; `compose.yaml` = the lab plus the image scanning it |
+| `Dockerfile`, `compose.lab.yaml` | The image; `compose.lab.yaml` = the lab plus the image scanning it (lab demo only) |
 | `.github/workflows/ci.yml` | CI |
 
 ## Set up
@@ -22,8 +22,10 @@ python3.12 -m venv .venv
 `SSHBITE_SKIP_FRONTEND=1` skips the frontend build. During UI work: `cd frontend && npm ci && npm run dev`
 (Vite proxies `/api` to `sshbite serve` on 127.0.0.1:8722).
 
-Dependencies are pinned with hashes: `requirements.lock` (runtime and test) and `requirements-build.lock`
-(setuptools and wheel for the image's wheel build), generated with
+Dependencies are pinned with hashes: `requirements.lock` (runtime and the `test` extra, for development
+and CI), `requirements-runtime.lock` (runtime only, without pytest – what the image and a pip install for
+real use get; the same versions) and `requirements-build.lock` (setuptools and wheel for the image's wheel
+build), generated with
 `uv pip compile … --generate-hashes --python-version 3.12` (the command is in each file's header).
 npm uses `frontend/package-lock.json`.
 
@@ -46,9 +48,11 @@ docker compose -f lab/compose.yaml down        # remove the lab
   `SSHBITE_LAB_ENTRY=<host>:<port>`. The test needs to reach the lab addresses (172.30.1-3.0/24) directly.
 - Without docker or podman, `lab/local/up.sh` (root) builds the same hosts with network, mount and PID
   namespaces; `lab/local/down.sh` removes them.
-- `docker compose up -d --build` at the top level starts the lab **and** the SSHBITE image
-  (`lab/demo/`): it validates the entry, creates the UI user `admin` / `sshbite-lab-demo`, runs one scan
-  with `--ask-sudo-password` and serves the UI on http://127.0.0.1:8722/.
+- `docker compose -f compose.lab.yaml up -d --build` at the top level starts the lab **and** the SSHBITE
+  image (`lab/demo/start.sh`): it validates the entry, creates the UI user `admin` (password from
+  `SSHBITE_DEMO_PASSWORD`, else a random one printed once in the log under `LAB DEMO LOGIN`; the old
+  fixed demo password is refused), runs one scan with the lab's sudo password in `SSHBITE_SUDO_PASSWORD`
+  and serves the UI on http://127.0.0.1:8722/.
 
 ## Tests
 

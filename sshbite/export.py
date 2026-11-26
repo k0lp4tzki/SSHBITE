@@ -286,9 +286,9 @@ ROWS = {"findings": finding_rows, "keys": key_rows, "edges": edge_rows, "hosts":
 
 
 def csv_safe(value) -> str:
-    """RFC 4180 cell; cells starting with = + - @ or a tab get a ' prefix (CSV injection)."""
+    """RFC 4180 cell; cells starting with = + - @, a tab, CR or LF get a ' prefix (CSV injection)."""
     s = "" if value is None else str(value)
-    if s and s[0] in "=+-@\t":
+    if s and s[0] in "=+-@\t\r\n":
         s = "'" + s
     return s
 

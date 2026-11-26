@@ -28,6 +28,7 @@ audit:
   key_passphrase_env: null
 privilege:
   mode: sudo        # sudo: sudo -n /bin/sh -s | sudo-login: sudo -n -i /bin/sh -s | none
+  password_scope: []  # CIDRs / hostname globs that may receive the sudo password; empty = every host
 crawl:
   max_depth: 10
   max_hosts: 1000
@@ -60,7 +61,12 @@ rules:
   ignore_audit_key: true
 grouping:
   tags: [{name: dmz, match: ["10.1.0.0/16", "web-*"]}]   # first match wins, else "untagged"
-web: {bind: 127.0.0.1, port: 8722, session_hours: 8}
+web:
+  bind: 127.0.0.1
+  port: 8722
+  session_hours: 8
+  secure_cookie: false          # true behind a TLS reverse proxy (always true with --tls-cert)
+  trusted_proxies: []           # proxy IPs/CIDRs whose X-Forwarded-For names the client
 ```
 
 The `grouping.tags` line is an example; the default is no tags (`tags: []`).
@@ -95,7 +101,8 @@ In the Docker image use `database: /data/sshbite.db` and paths under `/etc/sshbi
 
 | Key | Default | Meaning |
 |---|---|---|
-| `privilege.mode` | `sudo` | `sudo`: probe `sudo -n /bin/true`, then run the collector as `sudo -n /bin/sh -s`. `sudo-login`: the same with `-i` (root's login environment). `none`: never call sudo; every host is scanned unprivileged and marked `partial`. With a sudo password (`--ask-sudo-password` or `SSHBITE_SUDO_PASSWORD`) a host that asks for one is tried with `sudo -S -k -p ''`. |
+| `privilege.mode` | `sudo` | `sudo`: probe `sudo -n /bin/true`, then run the collector as `sudo -n /bin/sh -s`. `sudo-login`: the same with `-i` (root's login environment). `none`: never call sudo; every host is scanned unprivileged and marked `partial`. With a sudo password (`--ask-sudo-password` or `SSHBITE_SUDO_PASSWORD`) a host that asks for one is tried with `sudo -S -k -p ''`. sudo is always run by its absolute path (`/usr/bin/sudo`, else `/bin/sudo`). |
+| `privilege.password_scope` | `[]` | CIDRs or host name globs (include syntax) of the hosts that may receive the sudo password. Empty = every host. A host outside the scope that asks for a password is not sent it: it is scanned unprivileged and marked `partial` with *sudo password not sent (outside privilege.password_scope)*. A compromised host can imitate a sudo prompt – see [operations.md](operations.md#the-sudo-password). |
 
 ### `crawl`
 
@@ -103,7 +110,7 @@ In the Docker image use `database: /data/sshbite.db` and paths under `/etc/sshbi
 |---|---|---|
 | `crawl.max_depth` | `10` | Hosts more than this many steps from depth 0 are listed as `max_depth`, not scanned. `0` = entry and seeds only. Range 0–100. CLI: `--max-depth`. |
 | `crawl.max_hosts` | `1000` | Most hosts queued in one scan; further references are listed as `max_hosts`. CLI: `--max-hosts`. |
-| `crawl.include` | `[]` | CIDRs (`10.1.0.0/16`) or host name globs (`*.corp.example`). If set, a discovered host is scanned only if one of its names (glob, case-insensitive) or IPs (CIDR) matches; others are `out_of_scope`. Empty = no restriction. The entry host is always scanned. |
+| `crawl.include` | `[]` | CIDRs (`10.1.0.0/16`) or host name globs (`*.corp.example`). If set, a discovered host is scanned only if one of its names (glob, case-insensitive) or IPs (CIDR) matches; others are `out_of_scope`. Empty = no restriction: then targets and ports come from what the scanned hosts' known_hosts, `~/.ssh/config` and `from=` options say, and `config validate` and `scan` print a warning (*crawl.include is empty: …*). The entry host is always scanned. |
 | `crawl.exclude` | `[]` | Same syntax. A matching host is never connected to, only listed as `excluded`. Exclude wins over include and over seeds. |
 | `crawl.chain_fallback` | `true` | If the default route (entry → target) fails with a network error, retry along the path the host was discovered on (entry → parent → … → target), with the audit account and a host-key check on every hop. Authentication failures do not trigger it. |
 | `crawl.hash_probe_include_cidrs` | `true` | Hashed known_hosts lines (`\|1\|…`) are matched against every name and IP known in the scan; with this on, also against every IPv4 address in the `include` CIDRs. No connection is made for this. |
@@ -156,15 +163,17 @@ entry host alone.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `web.bind` | `127.0.0.1` | Address `sshbite serve` listens on. A non-loopback address needs `--tls-cert` and `--tls-key`. Ignored inside the Docker image (`SSHBITE_IN_CONTAINER=1`), which listens on `0.0.0.0`; publish the port on `127.0.0.1` only. CLI: `--bind`. |
+| `web.bind` | `127.0.0.1` | Address `sshbite serve` listens on. A non-loopback address needs `--tls-cert` and `--tls-key`, or `web.secure_cookie: true` (TLS at a reverse proxy), or `serve --insecure-bind` (logs a warning). Inside the Docker image (`SSHBITE_IN_CONTAINER=1`) `serve` without `--bind` ignores this and listens on `0.0.0.0`; publish the port on `127.0.0.1` only. An explicit `--bind` follows the rule above there too. CLI: `--bind`. |
 | `web.port` | `8722` | Port. CLI: `--port`. |
 | `web.session_hours` | `8` | Lifetime of a UI login session in hours. |
+| `web.secure_cookie` | `false` | `true`: the session cookie carries `Secure` (sent over HTTPS only). Set it when TLS ends at a reverse proxy ([operations.md](operations.md#behind-a-reverse-proxy-tls-at-the-proxy)). Always on with `--tls-cert`. |
+| `web.trusted_proxies` | `[]` | IPs or CIDRs of reverse proxies. Only when the connecting peer is in this list is the **last** entry of `X-Forwarded-For` used as the client address for the per-IP login limit; otherwise the header is ignored. |
 
 ## Environment variables
 
 | Variable | Meaning |
 |---|---|
 | `SSHBITE_CONFIG` | Config path when `-c` is not given. |
-| `SSHBITE_SUDO_PASSWORD` | sudo password for `scan`, as an alternative to `--ask-sudo-password` (e.g. for a timer). Removed from the environment right after it is read; never stored or logged. |
-| `SSHBITE_IN_CONTAINER` | `1` in the Docker image: `serve` binds `0.0.0.0` without TLS. Do not set it elsewhere. |
+| `SSHBITE_SUDO_PASSWORD` | sudo password for `scan`, as an alternative to `--ask-sudo-password` (e.g. for a timer). Removed from SSHBITE's environment right after it is read; never stored or logged. **Not recommended:** the value stays readable in `/proc/<pid>/environ` while the process runs, and `docker inspect` shows it if it was passed with `docker run -e` or a compose file ([operations.md](operations.md#the-sudo-password)). |
+| `SSHBITE_IN_CONTAINER` | `1` in the Docker image: `serve` without `--bind` binds `0.0.0.0` without TLS. Do not set it elsewhere. |
 | the one named in `audit.key_passphrase_env` | Passphrase of the audit key. |

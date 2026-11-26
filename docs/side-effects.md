@@ -17,7 +17,8 @@ attacker moving laterally.
 
 ## sudo: the "incident" mail on refused sudo
 
-On every host SSHBITE first runs `sudo -n /bin/true` (with `privilege.mode: sudo`). Whenever sudo
+On every host SSHBITE first runs `sudo -n /bin/true` (with `privilege.mode: sudo`; sudo by its absolute
+path `/usr/bin/sudo`, or `/bin/sudo` where that does not exist). Whenever sudo
 refuses, it may mail a report to `mailto` (default `root`) with the subject
 *"\*\*\* SECURITY information for HOST \*\*\*"*, if the host can send mail. Which refusals mail depends on
 the sudoers options. Debian and Ubuntu ship `Defaults mail_badpass` in `/etc/sudoers`, and sudo's
@@ -115,7 +116,23 @@ carries all tunnels.
 It does not write, create, delete or change files on targets, does not change `known_hosts` on any hop
 (no ssh client runs there), does not use keys found on targets, does not forward an agent, and does
 not try passwords for SSH logins. The only password it ever sends is the sudo password you give it, to
-`sudo -S` on hosts that ask for one.
+`sudo -S` on hosts that ask for one and lie inside `privilege.password_scope` (empty = every host).
+
+## The sudo password can be captured by a compromised host
+
+SSHBITE runs sudo by its absolute path, never through the audit account's `PATH`. That does not protect
+the password against a host that is already compromised – the reason you are scanning. Root on that host
+controls sudo itself, the login shell and sshd, and can imitate a sudo password prompt; SSHBITE then sends
+it the password, and it works on every other host that accepts it. Therefore:
+
+- prefer `NOPASSWD` sudo for the audit account ([install.md](install.md#sudoers)) – then no password is sent;
+- otherwise give the audit account a password that is **used only by this account**, and **rotate it after
+  the scan**;
+- limit the hosts that may receive it with `privilege.password_scope`; a host outside the scope that asks
+  for a password is scanned unprivileged and marked partial (*sudo password not sent (outside
+  privilege.password_scope)*).
+
+More in [operations.md](operations.md#the-sudo-password).
 
 ## How this was checked
 

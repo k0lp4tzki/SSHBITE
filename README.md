@@ -44,9 +44,26 @@ SQLite database, a UI on `127.0.0.1` behind a login, no external services or CDN
 5. **Scan and look**: `docker exec -it sshbite sshbite scan --ask-sudo-password`, then open
    http://127.0.0.1:8722/ and log in.
 
+Commands that ask for a password need a terminal: use `docker exec -it`, never just `-i` – SSHBITE
+refuses to read a password from a non-terminal stdin. If sudo on your hosts wants a password, give the
+audit account one of its own and rotate it after the scan ([operations.md](docs/operations.md#the-sudo-password)).
+For access from other machines, put a TLS reverse proxy in front
+([operations.md](docs/operations.md#behind-a-reverse-proxy-tls-at-the-proxy)).
+
 Without Docker: `pip install` (Python 3.12) – see [install.md](docs/install.md#install-with-pip).
-To try SSHBITE without real systems, `docker compose up -d --build` starts a test lab of 13 OpenSSH hosts
-plus SSHBITE scanning it (UI on http://127.0.0.1:8722/, login `admin` / `sshbite-lab-demo`).
+
+## Try it on the test lab (test material only)
+
+`docker compose -f compose.lab.yaml up -d --build` starts a test lab of 13 OpenSSH hosts plus SSHBITE
+scanning it, with the UI on http://127.0.0.1:8722/. Log in as `admin` with the password you set in
+`SSHBITE_DEMO_PASSWORD` (e.g. in `.env`), or – if you set none – the random password the container prints
+once: `docker compose -f compose.lab.yaml logs sshbite | grep 'LAB DEMO LOGIN'`.
+
+> **Never use the lab outside a test.** `compose.lab.yaml`, `lab/demo/` and especially **`lab/keys/*`** –
+> private host keys of the lab hosts and the lab's **audit key**, committed on purpose – are test material
+> known to everyone who has this repository. Do not authorize any of these keys on a real system, do not
+> reuse the lab config, and do not run the lab demo on a machine others can reach. For real systems use
+> the steps above and [`docs/compose.example.yaml`](docs/compose.example.yaml).
 
 ## Documentation
 

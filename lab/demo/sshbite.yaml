@@ -1,4 +1,4 @@
-# SSHBITE config of the lab demo (top-level compose.yaml, service "sshbite").
+# SSHBITE config of the lab demo (compose.lab.yaml, service "sshbite"). Test material only.
 # Test-only: the pin is the lab jump host's committed host key (lab/keys/jump_host_ed25519.pub).
 # Only the entry point is configured - the crawl finds the rest.
 database: /data/sshbite.db

@@ -19,7 +19,7 @@ someone built for you – it contains the frontend).
 
 ```sh
 python3.12 -m venv /opt/sshbite
-/opt/sshbite/bin/pip install --require-hashes -r requirements.lock   # pinned dependencies with hashes
+/opt/sshbite/bin/pip install --require-hashes -r requirements-runtime.lock   # pinned, with hashes
 /opt/sshbite/bin/pip install --no-deps .                              # SSHBITE itself (builds the frontend)
 ln -s /opt/sshbite/bin/sshbite /usr/local/bin/sshbite
 sshbite --version
@@ -29,7 +29,7 @@ Build a wheel once and install it elsewhere without Node:
 
 ```sh
 pip wheel --no-deps -w dist .          # dist/sshbite-0.1.0-py3-none-any.whl
-pip install --no-deps dist/sshbite-0.1.0-py3-none-any.whl    # after requirements.lock, as above
+pip install --no-deps dist/sshbite-0.1.0-py3-none-any.whl    # after requirements-runtime.lock, as above
 ```
 
 Create a system account to run SSHBITE and its directories:
@@ -46,12 +46,14 @@ owned by it. SSHBITE creates the database with mode 0600 and its directory with 
 ## Install with Docker
 
 The `Dockerfile` builds in three stages: `node:22` builds the frontend, a Python stage builds the
-wheel, and the `python:3.12-slim` runtime installs `requirements.lock` with `--require-hashes` plus the
-wheel. The image:
+wheel, and the `python:3.12-slim` runtime installs `requirements-runtime.lock` (runtime dependencies
+only – no test tools) with `--require-hashes` plus the wheel. The image:
 
 - runs as uid/gid **10001** (`sshbite`), never as root;
-- sets `SSHBITE_IN_CONTAINER=1`, so `sshbite serve` listens on `0.0.0.0:8722` inside the container
-  (publish it on `127.0.0.1` only – the UI has no TLS in the container);
+- sets `SSHBITE_IN_CONTAINER=1`, so `sshbite serve` without `--bind` listens on `0.0.0.0:8722` inside
+  the container (publish it on `127.0.0.1` only – the UI has no TLS in the container). For access from
+  other machines put a TLS reverse proxy in front ([operations.md](operations.md#behind-a-reverse-proxy-tls-at-the-proxy));
+  an explicit non-loopback `--bind` without TLS is refused unless `web.secure_cookie` is set;
 - reads its config from `/etc/sshbite/sshbite.yaml` (`SSHBITE_CONFIG`) and keeps its data in `/data`;
 - declares the volumes `/data` and `/etc/sshbite` – mount `/etc/sshbite` **read-only**;
 - starts `sshbite serve` by default.
@@ -99,12 +101,17 @@ docker run -d --name sshbite --restart unless-stopped \
 ```
 
 `docker exec` runs commands in the running container, as uid 10001, with the same config and database.
-The image has no ssh client tools: create keys and run `ssh-keyscan` on the Docker host.
+Use `docker exec -it` for every command that asks for a password (`user add`, `user passwd`,
+`scan --ask-sudo-password`): without a terminal SSHBITE refuses to read a password, because it could be
+echoed. The image has no ssh client tools: create keys and run `ssh-keyscan` on the Docker host.
 
-**Try it on the test lab first:** `docker compose up -d --build` at the top of this repository starts the
-13 lab hosts and the SSHBITE image, which validates the entry, creates the UI user `admin`
-(password `sshbite-lab-demo`), runs one scan and serves the UI on http://127.0.0.1:8722/
-(`lab/demo/start.sh`). The lab and its keys are test-only.
+**Try it on the test lab first:** `docker compose -f compose.lab.yaml up -d --build` at the top of this
+repository starts the 13 lab hosts and the SSHBITE image, which validates the entry, creates the UI user
+`admin`, runs one scan and serves the UI on http://127.0.0.1:8722/ (`lab/demo/start.sh`). The admin
+password is `SSHBITE_DEMO_PASSWORD` if you set it (e.g. in `.env`); otherwise a random one is printed once:
+`docker compose -f compose.lab.yaml logs sshbite | grep 'LAB DEMO LOGIN'`. The lab, its config and its
+keys (`lab/keys/`, including private host keys and the audit key) are **test material – never use them
+for real systems**.
 
 ## The audit key and account
 
@@ -149,7 +156,10 @@ SSHBITE ignores the audit key in its own results (`rules.ignore_audit_key: true`
 ## Sudoers
 
 Without root, the collector cannot read other users' `~/.ssh` and `/etc/shadow`; the host is then
-`partial`. The commands SSHBITE runs with sudo are fixed (see `sshbite collector show`):
+`partial`. The commands SSHBITE runs with sudo are fixed (see `sshbite collector show`). sudo is always
+called by its absolute path – `/usr/bin/sudo`, or `/bin/sudo` only where `/usr/bin/sudo` does not exist
+(decided by a fixed `test -x` on the host, never by the audit account's `PATH`); the table shortens that
+to `sudo`:
 
 | `privilege.mode` | Probe | Collector |
 |---|---|---|
@@ -179,7 +189,9 @@ If your policy demands a sudo password, drop `NOPASSWD:` and scan with `--ask-su
 ([scanning.md](scanning.md#sudo-passwords)). Be aware that with Debian's default sudoers every scan then
 makes sudo send a *"SECURITY information"* mail per host, because the first, non-interactive probe is
 refused ([side-effects.md](side-effects.md#sudo-the-incident-mail-on-refused-sudo)). Where `sshbite` has
-no sudo rule at all, the host is scanned unprivileged and marked `partial`.
+no sudo rule at all, the host is scanned unprivileged and marked `partial`. Give the audit account a
+password of its own that is used nowhere else and rotate it after the scan: a compromised host can imitate
+a sudo prompt and capture it ([operations.md](operations.md#the-sudo-password)).
 
 ## Pin the entry host key
 
