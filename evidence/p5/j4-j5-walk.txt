@@ -1,0 +1,4 @@
+J4 key detail: Authorized on selected = true rows = [['a4', 'root'], ['b1', 'root']] title = legacy-dsa
+J4 after reload: title = contractor 2019 – remove
+J5 url = http://sshbite:8722/s/1/findings?min=high&rule=key_unknown_origin button = Export CSV (3)
+J5 download file name = sshbite-scan1-findings-key_unknown_origin-high.csv rows incl. header = 4
