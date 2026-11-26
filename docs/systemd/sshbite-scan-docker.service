@@ -1,0 +1,16 @@
+# One SSHBITE scan in the running container "sshbite" (Docker install). Use it instead of
+# sshbite-scan.service, under the same name, with sshbite-scan.timer:
+#   cp sshbite-scan-docker.service /etc/systemd/system/sshbite-scan.service
+[Unit]
+Description=SSHBITE scan in the sshbite container
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Only if sudo on the targets needs a password: a root-owned file, mode 0600, with one line
+#   SSHBITE_SUDO_PASSWORD=...
+# `docker exec -e NAME` (without =value) passes the variable on without putting it on a command line.
+# EnvironmentFile=/etc/sshbite-scan.env
+ExecStart=/usr/bin/docker exec -e SSHBITE_SUDO_PASSWORD sshbite sshbite scan --label nightly
+TimeoutStartSec=6h
