@@ -84,10 +84,10 @@ remove)
     if [ -e "$f" ]; then cp -p "$f" /etc/sudoers.d/; fi
   done
   cp -p "$BAK/authorized_keys" "$H/.ssh/authorized_keys"
-  for f in shadow passwd; do
-    if ! cmp -s "$BAK/$f" "/etc/$f"; then cp -p "$BAK/$f" "/etc/$f"; fi
+  for f in shadow passwd; do                     # cp -p always: usermod may rewrite a file unchanged (new mtime)
+    cp -p "$BAK/$f" "/etc/$f"
     if [ -e "$BAK/$f-" ]; then
-      if ! cmp -s "$BAK/$f-" "/etc/$f-"; then cp -p "$BAK/$f-" "/etc/$f-"; fi
+      cp -p "$BAK/$f-" "/etc/$f-"
     else
       rm -f "/etc/$f-"
     fi
