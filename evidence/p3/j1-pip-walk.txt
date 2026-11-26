@@ -1,0 +1,85 @@
+# J1 with the pip install, following docs/install.md and docs/scanning.md, against the lab (stack: jump:22).
+# ssh-keyscan / ssh-keygen -lf are not installed in this workspace; keyscan.py (asyncssh) stands in for them.
+$ sshbite init-config > sshbite.yaml
+$ ssh-keyscan -t ed25519 -p 22 jump > entry.keys; ssh-keygen -lf entry.keys
+jump ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID/sbq+Iimhi7je22+U9y15jJ/37+NCH06PcVShHSmh/
+256 SHA256:ynTb0gWnV8EppDctYzEhTtbjMnfZ2636k864CRGdTDg ssh-ed25519
+# on the entry host console (lab: lab/keys/jump_host_ed25519.pub):
+256 SHA256:ynTb0gWnV8EppDctYzEhTtbjMnfZ2636k864CRGdTDg ssh-ed25519
+$ cp audit key; chmod 644 (to show the refusal)
+# edit sshbite.yaml: entry.host=jump, host_keys=["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID/sbq+Iimhi7je22+U9y15jJ/37+NCH06PcVShHSmh/"], database, key_file, include/exclude of the lab, a tag
+$ sshbite -c sshbite.yaml config validate --connect
+error: audit.key_file: /tmp/j1/audit_ed25519: mode is 0644, must be 0600 (chmod 600 /tmp/j1/audit_ed25519)
+exit 2
+$ chmod 600 audit_ed25519; sshbite -c sshbite.yaml config validate --connect
+config OK: sshbite.yaml
+entry OK, pinned key matches, sudo: root
+exit 0
+$ sshbite -c sshbite.yaml scan --dry-run
+entry:     jump:22 (1 pinned key(s))
+audit:     user sshbite, key /tmp/j1/audit_ed25519
+privilege: sudo; host keys: tofu
+crawl:     max depth 10, max hosts 1000, chain fallback on
+include:   172.30.1.0/24, 172.30.2.0/24, 172.30.3.0/24
+exclude:   172.30.2.14/32
+seeds:     0
+dry run: no connection made
+$ sshbite -c sshbite.yaml scan            (no sudo password given)
+exit 0
+depth 4: 0 queued, 0 running, 13 done (2 partial, 1 unreachable)
+
+scan 1 completed in 23 s
+hosts:    13 connected; 10 ok, 2 partial, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
+findings: 34 - 3 critical, 13 high, 15 medium, 2 low, 1 info
+edges:    19 access (18 effective, 2 unknown origin); keys: 10
+2 hosts need a sudo password: rerun with --ask-sudo-password
+scan id:  1
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+$ sshbite -c sshbite.yaml scan --ask-sudo-password --label second   (password typed: labsudo)
+
+scan 2 completed in 24 s
+hosts:    13 connected; 11 ok, 1 partial, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
+findings: 36 - 4 critical, 15 high, 14 medium, 2 low, 1 info
+edges:    20 access (19 effective, 3 unknown origin); keys: 10
+scan id:  2
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+$ sshbite -c sshbite.yaml diff 1 2
+diff scan 1 -> scan 2
+
+hosts: 0 added, 0 removed, 1 changed
+  ~ a4 (ok, sudo_password): status: partial -> ok, privilege: unprivileged -> sudo_password
+
+keys: 0 added, 0 removed, 0 changed
+
+placements: 1 added, 0 removed, 0 changed
+  + authorized a4:root SHA256:yIQEm8CgzGzq9JAgp3eHPpdLrgGTK2EqO84qzNP9gOM (/root/.ssh/authorized_keys:1)
+
+edges: 1 added, 0 removed, 0 changed
+  + access unknown -> a4:root SHA256:yIQEm8CgzGzq9JAgp3eHPpdLrgGTK2EqO84qzNP9gOM [unknown_origin]
+
+findings: 3 added, 1 removed, 0 changed
+  + critical key_strength_critical a4:root SHA256:yIQEm8CgzGzq9JAgp3eHPpdLrgGTK2EqO84qzNP9gOM /root/.ssh/authorized_keys:1
+  + high root_authorized_key a4:root SHA256:yIQEm8CgzGzq9JAgp3eHPpdLrgGTK2EqO84qzNP9gOM /root/.ssh/authorized_keys:1
+  + high key_unknown_origin a4:root SHA256:yIQEm8CgzGzq9JAgp3eHPpdLrgGTK2EqO84qzNP9gOM /root/.ssh/authorized_keys:1
+  - medium partial_scan a4
+$ sshbite -c sshbite.yaml export --what findings --rule key_unknown_origin --min-severity high -o worklist.csv
+wrote worklist.csv
+  high b1 root | delete line 2 of /root/.ssh/authorized_keys on b1 (SHA256:yIQEm8CgzGzq9JAgp3eHPpdLrgGTK2EqO84qzNP9gOM)
+  high a4 root | delete line 1 of /root/.ssh/authorized_keys on a4 (SHA256:yIQEm8CgzGzq9JAgp3eHPpdLrgGTK2EqO84qzNP9gOM)
+  high c1 root | delete line 1 of /root/.ssh/authorized_keys on c1 (SHA256:3hBz3r1y9fG07UbEHVzARo0nuOpmTK3zNeGeDz0e5g4)
+$ sshbite -c sshbite.yaml db backup backup.db
+backup written to backup.db
+-rw-------
+$ sshbite -c sshbite.yaml db backup backup.db   (again)
+Usage: sshbite db backup [OPTIONS] PATH
+Try 'sshbite db backup --help' for help.
+
+Error: backup.db exists already
+exit 2
+$ ls -ld data data/sshbite.db
+drwx------
+-rw-------
+$ sshbite -c sshbite.yaml hostkey list | head -3
+172.30.1.11:22  ssh-ed25519             SHA256:A3ZcCoVAi6MU3LodydM/OT0egxdhDBAMGsPlXEwcOCA  first scan 1  accepted 2026-11-26T16:05:05Z
+172.30.1.12:22  ssh-ed25519             SHA256:ETrUPyEuPp5XXOhcaXO/9PDuqELslqMuN6U1ugf8xnw  first scan 1  accepted 2026-11-26T16:05:05Z
+172.30.1.13:22  ssh-ed25519             SHA256:TVD4itdUww5cZ4vguYaSVF2XExVwyRxQ2yOgolkY7CY  first scan 1  accepted 2026-11-26T16:05:05Z

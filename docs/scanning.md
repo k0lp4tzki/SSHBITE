@@ -106,7 +106,7 @@ database. A host where sudo is refused or the password is wrong is scanned unpri
 given, the summary says:
 
 ```
-4 hosts need a sudo password: rerun with --ask-sudo-password
+2 hosts need a sudo password: rerun with --ask-sudo-password
 ```
 
 Note that a wrong password counts as a failed sudo attempt on each host (see
