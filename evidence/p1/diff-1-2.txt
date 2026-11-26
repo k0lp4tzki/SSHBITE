@@ -1,7 +1,7 @@
 diff scan 1 -> scan 2
 
 hosts: 0 added, 0 removed, 1 changed
-  ~ c2 (hostkey_mismatch): status: ok -> hostkey_mismatch, privilege: root -> None, route: jump -> b3 -> c1 -> c2 => -
+  ~ c2 (hostkey_mismatch): status: ok -> hostkey_mismatch, privilege: root -> -, route: jump -> b3 -> c1 -> c2 => -
 
 keys: 1 added, 1 removed, 0 changed
   + SHA256:gh7vGFXzaOfeTFQ51XPJESCQZZrNeYoqiIo7+tX5DLU ssh-ed25519 256 good new-unknown

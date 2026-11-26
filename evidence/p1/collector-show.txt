@@ -1,6 +1,6 @@
-===== collect.sh  sha256 7903d364eb7ac9790674d144fde6298e4baf6a53e16e7c7df4b6de91e2bea7e6  lint: OK
+===== collect.sh  sha256 6c262392665b6cd321c7ac52834a69c1e1fcf2fe171552b863742c4ec9940f05  lint: OK
 LC_ALL=C; export LC_ALL; PATH=/usr/sbin:/usr/bin:/sbin:/bin; set -u
-B=b95dd735488f
+B=01fba7910d9e
 # SSHBITE collector. Fixed, read-only POSIX sh script, sent verbatim on stdin.
 # It reads files and prints records to stdout. It writes no file, starts no
 # network connection and builds no command from target data. B above is the
@@ -209,7 +209,11 @@ printf '%s\n' "$PW" | {
     fi
     val user "$u"
     d="$home/.ssh"
-    if [ -d "$d" ]; then
+    if [ -L "$d" ]; then
+      # a user controls ~/.ssh: never follow a link (it could point at /root/.ssh or /etc)
+      fhdr "$d" "$u"
+      printf '#X %s\tsymlink not followed\n' "$d"
+    elif [ -d "$d" ]; then
       fhdr "$d" "$u"
       if [ -r "$d" ] && [ -x "$d" ]; then
         ls -A -- "$d" 2>/dev/null | head -n 101 | {
@@ -236,6 +240,10 @@ printf '%s\n' "$PW" | {
               *"$NL$p$NL"*) continue ;;
             esac
             fhdr "$p" "$u"
+            if [ -L "$p" ]; then
+              printf '#X %s\tsymlink not followed\n' "$p"
+              continue
+            fi
             [ -f "$p" ] || continue
             case "$e" in
               known_hosts* | config | *.pub) content "$p" ;;
@@ -250,7 +258,10 @@ printf '%s\n' "$PW" | {
     printf '%s' "$akfs" | while IFS= read -r p; do
       [ -n "$p" ] || continue
       val akf "$p"
-      if [ -f "$p" ]; then
+      if [ -L "$p" ] || [ -L "${p%/*}" ]; then
+        fhdr "$p" "$u"
+        printf '#X %s\tsymlink not followed\n' "$p"
+      elif [ -f "$p" ]; then
         fhdr "$p" "$u"
         content "$p"
       elif [ -e "$p" ]; then
@@ -278,9 +289,10 @@ done
 
 sec END
 printf '#END %s\n' "$NSEC"
-===== resolve.sh  sha256 56e0e54e7ee8bb924490ff2b8d73638d5e2ea3651be6555b0e937ebf906e4ca7  lint: OK
-while IFS= read -r n; do getent hosts "$n" | awk -v n="$n" '{print n"\t"$1}'; done
+===== resolve.sh  sha256 f048726e442a3b417e391d5dc396eafa34813eb19bcca4725587c0d99f44f2ff  lint: OK
+while IFS= read -r n; do getent hosts -- "$n" | awk -v n="$n" '{print n"\t"$1}'; done
 ===== literal commands sent on exec channels (privilege.mode: sudo / sudo-login)
+/bin/sh -c 'while IFS= read -r n; do getent hosts -- "$n" | awk -v n="$n" '\''{print n"\t"$1}'\''; done'   (name resolution; the names are its stdin data)
 sudo -n /bin/true
 sudo -n /bin/sh -s
 sudo -S -k -p '' /bin/true

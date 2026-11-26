@@ -8,14 +8,14 @@ depth 2: 5 queued, 0 running, 3 done
 depth 2: 0 queued, 1 running, 7 done
 depth 2: 0 queued, 0 running, 8 done (1 partial)
 depth 3: 4 queued, 0 running, 8 done (1 partial)
+depth 3: 0 queued, 4 running, 8 done (1 partial)
 depth 3: 0 queued, 2 running, 10 done (1 partial)
-depth 3: 0 queued, 1 running, 11 done (1 partial)
 depth 3: 0 queued, 0 running, 12 done (1 partial, 1 unreachable)
 depth 4: 1 queued, 0 running, 12 done (1 partial, 1 unreachable)
 depth 4: 0 queued, 1 running, 12 done (1 partial, 1 unreachable)
 depth 4: 0 queued, 0 running, 13 done (1 partial, 1 unreachable)
 
-scan 1 completed in 14 s
+scan 1 completed in 15 s
 hosts:    13 connected; 11 ok, 1 partial, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
 findings: 37 - 4 critical, 15 high, 15 medium, 2 low, 1 info
 edges:    20 access (19 effective, 3 unknown origin); keys: 10

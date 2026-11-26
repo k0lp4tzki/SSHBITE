@@ -1,13 +1,13 @@
 {
   "a": {
     "id": 1,
-    "started_at": "2026-11-26T14:31:24Z",
+    "started_at": "2026-11-26T14:40:58Z",
     "label": "scan1",
     "synthetic": false
   },
   "b": {
     "id": 2,
-    "started_at": "2026-11-26T14:31:51Z",
+    "started_at": "2026-11-26T14:41:21Z",
     "label": "scan2",
     "synthetic": false
   },

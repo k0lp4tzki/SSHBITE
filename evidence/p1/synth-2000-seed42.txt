@@ -1,10 +1,10 @@
 $ time sshbite synth --hosts 2000 --seed 42
 synthetic scan 1: 2000 hosts, 15000 authorized entries, 15000 access edges, 6802 findings
-generate 0.5 s, derive 1.0 s, total 1.6 s
+generate 0.5 s, derive 0.7 s, total 1.2 s
 
-real	0m2.827s
-user	0m2.552s
-sys	0m0.195s
+real	0m1.866s
+user	0m1.691s
+sys	0m0.157s
 
 $ sshbite scans list
   id  started               status     hosts  findings  label
