@@ -17,7 +17,7 @@ sshbite ALL=(root) NOPASSWD: /usr/local/libexec/sshbite/sshbite-collect ""
 Es liest nur und gibt ein Inventar aus. Sonst darf `sshbite` mit sudo nichts – auch nicht `/bin/true`.
 
 > **Warnung – der heutige Stand ist root-äquivalent.** SSHBITE schickt sein Skript heute per stdin an
-> `sudo /bin/sh -s` (`sshbite/privilege.py:117-125`). Die Regel aus `docs/install.md:176`
+> `sudo /bin/sh -s` (`sshbite/privilege.py:118-126`). Die Regel aus `docs/install.md:176`
 > (`NOPASSWD: /bin/true, /bin/sh -s`) erlaubt damit **jedem Inhaber des Keys, beliebige Befehle als root
 > auszuführen** – im Lab nachgewiesen (Kapitel 7, Test 07). Das steht auch in `docs/install.md:182-184`.
 > Eine sudo-Regel allein kann das nicht beheben: Wer eine Shell erlaubt, erlaubt alles.
@@ -28,7 +28,8 @@ festen Befehle zu, die SSHBITE sendet. Den Befehl `sudo /bin/sh -s` übersetzt e
 das per stdin gesendete Skript wird nur per SHA-256 mit der installierten Kopie verglichen, **nie
 ausgeführt**. Dazu: `restrict`, `from=`, Weiterleitung nur auf dem Einstiegs-Host und auf Hops, Home-Verzeichnis
 root-eigen. Im Lab mit 13 Hosts lief der Scan damit vollständig (alle Hosts `root`, Ergebnis identisch mit
-dem heutigen Stand) und alle 21 Ausbruchsversuche scheiterten.
+dem heutigen Stand); 21 von 22 Versuchen wurden abgewiesen, der übrige (Tunnel zu Port 22 über den
+Einstiegs-Host) ist gewollt.
 
 | Ein Angreifer mit dem gekaperten Key … | heute (install.md) | mit dieser Konfiguration |
 |---|---|---|
@@ -60,21 +61,21 @@ Weg über den Host, auf dem der Ziel-Host gefunden wurde (`crawl.chain_fallback`
 
 **Befehle.** Auf jedem Host sendet SSHBITE nur feste Zeichenketten auf einem Exec-Kanal, Eingaben nur als
 stdin (`transport.py:387-395`). Mit `privilege.mode: sudo` (Standard, `config.py:133`) sind es die folgenden;
-`S` steht für `test -x /usr/bin/sudo && exec /usr/bin/sudo …; exec /bin/sudo …` (`privilege.py:112-114`):
+`S` steht für `test -x /usr/bin/sudo && exec /usr/bin/sudo …; exec /bin/sudo …` (`privilege.py:113-115`):
 
 | Zweck | gesendeter Befehl | Beleg |
 |---|---|---|
-| sudo-Probe | `S -n /bin/true` | `privilege.py:120, 136` |
-| Collector | `S -n /bin/sh -s`, stdin = Skript `collect.sh` | `privilege.py:121, 138` |
+| sudo-Probe | `S -n /bin/true` | `privilege.py:121, 136` |
+| Collector | `S -n /bin/sh -s`, stdin = Skript `collect.sh` | `privilege.py:122, 138` |
 | Namensauflösung (ohne sudo; Einstiegs-Host, ggf. der Host, der den Namen enthielt) | `/bin/sh -c 'while IFS= read -r n; do getent hosts …'`, stdin = Namen | `collector/__init__.py:51-54`, `crawl.py:394-402, 659-664` |
-| nur mit Passwort | `S -S -k -p '' /bin/true`, dann `… /bin/sh -s` | `privilege.py:122-123, 147-157` |
-| ohne sudo (Rückfall) | `/bin/sh -s` | `privilege.py:124, 172` |
+| nur mit Passwort | `S -S -k -p '' /bin/true`, dann `… /bin/sh -s` | `privilege.py:123-124, 153-159` |
+| ohne sudo (Rückfall) | `/bin/sh -s` | `privilege.py:125, 172` |
 | `sshbite config validate --connect` | nur die sudo-Probe | `sshbite/cli.py:141-147` |
 
-`privilege.mode: sudo-login` setzt zusätzlich `-i` (`privilege.py:118`); install.md empfiehlt dafür
+`privilege.mode: sudo-login` setzt zusätzlich `-i` (`privilege.py:119`); install.md empfiehlt dafür
 `NOPASSWD: ALL` (`docs/install.md:179-180`). Dieser Modus ist mit minimalen Rechten nicht vereinbar.
 
-**Was der Collector liest** (`sshbite/collector/collect.sh`; alle Befehle mit festem `PATH`, Zeile 1):
+**Was der Collector liest** (`sshbite/collector/collect.sh`; alle Befehle mit festem `PATH`, `collect.sh:1`):
 
 | Befehl / Datei | root nötig? | Grund | Beleg |
 |---|---|---|---|
@@ -278,7 +279,7 @@ Danach am Scanner: `sshbite config validate --connect` muss `sudo: root` melden;
 ### 5.2 Symlink-Race durch lokale Benutzer (Fehler im Collector)
 
 `content()` prüft eine Datei und liest sie danach als root (`collect.sh:39-43`; Symlink-Prüfung vorher in
-`collect.sh:242-248`, `260-265`). Ein lokaler Benutzer kann dazwischen `~/.ssh/known_hosts…` durch einen Link
+`collect.sh:242-248, 260-265`). Ein lokaler Benutzer kann dazwischen `~/.ssh/known_hosts…` durch einen Link
 auf eine fremde Datei ersetzen. Im Lab (Benutzer `ops`, 200 Collector-Läufe als root) stand in **36 Läufen der
 volle Inhalt von `/etc/shadow`** in der Ausgabe. Dasselbe geht mit jeder für root lesbaren Datei (die ersten 5000 Zeilen,
 `collect.sh:43`), z. B. privaten Host-Keys. Die Daten landen in der SSHBITE-Datenbank, nicht beim lokalen Benutzer.
@@ -308,7 +309,7 @@ wörtlich kennen (jedes Update kann beides ändern); SSHBITE sendet weiterhin Sk
 
 | # | Änderung | Wo | Aufwand |
 |---|---|---|---|
-| 1 | Neuer Modus `privilege.mode: installed`: SSHBITE ruft `sudo -n <privilege.collector_path>` ohne stdin auf, Probe `sudo -n -l <Pfad>`; kein `/bin/sh -s`, kein Rückfall ohne sudo. Kopfzeilen-Hash wird wie heute geprüft | `privilege.py:117-173`, `config.py:132-140`, `cli.py:141-147` | 1–1,5 PT |
+| 1 | Neuer Modus `privilege.mode: installed`: SSHBITE ruft `sudo -n <privilege.collector_path>` ohne stdin auf, Probe `sudo -n -l <Pfad>`; kein `/bin/sh -s`, kein Rückfall ohne sudo. Kopfzeilen-Hash wird wie heute geprüft | `privilege.py:118-173`, `config.py:132-140`, `cli.py:141-147` | 1–1,5 PT |
 | 2 | `sshbite collector export DIR`: schreibt `sshbite-collect`, `sshbite-resolve` und die sudoers-/authorized_keys-Vorlagen mit Prüfsumme; install.md „Sudoers“ ersetzen | `cli.py`, `collector/`, `docs/install.md:156-194` | 1 PT |
 | 3 | Collector liest Dateien in Benutzer-Homes **als dieser Benutzer** (`setpriv`/`runuser`, beide util-linux) – auch `ssh-keygen`. Der Race bringt dann nur, was der Benutzer ohnehin lesen darf | `collect.sh:34-73, 210-269`, `collector/lint.py` | 2–3 PT |
 | 4 | Tests: Lab-E2E mit Modus `installed`, Race-Test, ein RHEL-Lab-Host | `tests/`, `lab/` | 1–2 PT |
