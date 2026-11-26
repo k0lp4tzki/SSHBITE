@@ -5,10 +5,13 @@ whose host key you have verified. Everything else is reached through that entry 
 
 - the SSHBITE machine: Python 3.12 with pip, **or** Docker;
 - an audit account `sshbite` with one audit key on every Linux/OpenSSH host you want to audit;
-- sudo for that account (optional, but without it a host is only scanned partially).
+- root for the read-only collector through sudo – recommended as the installed collector, which does
+  not make the audit key root-equivalent (optional, but without it a host is only scanned partially).
 
 Contents: [pip](#install-with-pip) · [Docker](#install-with-docker) ·
-[audit key and account](#the-audit-key-and-account) · [sudoers](#sudoers) ·
+[audit key and account](#the-audit-key-and-account) ·
+[privileges: installed collector](#privileges-installed-collector-recommended) ·
+[legacy sudoers](#legacy-sudo-binsh--s-equivalent-to-full-root) ·
 [pin the entry host key](#pin-the-entry-host-key) · [first scan](#first-scan-and-first-login)
 
 ## Install with pip
@@ -128,8 +131,12 @@ SSHBITE logs in to every host as one account (default `sshbite`, config `audit.u
    SSHBITE refuses a key file that is not mode 0600. With a passphrase, set
    `audit.key_passphrase_env` to the name of an environment variable that holds it.
 
-2. Deploy the account and the public key on every target, including the entry host. With your usual
-   configuration management, or by hand:
+2. Deploy the account and the public key on every target, including the entry host. **With
+   `privilege.mode: installed` (recommended) follow
+   [Privileges: installed collector](#privileges-installed-collector-recommended) instead**: there the
+   account keeps the shell `/bin/sh`, its home and `~/.ssh` belong to root (the account cannot change its
+   own keys), and the key line runs the gate. For the legacy modes, with your usual configuration
+   management or by hand:
 
    ```sh
    useradd --create-home --shell /bin/sh sshbite
@@ -153,7 +160,189 @@ SSHBITE logs in to every host as one account (default `sshbite`, config `audit.u
 SSHBITE ignores the audit key in its own results (`rules.ignore_audit_key: true`), so its own
 `authorized_keys` lines do not show up as edges or findings.
 
-## Sudoers
+## Privileges: installed collector (recommended)
+
+### Why
+
+Without root, the collector cannot read other users' `~/.ssh` and `/etc/shadow`. The legacy way to give
+it root – a sudoers rule for `/bin/sh -s` – is **equivalent to full root** for whoever holds the audit
+key, because the shell runs whatever arrives on stdin. With `privilege.mode: installed` that is no longer
+so:
+
+- The collector is installed on every host as a root-owned file, `sshbite-collect`. The only sudo rule
+  for the account allows exactly this file, without arguments.
+- The audit key may only run a fixed gate, `sshbite-gate` (`command=` in `authorized_keys`). The gate
+  compares the requested command literally with three strings and refuses everything else.
+- SSHBITE sends no script to a shell, never sends a sudo password and does not fall back to an
+  unprivileged scan.
+
+Whoever holds the audit key (and connects from an allowed address) can then only run the probe, start the
+installed read-only collector as root, resolve names and – on the entry host – forward to SSH ports. They
+cannot open a shell, run a command of their own, hand a script to a shell, read root files outside the
+inventory or write anything. What remains: the key reveals the inventory (see
+[review.md](review.md#residual-risk-the-audit-key-reveals-the-inventory)).
+
+The three commands SSHBITE sends in this mode (P = `privilege.collector_path`, all on their own exec
+channel, `sshbite collector show` prints them):
+
+| Step | Command | stdin |
+|---|---|---|
+| Probe | `sudo -n -l P` | empty |
+| Collector | `sudo -n P` | empty |
+| Name resolution | `<dir of P>/sshbite-resolve` | the names, one per line (data only) |
+
+### Export and checksums
+
+On the SSHBITE machine, write the files into a new, empty directory:
+
+```sh
+sshbite collector export ./sshbite-export          # --collector-path P for another location
+cd sshbite-export && sha256sum -c SHA256SUMS        # every line must say OK
+```
+
+With Docker:
+
+```sh
+docker run --rm --user "$(id -u)" -v "$PWD/sshbite-export:/out" sshbite:<version> sshbite collector export /out
+```
+
+| File | What it is |
+|---|---|
+| `sshbite-collect` | the collector: `#!/bin/sh` and `collect.sh` byte for byte (the same text `sshbite collector show` prints) |
+| `sshbite-resolve` | the name resolution: `#!/bin/sh` and `resolve.sh` |
+| `sshbite-gate` | the forced command; read it – it is about 35 lines |
+| `sudoers.d-sshbite` | the one sudo rule |
+| `authorized_keys.sshbite` | the three key-line variants (A, B, C below) |
+| `SHA256SUMS` | the SHA-256 of the five files |
+
+The default for P is `privilege.collector_path` from the config if it can be loaded, else
+`/usr/local/libexec/sshbite/sshbite-collect`. Resolve and gate always sit next to the collector. Read the
+files before you install them. Distributing them with your own configuration management is the intended
+way; the commands below show what it has to do.
+
+### Install on every host (as root)
+
+```sh
+id sshbite || useradd -m -s /bin/sh sshbite; passwd -l sshbite     # no sudo/wheel group
+install -d -m 0755 -o root -g root /usr/local/libexec/sshbite
+install -m 0755 -o root -g root sshbite-collect sshbite-resolve sshbite-gate /usr/local/libexec/sshbite/
+install -m 0440 -o root -g root sudoers.d-sshbite /etc/sudoers.d/sshbite && visudo -cf /etc/sudoers.d/sshbite
+chown root:root /home/sshbite && chmod 0755 /home/sshbite
+install -d -m 0755 -o root -g root /home/sshbite/.ssh
+install -m 0644 -o root -g root authorized_keys.sshbite.edited /home/sshbite/.ssh/authorized_keys
+sudo -l -U sshbite        # must list only: (root) NOPASSWD: /usr/local/libexec/sshbite/sshbite-collect ""
+stat -c '%U %a %n' /usr /usr/local /usr/local/libexec /usr/local/libexec/sshbite/*   # all root, none group/other-writable
+```
+
+- `visudo -cf` must say `parsed OK`.
+- **Remove every other sudoers rule for `sshbite`**, for example `NOPASSWD: ALL` or `/bin/sh -s` from the
+  legacy setup – otherwise the key stays root-equivalent. `sudo -l -U sshbite` shows what is left.
+- The rule is only safe if the collector file and every directory up to it are owned by root and not
+  writable by group or others. The `stat` line checks that.
+- `authorized_keys.sshbite.edited` is your copy of `authorized_keys.sshbite` with the variant for this
+  host (next section). Home and `.ssh` belong to root, so the account cannot change its own keys.
+
+### The authorized_keys variants
+
+One line per host, from `authorized_keys.sshbite`; replace `<AUDIT-PUBLIC-KEY>` with the content of
+`/etc/sshbite/audit_ed25519.pub` and the address placeholders:
+
+```
+# (A) entry host: login only from the scanner, forwarding only to SSH ports (add permitopen="*:<PORT>" per extra SSH port)
+restrict,port-forwarding,permitopen="*:22",from="<SCANNER-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" <AUDIT-PUBLIC-KEY>
+# (B) every other host: login only from the entry host, no forwarding
+restrict,from="<ENTRY-HOST-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" <AUDIT-PUBLIC-KEY>
+# (C) only for crawl.chain_fallback: intermediate hops, from = previous hop
+restrict,port-forwarding,permitopen="*:22",from="<PREVIOUS-HOP-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" <AUDIT-PUBLIC-KEY>
+```
+
+- **A** is for the entry host. `<SCANNER-IP>` is the address the entry host sees for the SSHBITE machine
+  (with Docker port publishing that can be a gateway address; a CIDR is allowed).
+- **B** is for every other host. `<ENTRY-HOST-IP>` is the entry host's address *in that host's network*.
+- **C** is for hosts SSHBITE uses as a hop to reach hosts the entry host cannot reach
+  (`crawl.chain_fallback`); a host reached through such a hop needs `from=` with the hop's address. If a
+  scan shows a host as `auth_failed` with a route over a hop, the `from=` of that host is the place to look.
+- If `sshd_config` has `AllowUsers`/`AllowGroups`, add `sshbite`. The entry host (and C hosts) need
+  `AllowTcpForwarding yes` (or `local`) for this account.
+
+### Config
+
+```yaml
+privilege:
+  mode: installed
+  collector_path: /usr/local/libexec/sshbite/sshbite-collect    # only needed for another location
+```
+
+`privilege.password_scope` must be empty in this mode, `scan --ask-sudo-password` is refused, and a set
+`SSHBITE_SUDO_PASSWORD` only gives a warning. Details: [configuration.md](configuration.md#privilege).
+
+### Check
+
+```sh
+sshbite config validate --connect
+```
+
+The last line must read:
+
+```
+entry OK, pinned key matches, sudo: root (installed /usr/local/libexec/sshbite/sshbite-collect, collector B=<12 hex> matches)
+```
+
+`--connect` runs the probe and the collector on the entry host and reads only the collector's first line;
+that leaves one more sudo log entry there. On a failure the line reads `sudo: FAILED - <message>` and the
+command exits with 3, because a scan would fail on the entry host the same way. The messages are listed
+below.
+
+### After an SSHBITE update
+
+When an update changes the collector, every host reports
+`installed collector version differs from this SSHBITE …` and is shown as `collector_error`. Export again,
+check the checksums, install only the new `sshbite-collect` on every host and scan again. Gate, sudoers
+and `authorized_keys` stay the same as long as the path stays the same (compare with `sha256sum -c`).
+
+### Switching from mode sudo (or from a hand-made gate)
+
+1. Install the files on all hosts (new gate, new sudoers file, new `authorized_keys`; remove the old
+   sudoers rules).
+2. Then set `privilege.mode: installed` in the config.
+
+Do not scan between the two steps: the new gate refuses the commands of the old modes with exit 126, so a
+scan in mode `sudo` against an installed host ends in `no collector output: sshbite-gate: denied …`.
+
+### Error messages
+
+In mode installed a host never falls back to `partial`/`unprivileged`. If something is wrong it is
+`collector_error` in the UI and in `sshbite scans show`, with one of these messages (P = the collector
+path, `<l>` = the first line of stderr):
+
+| Message | Meaning and fix |
+|---|---|
+| `privilege.mode installed: refused by sshbite-gate on this host: <l>` | The gate refused the command: `privilege.collector_path` differs from the path the gate was exported for, or an old gate is installed. Export with the right path and install the new gate. |
+| `privilege.mode installed: sudo asks for a password - the sudoers rule for P must be NOPASSWD` | sudo wants a password. Either the rule lacks `NOPASSWD:` or `/etc/sudoers.d/sshbite` is missing altogether – sudo answers both the same way. Install `sudoers.d-sshbite` and check with `sudo -l -U sshbite`. |
+| `privilege.mode installed: collector not installed at P` | The sudo rule exists, the file does not. Install `sshbite-collect` at P. |
+| `privilege.mode installed: sudo does not allow P for this account (sudo -n -l exit <rc>: <l>)` | sudo has rules for `sshbite`, but none for P (`<l>` is then often empty). Install `sudoers.d-sshbite` and remove the other rules. |
+| `privilege.mode installed: installed collector version differs from this SSHBITE (expected B=<x>, host has B=<y>) - run 'sshbite collector export' and reinstall sshbite-collect` | The host has the collector of another SSHBITE version. See "After an SSHBITE update". |
+| `no collector output: <l>` | The collector printed nothing usable; `<l>` says why. |
+
+### Prerequisite: util-linux
+
+The collector is a POSIX `sh` script and needs the usual base tools (`stat`, `head`, `awk`, `getent`,
+`ssh-keygen`, `sshd`). A coming change reads files in user homes as their owner with `setpriv` from
+util-linux; make sure `util-linux` (which provides `/usr/bin/setpriv`) is installed on every host.
+
+### Not tested
+
+SELinux in enforcing mode, OpenSSH older than 8.7 and Busybox-based systems are not tested with this mode.
+The lab runs Debian 12 with OpenSSH 9.2 and sudo 1.9.13.
+
+### Further hardening (not implemented)
+
+Further hardening (not implemented): run the collector with only CAP_DAC_READ_SEARCH instead of root.
+
+## Legacy: sudo /bin/sh -s (equivalent to full root)
+
+**Warning: this setup is equivalent to full root for whoever holds the audit key.** Use it only where you
+cannot install files on the hosts; prefer [the installed collector](#privileges-installed-collector-recommended).
 
 Without root, the collector cannot read other users' `~/.ssh` and `/etc/shadow`; the host is then
 `partial`. The commands SSHBITE runs with sudo are fixed (see `sshbite collector show`). sudo is always

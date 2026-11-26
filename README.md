@@ -26,23 +26,28 @@ SQLite database, a UI on `127.0.0.1` behind a login, no external services or CDN
 ## Quick start (Docker)
 
 1. **Build the image** in this repository: `docker build -t sshbite:0.1.0 .`
-2. **Create the audit key and deploy it** for an account `sshbite` with sudo on every host
-   ([install.md](docs/install.md#the-audit-key-and-account)):
-   `install -d -m 700 /etc/sshbite && ssh-keygen -t ed25519 -N '' -f /etc/sshbite/audit_ed25519`
+2. **Create the audit key and install the collector** on every host – the recommended
+   `privilege.mode: installed`, where the audit key is not root-equivalent
+   ([install.md](docs/install.md#privileges-installed-collector-recommended)):
+   ```sh
+   install -d -m 700 /etc/sshbite && ssh-keygen -t ed25519 -N '' -f /etc/sshbite/audit_ed25519
+   docker run --rm --user "$(id -u)" -v "$PWD/sshbite-export:/out" sshbite:0.1.0 sshbite collector export /out
+   cd sshbite-export && sha256sum -c SHA256SUMS      # then install the files on every host as install.md says
+   ```
 3. **Write the config** with your entry host and its pinned host key
    ([install.md](docs/install.md#pin-the-entry-host-key)), then give both files to the container user:
    ```sh
-   docker run --rm sshbite:0.1.0 sshbite init-config > /etc/sshbite/sshbite.yaml   # edit entry, set database: /data/sshbite.db
+   docker run --rm sshbite:0.1.0 sshbite init-config > /etc/sshbite/sshbite.yaml   # edit entry, set database: /data/sshbite.db and privilege.mode: installed
    chown -R 10001:10001 /etc/sshbite && chmod 600 /etc/sshbite/*
    ```
 4. **Start it and check the entry**:
    ```sh
    docker compose -f docs/compose.example.yaml up -d
-   docker exec -it sshbite sshbite config validate --connect    # entry OK, pinned key matches, sudo: root
+   docker exec -it sshbite sshbite config validate --connect    # entry OK, pinned key matches, sudo: root (installed …, collector B=… matches)
    docker exec -it sshbite sshbite user add admin
    ```
-5. **Scan and look**: `docker exec -it sshbite sshbite scan --ask-sudo-password`, then open
-   http://127.0.0.1:8722/ and log in.
+5. **Scan and look**: `docker exec -it sshbite sshbite scan`, then open http://127.0.0.1:8722/ and log in.
+   (With the legacy `privilege.mode: sudo` and a sudo password: `sshbite scan --ask-sudo-password`.)
 
 Commands that ask for a password need a terminal: use `docker exec -it`, never just `-i` – SSHBITE
 refuses to read a password from a non-terminal stdin. If sudo on your hosts wants a password, give the

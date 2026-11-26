@@ -102,7 +102,10 @@ read them.
 
 ## Sudo passwords
 
-With `NOPASSWD` sudo nothing is needed. If sudo asks for a password:
+With `NOPASSWD` sudo nothing is needed. With `privilege.mode: installed` a sudo password is never sent:
+`--ask-sudo-password` is refused with exit 2 and `SSHBITE_SUDO_PASSWORD` is ignored with a warning; a host
+whose sudo wants a password becomes `collector_error`
+([install.md](install.md#error-messages)). In the legacy modes, if sudo asks for a password:
 
 ```sh
 sshbite scan --ask-sudo-password             # prompts once, without echo
