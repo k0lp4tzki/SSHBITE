@@ -1,0 +1,5 @@
+scan: entry jump:22, max depth 10, max hosts 1000, concurrency 20
+error: ENTRY HOST KEY MISMATCH – scan aborted
+  offered by jump:22: ssh-ed25519 SHA256:ynTb0gWnV8EppDctYzEhTtbjMnfZ2636k864CRGdTDg
+  pinned: ssh-ed25519 SHA256:A3ZcCoVAi6MU3LodydM/OT0egxdhDBAMGsPlXEwcOCA
+

@@ -1,0 +1,15 @@
+# Lab-control sshd: lets the e2e test take snapshots and change the lab without docker exec.
+# It lives outside /etc/ssh, so neither `sshd -T` nor the collector see it.
+Port 2200
+HostKey /lab/ctl/host_ed25519
+PidFile /run/labctl-sshd.pid
+AuthorizedKeysFile /lab/ctl/authorized_keys
+AllowUsers root
+PermitRootLogin prohibit-password
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
+PrintMotd no
+PrintLastLog no
+X11Forwarding no
+AllowTcpForwarding no

@@ -1,0 +1,4 @@
+# The SSHBITE test lab (lab/compose.yaml). The product itself is not a compose service;
+# see README.md "Test lab". This file only makes `docker compose up` at the top level start the lab.
+include:
+  - lab/compose.yaml
