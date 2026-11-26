@@ -37,7 +37,8 @@ def addr_identity(addr: str, port: int) -> str:
 
 
 def upsert_host(db: sqlite3.Connection, identity: str, display: str, scan_id: int, synthetic: int = 0,
-                merge_from: list[str] | None = None) -> int:
+                merge_from: list[str] | None = None, keep_name: bool = False) -> int:
+    """Find or create the host row. keep_name: an uncollected host keeps the name it is known by."""
     row = db.execute("SELECT id FROM host WHERE identity=?", (identity,)).fetchone()
     if row is None and merge_from:
         for old in merge_from:
@@ -50,8 +51,11 @@ def upsert_host(db: sqlite3.Connection, identity: str, display: str, scan_id: in
         cur = db.execute("INSERT INTO host(identity, display_name, synthetic, first_seen_scan, last_seen_scan)"
                          " VALUES (?,?,?,?,?)", (identity, display, synthetic, scan_id, scan_id))
         return cur.lastrowid
-    db.execute("UPDATE host SET display_name=?, last_seen_scan=max(coalesce(last_seen_scan,0), ?) WHERE id=?",
-               (display, scan_id, row[0]))
+    if keep_name:
+        db.execute("UPDATE host SET last_seen_scan=max(coalesce(last_seen_scan,0), ?) WHERE id=?", (scan_id, row[0]))
+    else:
+        db.execute("UPDATE host SET display_name=?, last_seen_scan=max(coalesce(last_seen_scan,0), ?) WHERE id=?",
+                   (display, scan_id, row[0]))
     return row[0]
 
 
@@ -133,7 +137,7 @@ def _persist(s: "Scanner", db: sqlite3.Connection, sid: int) -> None:
     used_ids: set[int] = set()
     for t in sorted(all_targets, key=lambda x: (x.status not in ("ok", "partial", "output_limit", "collector_error"), x.order)):
         ident, merge = _identity_for(s, t)
-        hid = upsert_host(db, ident, t.display, sid, merge_from=merge)
+        hid = upsert_host(db, ident, t.display, sid, merge_from=merge, keep_name=not t.has_data)
         if hid in used_ids:
             # two targets ended up with one identity (e.g. an alias): keep the first, mark this one
             ident = addr_identity(t.addr, t.port) + ("" if t.status == "alias" else f"#{t.order}")
