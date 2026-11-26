@@ -1,4 +1,5 @@
-# SSHBITE test lab (spec 9.2): 13 OpenSSH hosts behind the jump host.
+# SSHBITE test lab (spec 9.2): 13 OpenSSH hosts (Debian 12) behind the jump host, plus r1 (AlmaLinux 9),
+# stand-alone on lab_r.
 # Test-only keys, see keys/README.md. Start with lab/up.sh (or `docker compose -f lab/compose.yaml up -d --build`).
 name: sshbite-lab
 
@@ -101,6 +102,15 @@ services:
     hostname: c2
     networks:
       lab_c: {ipv4_address: 172.30.3.22}
+  # AlmaLinux 9 (spec 8.2): stand-alone on its own network, scanned directly like an entry host
+  r1:
+    <<: *host
+    build: {context: ., dockerfile: image/Dockerfile.el9, args: {HOST: r1}}
+    image: sshbite-lab-r1
+    hostname: r1
+    ports: ["127.0.0.1:2223:22"]
+    networks:
+      lab_r: {ipv4_address: 172.30.4.11}
 
 networks:
   lab_a:
@@ -110,3 +120,5 @@ networks:
   lab_c:
     internal: true          # c1, c2: not reachable from jump, only via b3
     ipam: {config: [{subnet: 172.30.3.0/24}]}
+  lab_r:
+    ipam: {config: [{subnet: 172.30.4.0/24}]}

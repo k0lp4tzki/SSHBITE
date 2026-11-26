@@ -21,7 +21,8 @@ gen labctl_ed25519 ed25519 "" "lab-control"
 gen labctl_host_ed25519 ed25519 "" "lab-control-host"
 
 # host keys
-for h in jump a1 a2 a3 a4 a5 b1 b2 b3 b4 b5 c1 c2; do
+# r1 (AlmaLinux 9, stand-alone) came later: its keys were added with the same names, types and comments
+for h in jump a1 a2 a3 a4 a5 b1 b2 b3 b4 b5 c1 c2 r1; do
   gen "${h}_host_ed25519" ed25519 "" "root@$h"
   gen "${h}_host_ecdsa" ecdsa 256 "root@$h"
 done
@@ -42,6 +43,7 @@ gen k_orphan ed25519 "" "contractor-2019"
 gen k_ca ed25519 "" "ops-ca"
 gen k_carol ed25519 "" "carol@b5"
 gen k_new ed25519 "" "new-unknown"
+gen k_alice ed25519 "" "alice@r1"
 # random keys for known_hosts lines that point at nothing real
 gen random_1 ed25519 "" "random-1"
 gen random_2 ed25519 "" "random-2"
