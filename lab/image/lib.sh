@@ -73,7 +73,9 @@ finish() {
     cp /lab/seed/k_new.line /lab/k_new.line
   fi
   rm -rf "$K" /lab/seed
+  mkdir -p /run/sshd
   sshd -t
+  sshd -t -f /lab/ctl/sshd_config
 }
 
 if [ "${1:-}" = common ]; then common "$2"; fi
