@@ -11,3 +11,4 @@ lab/.run/
 *.db-wal
 *.db-shm
 node_modules/
+lab/sshbite.lab.yaml
