@@ -1,0 +1,90 @@
+# A. Heutiger Stand: sudoers-Zeile aus docs/install.md auf allen Lab-Hosts (2026-11-26T20:33:23Z)
+
+$ /state/venv/bin/python tools/rechte-lab/lab_apply.py installmd
+jump: exit 0 /etc/sudoers.d/sshbite: parsed OK 
+a1: exit 0 /etc/sudoers.d/sshbite: parsed OK 
+a2: exit 0 /etc/sudoers.d/sshbite: parsed OK 
+a3: exit 0 /etc/sudoers.d/sshbite: parsed OK 
+a4: exit 0 /etc/sudoers.d/sshbite: parsed OK 
+a5: exit 0 /etc/sudoers.d/sshbite: parsed OK 
+b1: exit 0 /etc/sudoers.d/sshbite: parsed OK 
+b2: exit 0 /etc/sudoers.d/sshbite: parsed OK 
+b4: exit 0 /etc/sudoers.d/sshbite: parsed OK 
+b5: exit 0 /etc/sudoers.d/sshbite: parsed OK 
+b3: exit 0 /etc/sudoers.d/sshbite: parsed OK 
+c1: exit 0 /etc/sudoers.d/sshbite: parsed OK 
+c2: exit 0 /etc/sudoers.d/sshbite: parsed OK 
+
+$ /state/venv/bin/sshbite config validate --connect
+config OK: /state/lab/sshbite.yaml
+entry OK, pinned key matches, sudo: root
+
+$ /state/venv/bin/sshbite scan --label install.md-Regel
+scan: entry jump:22, max depth 10, max hosts 1000, concurrency 20
+depth 0: 1 queued, 0 running, 0 done
+depth 0: 0 queued, 0 running, 1 done
+depth 1: 2 queued, 0 running, 1 done
+depth 1: 0 queued, 0 running, 3 done
+depth 2: 5 queued, 0 running, 3 done
+depth 2: 0 queued, 0 running, 8 done
+depth 3: 4 queued, 0 running, 8 done
+depth 3: 0 queued, 2 running, 10 done
+depth 3: 0 queued, 0 running, 12 done (1 unreachable)
+depth 4: 1 queued, 0 running, 12 done (1 unreachable)
+depth 4: 0 queued, 1 running, 12 done (1 unreachable)
+depth 4: 0 queued, 0 running, 13 done (1 unreachable)
+
+scan 1 completed in 13 s
+hosts:    13 connected; 12 ok, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
+findings: 37 - 4 critical, 16 high, 14 medium, 2 low, 1 info
+edges:    21 access (20 effective, 4 unknown origin); keys: 11
+scan id:  1
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+
+$ /state/venv/bin/python tools/rechte-lab/scan_hosts.py /state/lab/sshbite.db 1
+Host     Status       Privileg      Adresse        Route / Fehler
+10.20.30.40 out_of_scope               10.20.30.40
+172.30.1.99 unreachable                172.30.1.99     172.30.1.99: channel open failed: No route to host
+172.30.2.14 excluded                   172.30.2.14
+203.0.113.10 out_of_scope               203.0.113.10
+a1       ok           root          172.30.1.11    jump > a1
+a2       ok           root          172.30.1.12    jump > a2
+a3       ok           root          172.30.1.13    jump > a3
+a4       ok           root          172.30.1.14    jump > a4
+a5       ok           root          172.30.1.15    jump > a5
+b1       ok           root          172.30.2.11    jump > b1
+b2       ok           root          172.30.2.12    jump > b2
+b3       ok           root          172.30.2.13    jump > b3
+b5       ok           root          172.30.2.15    jump > b5
+c1       ok           root          172.30.3.21    jump > b3 > c1
+c2       ok           root          172.30.3.22    jump > b3 > c1 > c2
+git.example.com unresolvable               git.example.com
+jump     ok           root          172.30.1.5     jump
+authorized_entry 21
+private_key 8
+account 255
+edge 43
+finding 37
+
+$ sshbite-pruefen.sh auf jump
+OK      Account sshbite existiert (Home /home/sshbite, Shell /bin/sh)
+OK      Shell /bin/sh
+OK      keine privilegierten Gruppen (sshbite)
+OK      Passwort gesperrt
+FEHLER  /usr/local/libexec/sshbite fehlt
+FEHLER  /usr/local/libexec/sshbite/sshbite-collect fehlt
+FEHLER  /usr/local/libexec/sshbite/sshbite-gate fehlt
+OK      /etc/sudoers.d/sshbite root-eigen, Modus 440
+FEHLER  /home/sshbite: Eigentuemer sshbite, Modus 755 (root, nicht gruppen-/weltbeschreibbar)
+FEHLER  /home/sshbite/.ssh: Eigentuemer sshbite, Modus 700 (root, nicht gruppen-/weltbeschreibbar)
+FEHLER  /home/sshbite/.ssh/authorized_keys: Eigentuemer sshbite, Modus 600 (root, nicht gruppen-/weltbeschreibbar)
+OK      visudo -cf /etc/sudoers.d/sshbite
+OK      visudo -c (gesamte sudo-Konfiguration)
+FEHLER  sudo -l -U sshbite zeigt mehr oder anderes als die eine Regel:
+        (root) NOPASSWD: /bin/true, /bin/sh -s
+FEHLER  Collector-Pruefsumme e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855, erwartet 6c262392665b6cd321c7ac52834a69c1e1fcf2fe171552b863742c4ec9940f05
+OK      authorized_keys: genau ein Schluessel
+FEHLER  authorized_keys: Zeile beginnt nicht mit restrict
+FEHLER  authorized_keys: Forced Command fehlt
+FEHLER  authorized_keys: from= fehlt
+Exit 1

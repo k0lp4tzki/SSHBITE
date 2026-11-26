@@ -1,0 +1,679 @@
+Belegprüfung: jede Datei:Zeile-Angabe aus SSHBITE-Minimale-Rechte.md mit den zitierten Zeilen
+Code-Stand: letzter Commit an sshbite/, docs/, README.md: 6833c81 2026-11-26 19:39:23 +0000
+Erzeugt mit: tools/rechte-doc/belege.py
+
+=== SSHBITE-Minimale-Rechte.md Zeile 20: `sshbite/privilege.py:118-126`  ->  sshbite/privilege.py
+   118 | def commands(mode: str) -> dict[str, str]:
+   119 |     i = " -i" if mode == "sudo-login" else ""
+   120 |     return {
+   121 |         "probe": sudo_cmd(f"-n{i} /bin/true"),
+   122 |         "run": sudo_cmd(f"-n{i} /bin/sh -s"),
+   123 |         "pw_probe": sudo_cmd(f"-S -k -p ''{i} /bin/true"),
+   124 |         "pw_run": sudo_cmd(f"-S -k -p ''{i} /bin/sh -s"),
+   125 |         "plain": "/bin/sh -s",
+   126 |     }
+
+=== SSHBITE-Minimale-Rechte.md Zeile 20: `docs/install.md:176`  ->  docs/install.md
+   176 | sshbite ALL=(root) NOPASSWD: /bin/true, /bin/sh -s
+
+=== SSHBITE-Minimale-Rechte.md Zeile 22: `docs/install.md:182-184`  ->  docs/install.md
+   182 | Be clear about what this grants: `/bin/sh -s` runs whatever arrives on stdin as root, so the line is
+   183 | **equivalent to full root** for whoever holds the audit key. Restricting it to these two commands only
+   184 | documents the intent and keeps other commands out of the sudo log. Protect the audit key accordingly
+
+=== SSHBITE-Minimale-Rechte.md Zeile 53: `sshbite/transport.py:220-240`  ->  sshbite/transport.py
+   220 |     def _options(self, hop: Hop) -> dict:
+   221 |         return dict(
+   222 |             username=self.user,
+   223 |             client_keys=[self.client_key],
+   224 |             agent_path=None,
+   225 |             agent_forwarding=False,
+   226 |             x11_forwarding=False,
+   227 |             config=None,              # never read the operator's ssh config (() would load ~/.ssh/config)
+   228 |             known_hosts=([], [], []),  # empty trust lists: every key goes to validate_host_public_key
+   229 |             server_host_key_algs=self.policy.algs_for(hop.role, hop.addr, hop.port),
+   230 |             preferred_auth=["publickey"],
+   231 |             password=None,
+   232 |             kbdint_auth=False,
+   233 |             gss_host=None,
+   234 |             host_based_auth=False,
+   235 |             client_host_keys=None,
+   236 |             ignore_encrypted=True,
+   237 |             keepalive_interval=15,
+   238 |             connect_timeout=self.connect_timeout,
+   239 |             request_pty=False,
+   240 |         )
+
+=== SSHBITE-Minimale-Rechte.md Zeile 55: `transport.py:325-332`  ->  sshbite/transport.py
+   325 |             if len(route) == 2:
+   326 |                 tunnel = await self._entry_conn()
+   327 |                 parent_key = None
+   328 |             else:
+   329 |                 tunnel = await self.connect(route[:-1])
+   330 |                 parent_key = tuple(h.key for h in route[:-1])
+   331 |             try:
+   332 |                 conn = await self._connect_hop(route[-1], tunnel)
+
+=== SSHBITE-Minimale-Rechte.md Zeile 55: `sshbite/crawl.py:499-501`  ->  sshbite/crawl.py
+   499 |             route = [t]
+   500 |         else:
+   501 |             routes = [[self.entry, t]]
+
+=== SSHBITE-Minimale-Rechte.md Zeile 57: `crawl.py:517-520`  ->  sshbite/crawl.py
+   517 |                     if exc.kind == "network" or not at_target:
+   518 |                         if (i == 1 and self.cfg.crawl.chain_fallback and t.parent is not None
+   519 |                                 and t.parent.route and t.parent.role != "entry"):
+   520 |                             routes.append(list(t.parent.route) + [t])
+
+=== SSHBITE-Minimale-Rechte.md Zeile 57: `sshbite/config.py:148`  ->  sshbite/config.py
+   148 |     chain_fallback: bool = True
+
+=== SSHBITE-Minimale-Rechte.md Zeile 59: `crawl.py:372-373, 386`  ->  sshbite/crawl.py
+   372 |         if s.probe:
+   373 |             ok = await self._tcp_probe(ip, s.port)
+   386 |             reader, writer = await asyncio.wait_for(self.transport.entry.open_connection(ip, port), timeout=2)
+
+=== SSHBITE-Minimale-Rechte.md Zeile 60: `crawl.py:595-633`  ->  sshbite/crawl.py
+   595 |         dport = self.cfg.crawl.ssh_port
+   596 |         d = t.data
+   597 |         assert d is not None
+   598 |         for rec in d.known_hosts:
+   599 |             e = rec.entry
+   600 |             if e.error or e.marker:
+   601 |                 continue
+   602 |             source = "system_known_hosts" if rec.username == "" else "known_hosts"
+   603 |             if e.hashed:
+   604 |                 self.pending_hashed.append(PendingHash(t, rec, source))
+   605 |                 continue
+   606 |             for pat in e.patterns:
+   607 |                 if not kh.is_plain_pattern(pat):
+   608 |                     continue
+   609 |                 h, p = kh.split_host_port(pat, dport)
+   610 |                 out.append(self._new_ref(from_t=t, username=rec.username, source=source, file=rec.file,
+   611 |                                          line_no=e.line_no, value=h, port=p, kh_rec=rec))
+   612 |         for rec in d.ssh_configs:
+   613 |             e = rec.entry
+   614 |             if e.is_match:
+   615 |                 continue
+   616 |             source = "system_ssh_config" if rec.username == "" else "ssh_config"
+   617 |             port = e.port or dport
+   618 |             if e.hostname and "%" not in e.hostname:
+   619 |                 out.append(self._new_ref(from_t=t, username=rec.username, source=source, file=rec.file,
+   620 |                                          line_no=e.hostname_line or e.line_no, value=e.hostname, port=port))
+   621 |             elif not e.hostname and e.line_no > 0:
+   622 |                 for pat in e.host_pattern.split():
+   623 |                     if has_wildcard(pat):
+   624 |                         continue
+   625 |                     out.append(self._new_ref(from_t=t, username=rec.username, source=source, file=rec.file,
+   626 |                                              line_no=e.line_no, value=pat, port=port))
+   627 |             if e.proxyjump:
+   628 |                 for host, p in proxyjump_hops(e.proxyjump):
+   629 |                     if has_wildcard(host) or "%" in host:
+   630 |                         continue
+   631 |                     out.append(self._new_ref(from_t=t, username=rec.username, source="ssh_config_proxyjump",
+   632 |                                              file=rec.file, line_no=e.proxyjump_line or e.line_no, value=host,
+   633 |                                              port=p or dport))
+
+=== SSHBITE-Minimale-Rechte.md Zeile 63: `transport.py:387-395`  ->  sshbite/transport.py
+   387 | async def run(conn: asyncssh.SSHClientConnection, command: str, stdin: bytes | None = None,
+   388 |               max_bytes: int = 32 * 1024 * 1024, max_stderr: int = 65536) -> ExecResult:
+   389 |     """Run a fixed command on an exec channel, feed stdin then EOF, read stdout up to max_bytes."""
+   390 |     proc = await conn.create_process(command, encoding=None, request_pty=False)
+   391 |     try:
+   392 |         if stdin:
+   393 |             proc.stdin.write(stdin)
+   394 |         proc.stdin.write_eof()
+   395 | 
+
+=== SSHBITE-Minimale-Rechte.md Zeile 63: `config.py:133`  ->  sshbite/config.py
+   133 |     mode: Literal["sudo", "sudo-login", "none"] = "sudo"
+
+=== SSHBITE-Minimale-Rechte.md Zeile 64: `privilege.py:113-115`  ->  sshbite/privilege.py
+   113 | def sudo_cmd(args: str) -> str:
+   114 |     """sudo by absolute path: /usr/bin/sudo, or /bin/sudo only if the first is not executable (fixed test -x)."""
+   115 |     return f"test -x {SUDO_PATH} && exec {SUDO_PATH} {args}; exec {SUDO_FALLBACK} {args}"
+
+=== SSHBITE-Minimale-Rechte.md Zeile 68: `privilege.py:121, 136`  ->  sshbite/privilege.py
+   121 |         "probe": sudo_cmd(f"-n{i} /bin/true"),
+   136 |         probe = await run(conn, cmds["probe"], None, max_bytes=65536)
+
+=== SSHBITE-Minimale-Rechte.md Zeile 69: `privilege.py:122, 138`  ->  sshbite/privilege.py
+   122 |         "run": sudo_cmd(f"-n{i} /bin/sh -s"),
+   138 |             res = await run(conn, cmds["run"], script, max_bytes=max_bytes)
+
+=== SSHBITE-Minimale-Rechte.md Zeile 70: `collector/__init__.py:51-54`  ->  sshbite/collector/__init__.py
+    51 | def resolve_command() -> str:
+    52 |     """The exec command for name resolution: the fixed resolve.sh text as `sh -c` argument.
+    53 |     Names are sent on stdin as data, never as part of a script stream."""
+    54 |     return "/bin/sh -c " + shell_quote(resolve_script().strip())
+
+=== SSHBITE-Minimale-Rechte.md Zeile 70: `crawl.py:394-402, 659-664`  ->  sshbite/crawl.py
+   394 |     async def _resolve_on(self, conn, names: list[str]) -> dict[str, list[str]]:
+   395 |         out: dict[str, list[str]] = {}
+   396 |         for i in range(0, len(names), 500):
+   397 |             chunk = [n for n in names[i:i + 500] if _NAME_RE.match(n)]
+   398 |             # resolve.sh is the fixed command string; the names are stdin data only. (With `sh -s`
+   399 |             # and names after the script on stdin, dash reads ahead and runs the names as commands.)
+   400 |             data = ("\n".join(chunk) + "\n").encode()
+   401 |             try:
+   402 |                 res = await asyncio.wait_for(run(conn, collector.resolve_command(), data, max_bytes=1 << 20),
+   659 |                 src = next((r.from_t for r in refs if r.value == n), None)
+   660 |                 if src is not None and src.role != "entry" and src.route:
+   661 |                     try:
+   662 |                         conn = await self.transport.connect([h.hop() for h in src.route])
+   663 |                         try:
+   664 |                             got2 = await self._resolve_on(conn, [n])
+
+=== SSHBITE-Minimale-Rechte.md Zeile 71: `privilege.py:123-124, 153-159`  ->  sshbite/privilege.py
+   123 |         "pw_probe": sudo_cmd(f"-S -k -p ''{i} /bin/true"),
+   124 |         "pw_run": sudo_cmd(f"-S -k -p ''{i} /bin/sh -s"),
+   153 |             if pw:
+   154 |                 line = (pw + "\n").encode("utf-8")
+   155 |                 p2 = await run(conn, cmds["pw_probe"], line, max_bytes=65536)
+   156 |                 if p2.rc == 0:
+   157 |                     res = await run(conn, cmds["pw_run"], line + script, max_bytes=max_bytes)
+   158 |                     res.stderr = secret.redact(res.stderr)
+   159 |                     return CollectOutcome("sudo_password", res)
+
+=== SSHBITE-Minimale-Rechte.md Zeile 72: `privilege.py:125, 172`  ->  sshbite/privilege.py
+   125 |         "plain": "/bin/sh -s",
+   172 |     res = await run(conn, cmds["plain"], script, max_bytes=max_bytes)
+
+=== SSHBITE-Minimale-Rechte.md Zeile 73: `sshbite/cli.py:141-147`  ->  sshbite/cli.py
+   141 |         mode = cfg.privilege.mode
+   142 |         if mode == "none":
+   143 |             sudo = "not used (privilege.mode none)"
+   144 |         else:
+   145 |             r = await run(conn, commands(mode)["probe"], None, max_bytes=65536)
+   146 |             if r.rc == 0:
+   147 |                 sudo = "root"
+
+=== SSHBITE-Minimale-Rechte.md Zeile 75: `privilege.py:119`  ->  sshbite/privilege.py
+   119 |     i = " -i" if mode == "sudo-login" else ""
+
+=== SSHBITE-Minimale-Rechte.md Zeile 76: `docs/install.md:179-180`  ->  docs/install.md
+   179 | This line is for `privilege.mode: sudo`. With `sudo-login`, sudo runs root's login shell with the command
+   180 | as `-c` argument, which a command list cannot express cleanly – use `NOPASSWD: ALL` there.
+
+=== SSHBITE-Minimale-Rechte.md Zeile 78: `collect.sh:1`  ->  sshbite/collector/collect.sh
+     1 | LC_ALL=C; export LC_ALL; PATH=/usr/sbin:/usr/bin:/sbin:/bin; set -u
+
+=== SSHBITE-Minimale-Rechte.md Zeile 82: `collect.sh:96-104`  ->  sshbite/collector/collect.sh
+    96 | val hostname "$(hostname 2>/dev/null)"
+    97 | val uname "$(uname -srm 2>/dev/null)"
+    98 | val uid "$(id -u 2>/dev/null)"
+    99 | val cmd os-release
+   100 | head -n 20 /etc/os-release 2>/dev/null | sed 's/^/|/'
+   101 | printf '\n'
+   102 | val cmd ip-addr
+   103 | o=$(ip -o addr show 2>/dev/null) || o=$(hostname -I 2>/dev/null) || o=$(ifconfig -a 2>/dev/null)
+   104 | printf '%s\n' "$o" | sed 's/^/|/'
+
+=== SSHBITE-Minimale-Rechte.md Zeile 83: `collect.sh:109-113`  ->  sshbite/collector/collect.sh
+   109 | for f in /etc/ssh/ssh_host_*_key.pub; do
+   110 |   [ -f "$f" ] || continue
+   111 |   fhdr "$f" ""
+   112 |   content "$f"
+   113 | done
+
+=== SSHBITE-Minimale-Rechte.md Zeile 84: `collect.sh:117`  ->  sshbite/collector/collect.sh
+   117 | SSHDT=$(/usr/sbin/sshd -T 2>/dev/null)
+
+=== SSHBITE-Minimale-Rechte.md Zeile 85: `collect.sh:122-143`  ->  sshbite/collector/collect.sh
+   122 | if [ -f /etc/ssh/sshd_config ]; then
+   123 |   fhdr /etc/ssh/sshd_config ""
+   124 |   content /etc/ssh/sshd_config
+   125 | fi
+   126 | INCS=$(awk 'tolower($1) == "include" {for (i = 2; i <= NF; i++) print $i}' /etc/ssh/sshd_config 2>/dev/null)
+   127 | n=0
+   128 | set -f
+   129 | for pat in $INCS; do
+   130 |   case "$pat" in
+   131 |     /*) ;;
+   132 |     *) pat="/etc/ssh/$pat" ;;
+   133 |   esac
+   134 |   set +f
+   135 |   for f in $pat; do
+   136 |     [ -f "$f" ] || continue
+   137 |     n=$((n + 1))
+   138 |     [ "$n" -le 20 ] || break
+   139 |     fhdr "$f" ""
+   140 |     content "$f"
+   141 |   done
+   142 |   set -f
+   143 | done
+
+=== SSHBITE-Minimale-Rechte.md Zeile 86: `collect.sh:155-156`  ->  sshbite/collector/collect.sh
+   155 | PW=$(getent passwd 2>/dev/null | head -n 20000)
+   156 | [ -n "$PW" ] || PW=$(head -n 20000 /etc/passwd 2>/dev/null)
+
+=== SSHBITE-Minimale-Rechte.md Zeile 87: `collect.sh:162-167`  ->  sshbite/collector/collect.sh
+   162 | if [ "$(id -u 2>/dev/null)" = 0 ]; then
+   163 |   sec SHADOW
+   164 |   val cmd shadow
+   165 |   awk -F: '{print $1":"substr($2,1,1)":"$8}' /etc/shadow 2>/dev/null | sed 's/^/|/'
+   166 |   printf '\n'
+   167 | fi
+
+=== SSHBITE-Minimale-Rechte.md Zeile 88: `collect.sh:210-251`  ->  sshbite/collector/collect.sh
+   210 |     d="$home/.ssh"
+   211 |     if [ -L "$d" ]; then
+   212 |       # a user controls ~/.ssh: never follow a link (it could point at /root/.ssh or /etc)
+   213 |       fhdr "$d" "$u"
+   214 |       printf '#X %s\tsymlink not followed\n' "$d"
+   215 |     elif [ -d "$d" ]; then
+   216 |       fhdr "$d" "$u"
+   217 |       if [ -r "$d" ] && [ -x "$d" ]; then
+   218 |         ls -A -- "$d" 2>/dev/null | head -n 101 | {
+   219 |           n=0
+   220 |           while IFS= read -r e; do
+   221 |             [ -n "$e" ] || continue
+   222 |             n=$((n + 1))
+   223 |             if [ "$n" -gt 100 ]; then
+   224 |               printf '#X %s\tmore than 100 entries\n' "$d"
+   225 |               break
+   226 |             fi
+   227 |             p="$d/$e"
+   228 |             case "$e" in
+   229 |               *"$T"*)
+   230 |                 printf '#X %s\tname with tab or newline skipped\n' "$d"
+   231 |                 continue
+   232 |                 ;;
+   233 |             esac
+   234 |             if [ ! -e "$p" ] && [ ! -L "$p" ]; then
+   235 |               printf '#X %s\tname with tab or newline skipped\n' "$d"
+   236 |               continue
+   237 |             fi
+   238 |             case "$NL$akfs" in
+   239 |               *"$NL$p$NL"*) continue ;;
+   240 |             esac
+   241 |             fhdr "$p" "$u"
+   242 |             if [ -L "$p" ]; then
+   243 |               printf '#X %s\tsymlink not followed\n' "$p"
+   244 |               continue
+   245 |             fi
+   246 |             [ -f "$p" ] || continue
+   247 |             case "$e" in
+   248 |               known_hosts* | config | *.pub) content "$p" ;;
+   249 |               *) privkey "$p" ;;
+   250 |             esac
+   251 |           done
+
+=== SSHBITE-Minimale-Rechte.md Zeile 89: `collect.sh:54-73`  ->  sshbite/collector/collect.sh
+    54 | # privkey PATH - header line and public half of a private key, never its content
+    55 | privkey() {
+    56 |   if [ "$FSIZE" -gt 65536 ] 2>/dev/null; then
+    57 |     return
+    58 |   fi
+    59 |   if [ ! -r "$1" ]; then
+    60 |     printf '#X %s\tunreadable\n' "$1"
+    61 |     return
+    62 |   fi
+    63 |   h=$(head -n 1 -- "$1" 2>/dev/null | head -c 200)
+    64 |   case "$h" in
+    65 |     *'PRIVATE KEY-----'* | *PuTTY-User-Key-File*) ;;
+    66 |     *) return ;;
+    67 |   esac
+    68 |   printf '#H %s\t%s\n' "$1" "$h"
+    69 |   o=$(ssh-keygen -y -P '' -f "$1" </dev/null 2>&1)
+    70 |   kg "$1" y "$?" "$o"
+    71 |   o=$(ssh-keygen -l -f "$1" </dev/null 2>&1)
+    72 |   kg "$1" l "$?" "$o"
+    73 | }
+
+=== SSHBITE-Minimale-Rechte.md Zeile 90: `collect.sh:146-151, 257-269`  ->  sshbite/collector/collect.sh
+   146 | AKF=$(printf '%s\n' "$SSHDT" | awk '$1 == "authorizedkeysfile" {$1 = ""; sub(/^ +/, ""); print; exit}')
+   147 | if [ -z "$AKF" ]; then
+   148 |   AKF=$(awk 'tolower($1) == "match" {exit} tolower($1) == "authorizedkeysfile" {$1 = ""; sub(/^[ \t]+/, ""); print; exit}' /etc/ssh/sshd_config 2>/dev/null)
+   149 | fi
+   150 | [ -n "$AKF" ] || AKF='.ssh/authorized_keys .ssh/authorized_keys2'
+   151 | val authorizedkeysfile "$AKF"
+   257 |     printf '%s' "$akfs" | while IFS= read -r p; do
+   258 |       [ -n "$p" ] || continue
+   259 |       val akf "$p"
+   260 |       if [ -L "$p" ] || [ -L "${p%/*}" ]; then
+   261 |         fhdr "$p" "$u"
+   262 |         printf '#X %s\tsymlink not followed\n' "$p"
+   263 |       elif [ -f "$p" ]; then
+   264 |         fhdr "$p" "$u"
+   265 |         content "$p"
+   266 |       elif [ -e "$p" ]; then
+   267 |         fhdr "$p" "$u"
+   268 |       fi
+   269 |     done
+
+=== SSHBITE-Minimale-Rechte.md Zeile 91: `collect.sh:275-287`  ->  sshbite/collector/collect.sh
+   275 | for f in /etc/ssh/ssh_known_hosts /etc/ssh/ssh_config; do
+   276 |   [ -f "$f" ] || continue
+   277 |   fhdr "$f" ""
+   278 |   content "$f"
+   279 | done
+   280 | n=0
+   281 | for f in /etc/ssh/ssh_config.d/*; do
+   282 |   [ -f "$f" ] || continue
+   283 |   n=$((n + 1))
+   284 |   [ "$n" -le 20 ] || break
+   285 |   fhdr "$f" ""
+   286 |   content "$f"
+   287 | done
+
+=== SSHBITE-Minimale-Rechte.md Zeile 93: `collect.sh:3-6`  ->  sshbite/collector/collect.sh
+     3 | # SSHBITE collector. Fixed, read-only POSIX sh script, sent verbatim on stdin.
+     4 | # It reads files and prints records to stdout. It writes no file, starts no
+     5 | # network connection and builds no command from target data. B above is the
+     6 | # short SHA-256 of everything after the line "B=..." (checked by the tool).
+
+=== SSHBITE-Minimale-Rechte.md Zeile 95: `docs/install.md:158-159`  ->  docs/install.md
+   158 | Without root, the collector cannot read other users' `~/.ssh` and `/etc/shadow`; the host is then
+   159 | `partial`. The commands SSHBITE runs with sudo are fixed (see `sshbite collector show`). sudo is always
+
+=== SSHBITE-Minimale-Rechte.md Zeile 99: `README.md:29`  ->  README.md
+    29 | 2. **Create the audit key and deploy it** for an account `sshbite` with sudo on every host
+
+=== SSHBITE-Minimale-Rechte.md Zeile 172: `collect.sh:2, 12`  ->  sshbite/collector/collect.sh
+     2 | B=01fba7910d9e
+    12 | printf '#SSHBITE 1 %s\n' "$B"
+
+=== SSHBITE-Minimale-Rechte.md Zeile 172: `crawl.py:558-562`  ->  sshbite/crawl.py
+   558 |         elif c.sha_short != self.expected_sha_short:
+   559 |             t.status = "collector_error"
+   560 |             t.error = "no collector output" if not c.sha_short else "collector header does not match the script"
+   561 |             if res.stderr:
+   562 |                 t.error += ": " + self.secret.redact(res.stderr.strip().splitlines()[0])[:200]
+
+=== SSHBITE-Minimale-Rechte.md Zeile 193: `docs/side-effects.md:18-34`  ->  docs/side-effects.md
+    18 | ## sudo: the "incident" mail on refused sudo
+    19 | 
+    20 | On every host SSHBITE first runs `sudo -n /bin/true` (with `privilege.mode: sudo`; sudo by its absolute
+    21 | path `/usr/bin/sudo`, or `/bin/sudo` where that does not exist). Whenever sudo
+    22 | refuses, it may mail a report to `mailto` (default `root`) with the subject
+    23 | *"\*\*\* SECURITY information for HOST \*\*\*"*, if the host can send mail. Which refusals mail depends on
+    24 | the sudoers options. Debian and Ubuntu ship `Defaults mail_badpass` in `/etc/sudoers`, and sudo's
+    25 | `mail_no_user` is on by default. This is what we observed in the lab (Debian 12, sudo 1.9.13, Debian's
+    26 | default sudoers, mail captured with a test mailer):
+    27 | 
+    28 | | Audit account on the host | What SSHBITE runs | Mail |
+    29 | |---|---|---|
+    30 | | `NOPASSWD` rule ([install.md](install.md#sudoers)) | `sudo -n …` | **none** |
+    31 | | rule that requires a password | `sudo -n /bin/true` (probe) | **yes**: `sshbite : a password is required ; … COMMAND=/bin/true` – on every scan, also when the right password is given afterwards |
+    32 | | rule that requires a password, wrong `--ask-sudo-password` | `sudo -S -k -p '' /bin/true` | **yes, a second one**: `1 incorrect password attempt` |
+    33 | | no rule at all | `sudo -n /bin/true` | none (sudo only says "a password is required") |
+    34 | | no rule at all, and `--ask-sudo-password` is the account's real password | `sudo -S -k -p '' /bin/true` | **yes**: `user NOT in sudoers` (the console says "This incident has been reported to the administrator") |
+
+=== SSHBITE-Minimale-Rechte.md Zeile 199: `docs/side-effects.md:55-59`  ->  docs/side-effects.md
+    55 | - **sudo I/O logging:** if `log_input`/`log_output` is enabled for the account, sudo records the
+    56 |   collector script and its complete output (authorized_keys contents, file lists, the first character of
+    57 |   each shadow hash field) under its I/O log directory (e.g. `/var/log/sudo-io`). That directory then holds
+    58 |   a copy of the inventory – protect or disable it for the audit account. If you scan with a sudo password,
+    59 |   check whether your sudo version also records it there, or use `NOPASSWD` on such hosts.
+
+=== SSHBITE-Minimale-Rechte.md Zeile 201: `transport.py:239, 390`  ->  sshbite/transport.py
+   239 |             request_pty=False,
+   390 |     proc = await conn.create_process(command, encoding=None, request_pty=False)
+
+=== SSHBITE-Minimale-Rechte.md Zeile 224: `docs/install.md:141-145`  ->  docs/install.md
+   141 |    The account needs a POSIX shell (`/bin/sh`): SSHBITE sends its collector script on stdin to
+   142 |    `/bin/sh -s`. `restrict` is fine on every host: it disables pty, agent, X11 and port forwarding.
+   143 |    **On the entry host and on hosts used as hops** SSHBITE opens `direct-tcpip` channels to the next
+   144 |    host, so there use `restrict,port-forwarding` (or no options) instead of `restrict`, and sshd
+   145 |    must allow `AllowTcpForwarding yes` (or `local`) for this account.
+
+=== SSHBITE-Minimale-Rechte.md Zeile 281: `collect.sh:39-43`  ->  sshbite/collector/collect.sh
+    39 |   if [ ! -r "$1" ]; then
+    40 |     printf '#X %s\tunreadable\n' "$1"
+    41 |     return
+    42 |   fi
+    43 |   head -n 5000 -- "$1" 2>/dev/null | sed 's/^/|/'
+
+=== SSHBITE-Minimale-Rechte.md Zeile 282: `collect.sh:242-248, 260-265`  ->  sshbite/collector/collect.sh
+   242 |             if [ -L "$p" ]; then
+   243 |               printf '#X %s\tsymlink not followed\n' "$p"
+   244 |               continue
+   245 |             fi
+   246 |             [ -f "$p" ] || continue
+   247 |             case "$e" in
+   248 |               known_hosts* | config | *.pub) content "$p" ;;
+   260 |       if [ -L "$p" ] || [ -L "${p%/*}" ]; then
+   261 |         fhdr "$p" "$u"
+   262 |         printf '#X %s\tsymlink not followed\n' "$p"
+   263 |       elif [ -f "$p" ]; then
+   264 |         fhdr "$p" "$u"
+   265 |         content "$p"
+
+=== SSHBITE-Minimale-Rechte.md Zeile 285: `collect.sh:43`  ->  sshbite/collector/collect.sh
+    43 |   head -n 5000 -- "$1" 2>/dev/null | sed 's/^/|/'
+
+=== SSHBITE-Minimale-Rechte.md Zeile 290: `collect.sh:69-71`  ->  sshbite/collector/collect.sh
+    69 |   o=$(ssh-keygen -y -P '' -f "$1" </dev/null 2>&1)
+    70 |   kg "$1" y "$?" "$o"
+    71 |   o=$(ssh-keygen -l -f "$1" </dev/null 2>&1)
+
+=== SSHBITE-Minimale-Rechte.md Zeile 295: `docs/install.md:128-129`  ->  docs/install.md
+   128 |    SSHBITE refuses a key file that is not mode 0600. With a passphrase, set
+   129 |    `audit.key_passphrase_env` to the name of an environment variable that holds it.
+
+=== SSHBITE-Minimale-Rechte.md Zeile 301: `docs/configuration.md:82`  ->  docs/configuration.md
+    82 | | `database` | `/var/lib/sshbite/sshbite.db` | The SQLite database. Created on first use with mode 0600 (directory 0700). Scanner and UI share it. |
+
+=== SSHBITE-Minimale-Rechte.md Zeile 312: `privilege.py:118-173`  ->  sshbite/privilege.py
+   118 | def commands(mode: str) -> dict[str, str]:
+   119 |     i = " -i" if mode == "sudo-login" else ""
+   120 |     return {
+   121 |         "probe": sudo_cmd(f"-n{i} /bin/true"),
+   122 |         "run": sudo_cmd(f"-n{i} /bin/sh -s"),
+   123 |         "pw_probe": sudo_cmd(f"-S -k -p ''{i} /bin/true"),
+   124 |         "pw_run": sudo_cmd(f"-S -k -p ''{i} /bin/sh -s"),
+   125 |         "plain": "/bin/sh -s",
+   126 |     }
+   127 | 
+   128 | 
+   129 | async def collect(conn, script: bytes, mode: str, secret: SudoSecret, max_bytes: int,
+   130 |                   password_allowed: bool = True) -> CollectOutcome:
+   131 |     """password_allowed=False: the host is outside privilege.password_scope - never send it the password."""
+   132 |     cmds = commands(mode)
+   133 |     reasons: list[str] = []
+   134 |     needs_password = False
+   135 |     if mode != "none":
+   136 |         probe = await run(conn, cmds["probe"], None, max_bytes=65536)
+   137 |         if probe.rc == 0:
+   138 |             res = await run(conn, cmds["run"], script, max_bytes=max_bytes)
+   139 |             return CollectOutcome("root", res)
+   140 |         err = probe.stderr
+   141 |         if PASSWORD_REQUIRED.search(err):
+   142 |             pw = secret.get()
+   143 |             withheld = bool(pw) and not password_allowed
+   144 |             if withheld:
+   145 |                 pw = None
+   146 |             # sudoers may want a password for /bin/true but not for /bin/sh (NOPASSWD: /bin/sh): then sudo
+   147 |             # would not read the password line and the shell would run it. Try the NOPASSWD path first,
+   148 |             # with empty stdin (the shell exits at once).
+   149 |             sh_nopw = await run(conn, cmds["run"], None, max_bytes=65536) if pw else None
+   150 |             if sh_nopw is not None and sh_nopw.rc == 0:
+   151 |                 res = await run(conn, cmds["run"], script, max_bytes=max_bytes)
+   152 |                 return CollectOutcome("root", res)
+   153 |             if pw:
+   154 |                 line = (pw + "\n").encode("utf-8")
+   155 |                 p2 = await run(conn, cmds["pw_probe"], line, max_bytes=65536)
+   156 |                 if p2.rc == 0:
+   157 |                     res = await run(conn, cmds["pw_run"], line + script, max_bytes=max_bytes)
+   158 |                     res.stderr = secret.redact(res.stderr)
+   159 |                     return CollectOutcome("sudo_password", res)
+   160 |                 reasons.append(_first_line(err, secret) or "sudo: a password is required")
+   161 |                 reasons.append("sudo password not accepted: " + (_first_line(p2.stderr, secret) or f"exit {p2.rc}"))
+   162 |             elif withheld:
+   163 |                 reasons.append(_first_line(err, secret) or "sudo: a password is required")
+   164 |                 reasons.append(OUTSIDE_SCOPE)
+   165 |             else:
+   166 |                 needs_password = True
+   167 |                 reasons.append(_first_line(err, secret) or "sudo: a password is required")
+   168 |         else:
+   169 |             reasons.append(_first_line(err, secret) or f"sudo probe failed (exit {probe.rc})")
+   170 |     else:
+   171 |         reasons.append("privilege mode is 'none'")
+   172 |     res = await run(conn, cmds["plain"], script, max_bytes=max_bytes)
+   173 |     return CollectOutcome("unprivileged", res, reasons, needs_password)
+
+=== SSHBITE-Minimale-Rechte.md Zeile 312: `config.py:132-140`  ->  sshbite/config.py
+   132 | class PrivilegeCfg(_Strict):
+   133 |     mode: Literal["sudo", "sudo-login", "none"] = "sudo"
+   134 |     # hosts (CIDRs / name globs) that may receive the sudo password; empty = every host
+   135 |     password_scope: list[ScopeItem] = Field(default_factory=list)
+   136 | 
+   137 |     @field_validator("password_scope", mode="before")
+   138 |     @classmethod
+   139 |     def _none_list(cls, v: Any) -> Any:
+   140 |         return [] if v is None else v
+
+=== SSHBITE-Minimale-Rechte.md Zeile 312: `cli.py:141-147`  ->  sshbite/cli.py
+   141 |         mode = cfg.privilege.mode
+   142 |         if mode == "none":
+   143 |             sudo = "not used (privilege.mode none)"
+   144 |         else:
+   145 |             r = await run(conn, commands(mode)["probe"], None, max_bytes=65536)
+   146 |             if r.rc == 0:
+   147 |                 sudo = "root"
+
+=== SSHBITE-Minimale-Rechte.md Zeile 313: `docs/install.md:156-194`  ->  docs/install.md
+   156 | ## Sudoers
+   157 | 
+   158 | Without root, the collector cannot read other users' `~/.ssh` and `/etc/shadow`; the host is then
+   159 | `partial`. The commands SSHBITE runs with sudo are fixed (see `sshbite collector show`). sudo is always
+   160 | called by its absolute path – `/usr/bin/sudo`, or `/bin/sudo` only where `/usr/bin/sudo` does not exist
+   161 | (decided by a fixed `test -x` on the host, never by the audit account's `PATH`); the table shortens that
+   162 | to `sudo`:
+   163 | 
+   164 | | `privilege.mode` | Probe | Collector |
+   165 | |---|---|---|
+   166 | | `sudo` (default) | `sudo -n /bin/true` | `sudo -n /bin/sh -s` |
+   167 | | `sudo-login` | `sudo -n -i /bin/true` | `sudo -n -i /bin/sh -s` |
+   168 | | (with a sudo password) | `sudo -S -k -p '' /bin/true` | `sudo -S -k -p '' /bin/sh -s` |
+   169 | | `none` | – | `/bin/sh -s` (unprivileged) |
+   170 | 
+   171 | Put this in `/etc/sudoers.d/sshbite` (mode 0440, check with `visudo -cf /etc/sudoers.d/sshbite`):
+   172 | 
+   173 | ```
+   174 | # SSHBITE audit account: root for the read-only collector, no password, no lecture
+   175 | Defaults:sshbite !lecture
+   176 | sshbite ALL=(root) NOPASSWD: /bin/true, /bin/sh -s
+   177 | ```
+   178 | 
+   179 | This line is for `privilege.mode: sudo`. With `sudo-login`, sudo runs root's login shell with the command
+   180 | as `-c` argument, which a command list cannot express cleanly – use `NOPASSWD: ALL` there.
+   181 | 
+   182 | Be clear about what this grants: `/bin/sh -s` runs whatever arrives on stdin as root, so the line is
+   183 | **equivalent to full root** for whoever holds the audit key. Restricting it to these two commands only
+   184 | documents the intent and keeps other commands out of the sudo log. Protect the audit key accordingly
+   185 | (mode 0600, a dedicated machine, `from=` restriction). What SSHBITE sends is fixed and reviewable:
+   186 | [review.md](review.md).
+   187 | 
+   188 | If your policy demands a sudo password, drop `NOPASSWD:` and scan with `--ask-sudo-password`
+   189 | ([scanning.md](scanning.md#sudo-passwords)). Be aware that with Debian's default sudoers every scan then
+   190 | makes sudo send a *"SECURITY information"* mail per host, because the first, non-interactive probe is
+   191 | refused ([side-effects.md](side-effects.md#sudo-the-incident-mail-on-refused-sudo)). Where `sshbite` has
+   192 | no sudo rule at all, the host is scanned unprivileged and marked `partial`. Give the audit account a
+   193 | password of its own that is used nowhere else and rotate it after the scan: a compromised host can imitate
+   194 | a sudo prompt and capture it ([operations.md](operations.md#the-sudo-password)).
+
+=== SSHBITE-Minimale-Rechte.md Zeile 314: `collect.sh:34-73, 210-269`  ->  sshbite/collector/collect.sh
+    34 | content() {
+    35 |   if [ "$FSIZE" -gt 1048576 ] 2>/dev/null; then
+    36 |     printf '#X %s\ttoo large\n' "$1"
+    37 |     return
+    38 |   fi
+    39 |   if [ ! -r "$1" ]; then
+    40 |     printf '#X %s\tunreadable\n' "$1"
+    41 |     return
+    42 |   fi
+    43 |   head -n 5000 -- "$1" 2>/dev/null | sed 's/^/|/'
+    44 |   printf '\n'
+    45 | }
+    46 | 
+    47 | # kg PATH MODE RC OUTPUT - ssh-keygen result records (at most 2 lines)
+    48 | kg() {
+    49 |   printf '%s\n' "$4" | head -n 2 | while IFS= read -r l; do
+    50 |     printf '#K %s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$l"
+    51 |   done
+    52 | }
+    53 | 
+    54 | # privkey PATH - header line and public half of a private key, never its content
+    55 | privkey() {
+    56 |   if [ "$FSIZE" -gt 65536 ] 2>/dev/null; then
+    57 |     return
+    58 |   fi
+    59 |   if [ ! -r "$1" ]; then
+    60 |     printf '#X %s\tunreadable\n' "$1"
+    61 |     return
+    62 |   fi
+    63 |   h=$(head -n 1 -- "$1" 2>/dev/null | head -c 200)
+    64 |   case "$h" in
+    65 |     *'PRIVATE KEY-----'* | *PuTTY-User-Key-File*) ;;
+    66 |     *) return ;;
+    67 |   esac
+    68 |   printf '#H %s\t%s\n' "$1" "$h"
+    69 |   o=$(ssh-keygen -y -P '' -f "$1" </dev/null 2>&1)
+    70 |   kg "$1" y "$?" "$o"
+    71 |   o=$(ssh-keygen -l -f "$1" </dev/null 2>&1)
+    72 |   kg "$1" l "$?" "$o"
+    73 | }
+   210 |     d="$home/.ssh"
+   211 |     if [ -L "$d" ]; then
+   212 |       # a user controls ~/.ssh: never follow a link (it could point at /root/.ssh or /etc)
+   213 |       fhdr "$d" "$u"
+   214 |       printf '#X %s\tsymlink not followed\n' "$d"
+   215 |     elif [ -d "$d" ]; then
+   216 |       fhdr "$d" "$u"
+   217 |       if [ -r "$d" ] && [ -x "$d" ]; then
+   218 |         ls -A -- "$d" 2>/dev/null | head -n 101 | {
+   219 |           n=0
+   220 |           while IFS= read -r e; do
+   221 |             [ -n "$e" ] || continue
+   222 |             n=$((n + 1))
+   223 |             if [ "$n" -gt 100 ]; then
+   224 |               printf '#X %s\tmore than 100 entries\n' "$d"
+   225 |               break
+   226 |             fi
+   227 |             p="$d/$e"
+   228 |             case "$e" in
+   229 |               *"$T"*)
+   230 |                 printf '#X %s\tname with tab or newline skipped\n' "$d"
+   231 |                 continue
+   232 |                 ;;
+   233 |             esac
+   234 |             if [ ! -e "$p" ] && [ ! -L "$p" ]; then
+   235 |               printf '#X %s\tname with tab or newline skipped\n' "$d"
+   236 |               continue
+   237 |             fi
+   238 |             case "$NL$akfs" in
+   239 |               *"$NL$p$NL"*) continue ;;
+   240 |             esac
+   241 |             fhdr "$p" "$u"
+   242 |             if [ -L "$p" ]; then
+   243 |               printf '#X %s\tsymlink not followed\n' "$p"
+   244 |               continue
+   245 |             fi
+   246 |             [ -f "$p" ] || continue
+   247 |             case "$e" in
+   248 |               known_hosts* | config | *.pub) content "$p" ;;
+   249 |               *) privkey "$p" ;;
+   250 |             esac
+   251 |           done
+   252 |         }
+   253 |       else
+   254 |         printf '#X %s\tunreadable\n' "$d"
+   255 |       fi
+   256 |     fi
+   257 |     printf '%s' "$akfs" | while IFS= read -r p; do
+   258 |       [ -n "$p" ] || continue
+   259 |       val akf "$p"
+   260 |       if [ -L "$p" ] || [ -L "${p%/*}" ]; then
+   261 |         fhdr "$p" "$u"
+   262 |         printf '#X %s\tsymlink not followed\n' "$p"
+   263 |       elif [ -f "$p" ]; then
+   264 |         fhdr "$p" "$u"
+   265 |         content "$p"
+   266 |       elif [ -e "$p" ]; then
+   267 |         fhdr "$p" "$u"
+   268 |       fi
+   269 |     done
+
+64 Angaben geprüft.
