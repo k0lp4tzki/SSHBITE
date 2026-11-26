@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { navigate, route } from './lib/router.svelte';
-  import { diffPair, lastScan, latestCompleted, loadScans, loadSession, scans, session, startLivePolling } from './lib/state.svelte';
+  import { diffPair, lastScan, latestCompleted, rememberScan, loadScans, loadSession, scans, session, startLivePolling } from './lib/state.svelte';
   import Shell from './components/Shell.svelte';
   import NoScan from './components/NoScan.svelte';
   import Login from './screens/Login.svelte';
@@ -62,7 +62,7 @@
 
   const scanId = $derived((parsed as any).scan ?? null);
   const scan = $derived(scanId !== null ? scans.items.find((s) => s.id === scanId) ?? null : null);
-  $effect(() => { if (scan) lastScan.id = scan.id; });
+  $effect(() => { if (scan) rememberScan(scan.id); });
   // /scans and /diff have no scan in the URL: the top bar keeps the scan last opened (else the latest completed)
   const topScanId = $derived(scanId ?? (parsed.screen === 'scans' || parsed.screen === 'diff'
     ? (scans.items.some((s) => s.id === lastScan.id) ? lastScan.id : latestCompleted()?.id ?? null) : null));

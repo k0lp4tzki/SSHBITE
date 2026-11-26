@@ -12,6 +12,8 @@ echo "== id"
 id
 echo "== sshbite --version"
 sshbite --version
+echo "== installed Python packages (runtime image: requirements-runtime.lock, no test tools)"
+python -m pip list --disable-pip-version-check 2>/dev/null || true
 
 pw=${SSHBITE_DEMO_PASSWORD:-}
 if [ "$pw" = "sshbite-lab-demo" ]; then
