@@ -12,3 +12,5 @@ lab/.run/
 *.db-shm
 node_modules/
 lab/sshbite.lab.yaml
+lab/local/roots/
+lab/local/run/

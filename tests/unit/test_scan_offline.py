@@ -261,3 +261,25 @@ def test_audit_key_must_be_0600(tmp_path, audit):
     assert r.exit_code == 2 and str(kp) in r.output and "0600" in r.output
     r = CliRunner().invoke(main, ["-c", str(p), "config", "validate"])
     assert r.exit_code == 2 and str(kp) in r.output
+
+
+def test_seeds_hosts_file_and_cidr_probe(tmp_path, audit):
+    key, kp = audit
+    with ServerThread("nopasswd", key.public_data) as srv:
+        cfgp = _config(tmp_path, srv, kp)
+        cfg = yaml.safe_load(open(cfgp))
+        hf = tmp_path / "hosts"
+        hf.write_text("# extra seeds\n192.0.2.10\n")
+        cfg["seeds"] = {"hosts_file": str(hf), "cidrs": ["198.51.100.7/32"]}
+        open(cfgp, "w").write(yaml.safe_dump(cfg))
+        r = CliRunner().invoke(main, ["-c", cfgp, "scan", "--no-crawl"])
+        assert r.exit_code == 0, r.output
+        d = CliRunner().invoke(main, ["-c", cfgp, "scan", "--dry-run"])
+        assert "192.0.2.10:22  (hosts_file)" in d.output and "198.51.100.7:22  (cidr, probe)" in d.output
+    c = sqlite3.connect(tmp_path / "data" / "sshbite.db")
+    rows = {r[0]: r[1:] for r in c.execute(
+        "SELECT hs.connect_addr, hs.status, hs.seed_source, hs.depth FROM host_scan hs")}
+    # the seed is depth 0; the fake entry refuses direct-tcpip, so it is unreachable via [entry, seed]
+    assert rows["192.0.2.10"] == ("unreachable", "seed:hosts_file", 0)
+    # the CIDR address did not answer the TCP probe through the entry: no_ssh, never connected to
+    assert rows["198.51.100.7"] == ("no_ssh", "seed:cidr", 0)
