@@ -144,6 +144,8 @@ def _persist(s: "Scanner", db: sqlite3.Connection, sid: int) -> None:
             hid = upsert_host(db, ident, t.display, sid)
         used_ids.add(hid)
         t.host_id = hid
+        if not t.has_data:
+            t.known_name = db.execute("SELECT display_name FROM host WHERE id=?", (hid,)).fetchone()[0]
 
     # references
     for r in s.refs:

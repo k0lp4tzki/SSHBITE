@@ -76,8 +76,12 @@ class Target:
     host_id: int | None = None
     order: int = 0
 
+    known_name: str | None = None   # name of the host row when an uncollected target is a known host
+
     @property
     def display(self) -> str:
+        if self.known_name:
+            return self.known_name
         if self.data is not None and self.data.hostname:
             return self.data.hostname
         if self.role == "entry":

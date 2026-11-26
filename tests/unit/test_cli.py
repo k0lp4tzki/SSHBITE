@@ -134,3 +134,24 @@ def test_synth_small(cfgfile, tmp_path):
 def test_dry_run_does_not_connect(cfgfile):
     r = run("-c", cfgfile, "scan", "--dry-run")
     assert r.exit_code == 0 and "entry:     jump:22" in r.output and "no connection made" in r.output
+
+
+def test_synth_2000_matches_spec_and_derives_fast(tmp_path):
+    """Spec 9.4: 40 /24 subnets, 15,000 authorized entries, fleet key on 1,200 hosts, 300 unknown-origin keys,
+    hubs with more than 200 outbound edges; derivation < 60 s."""
+    from sshbite.synth import synth
+
+    conn = dbm.connect(str(tmp_path / "s.db"))
+    res = synth(conn, 2000, 42)
+    assert res["derive_s"] < 60
+    q = lambda s: conn.execute(s).fetchone()[0]  # noqa: E731
+    assert q("SELECT count(DISTINCT name) FROM host_group WHERE kind='subnet'") == 40
+    assert q("SELECT count(*) FROM authorized_entry") == 15000
+    assert q("SELECT count(DISTINCT host_id) FROM authorized_entry WHERE comment='fleet-deploy'") == 1200
+    assert q("SELECT count(DISTINCT fp) FROM edge WHERE status='unknown_origin'") == 300
+    assert q("SELECT count(*) FROM host_metric WHERE out_hosts > 200") >= 1
+    assert q("SELECT synthetic FROM scan") == 1
+    # deterministic for a seed
+    again = synth(conn, 2000, 42)
+    assert q(f"SELECT count(*) FROM edge WHERE scan_id={again['scan_id']}") == res["access_edges"] + \
+        q(f"SELECT count(*) FROM edge WHERE scan_id={res['scan_id']} AND kind='evidence'")
