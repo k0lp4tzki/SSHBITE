@@ -685,3 +685,199 @@ def test_f6_crawl_tree_reaches_every_one_of_2000_hosts(syn):
         y += 700
     names = {h["display_name"] for h in total["hosts"]}
     assert names <= seen, len(names - seen)
+
+
+# ---------------------------------------------------------------- design-revision v2, checklist §7
+
+REV_SCREENS = ["/s/1/", "/s/1/heatmap", "/s/1/graph?host=2", "/s/1/crawl", "/s/1/hosts", "/s/1/hosts/2",
+               "/s/1/hosts/2?tab=users", "/s/1/hosts/11", "/s/1/keys", "/s/1/findings", "/scans",
+               "/diff?a=1&b=2", "/diff?a=1&b=2&tab=hosts"]
+
+# every computed colour of every element (and of the SVG marks), as [r, g, b, a]
+_COLOURS_JS = """() => {
+  const props = ['color', 'background-color', 'border-top-color', 'border-right-color', 'border-bottom-color',
+                 'border-left-color', 'outline-color', 'fill', 'stroke', 'text-decoration-color'];
+  const out = new Map();
+  const ctx = document.createElement('canvas').getContext('2d');
+  for (const el of [document.documentElement, ...document.querySelectorAll('body *')]) {
+    const cs = getComputedStyle(el);
+    for (const p of props) {
+      const v = cs.getPropertyValue(p);
+      if (!v || v === 'none' || v.startsWith('url(')) continue;
+      ctx.fillStyle = '#000'; ctx.fillStyle = v;          // normalises any CSS colour to #rrggbb / rgba()
+      const n = ctx.fillStyle;
+      if (!out.has(n)) out.set(n, `${el.tagName.toLowerCase()}.${String(el.className.baseVal ?? el.className).split(' ')[0]} ${p}`);
+    }
+  }
+  return [...out.entries()];
+}"""
+
+
+def _rgba(s: str):
+    if s.startswith("#"):
+        return tuple(int(s[i:i + 2], 16) for i in (1, 3, 5)) + (1.0,)
+    m = re.match(r"rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)", s)
+    if m:
+        return (float(m[1]), float(m[2]), float(m[3]), float(m[4] or 1))
+    m = re.match(r"color\(srgb ([\d.e-]+) ([\d.e-]+) ([\d.e-]+)(?: / ([\d.e-]+))?\)", s)   # from color-mix()
+    assert m, s
+    return (float(m[1]) * 255, float(m[2]) * 255, float(m[3]) * 255, float(m[4] or 1))
+
+
+def _is_green(r, g, b) -> bool:
+    import colorsys
+    h, l, s = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
+    return 0.05 < l < 0.97 and s > 0.15 and 75 <= h * 360 <= 170
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_r1_no_indigo_paper_or_green_in_computed_styles(browser, servers, scheme):
+    """§7.1: the computed styles of the main screens carry no #4338b8, no #f6f5f1 and no green."""
+    s = Session(browser, servers["lab"].base, scheme=scheme, width=1280, height=800)
+    bad = []
+    for path in REV_SCREENS:
+        s.go(path)
+        s.page.wait_for_timeout(200)
+        for colour, where in s.page.evaluate(_COLOURS_JS):
+            r, g, b, a = _rgba(colour)
+            if a == 0:
+                continue
+            hx = "#%02x%02x%02x" % (round(r), round(g), round(b))
+            if hx in ("#4338b8", "#f6f5f1") or _is_green(r, g, b):
+                bad.append((path, colour, where))
+    # the login screen too
+    s.page.context.clear_cookies()
+    s.go("/login")
+    for colour, where in s.page.evaluate(_COLOURS_JS):
+        r, g, b, a = _rgba(colour)
+        if a and (_is_green(r, g, b) or "#%02x%02x%02x" % (round(r), round(g), round(b)) in ("#4338b8", "#f6f5f1")):
+            bad.append(("/login", colour, where))
+    assert not bad, bad[:20]
+    s.close()
+
+
+_SIZES_JS = """() => {
+  const out = [];
+  for (const el of document.querySelectorAll('body *')) {
+    const own = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim());
+    if (!own && !['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) continue;
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+    out.push([parseFloat(cs.fontSize), cs.fontFamily, cs.textTransform, el.tagName.toLowerCase() + '.' +
+      String(el.className.baseVal ?? el.className).split(' ')[0], el.textContent.trim().slice(0, 30)]);
+  }
+  return out;
+}"""
+
+
+def test_r3_only_the_type_scale_sizes(browser, servers):
+    """§7.3: only 11 (axes and legend values, Condensed), 12, 13, 14, 16 and 20 px; no uppercase transform."""
+    s = Session(browser, servers["lab"].base, scheme="light", width=1280, height=800)
+    bad = []
+    for path in REV_SCREENS + ["/s/1/keys/" + u(key_fp("k_dsa"))]:
+        s.go(path)
+        s.page.wait_for_timeout(200)
+        for size, family, transform, tag, text in s.page.evaluate(_SIZES_JS):
+            if size not in (11, 12, 13, 14, 16, 20) or (size == 11 and "Condensed" not in family):
+                bad.append((path, size, tag, text))
+            if transform == "uppercase":
+                bad.append((path, "uppercase", tag, text))
+    # tooltip, drawer and search popover are on screen only after an action
+    s.go("/s/1/heatmap")
+    click_cell(s.page, "jump", "a2")
+    s.page.get_by_role("dialog", name="jump → a2").get_by_text("1 access edge").wait_for()
+    bad += [("drawer", sz, tag, t) for sz, _f, _t, tag, t in s.page.evaluate(_SIZES_JS) if sz not in (11, 12, 13, 14, 16, 20)]
+    s.page.keyboard.press("Escape")
+    s.page.get_by_placeholder("Search hosts, keys, users").fill("a1")
+    s.page.get_by_role("listbox", name="Search results").get_by_role("option").first.wait_for()
+    bad += [("search", sz, tag, t) for sz, _f, _t, tag, t in s.page.evaluate(_SIZES_JS) if sz not in (11, 12, 13, 14, 16, 20)]
+    s.page.context.clear_cookies()
+    s.go("/login")
+    bad += [("/login", sz, tag, t) for sz, _f, _t, tag, t in s.page.evaluate(_SIZES_JS) if sz not in (11, 12, 13, 14, 16, 20)]
+    assert not bad, bad[:20]
+    s.close()
+
+
+_TEXT_JS = """() => ({
+  dots: [...document.querySelectorAll('body *')].filter(e => [...e.childNodes].some(n => n.nodeType === 3 && n.textContent.includes(' · ')))
+          .map(e => e.textContent.trim().slice(0, 60)),
+  arrows: [...document.querySelectorAll('a, button, [role=button], [role=tab], [role=menuitem]')]
+          .map(e => (e.innerText ?? e.textContent ?? '').trim()).filter(t => /[→›»▸▾▼]$/.test(t)),
+  body: document.body.innerText,
+})"""
+
+
+def test_r4_no_middle_dot_chains_and_no_trailing_arrows(browser, servers):
+    """§7.4: no " · " and no arrow at the end of a link or button; the arrow stays inside routes ("jump → a2")."""
+    s = Session(browser, servers["lab"].base, scheme="light", width=1280, height=800)
+    bad = []
+    for path in REV_SCREENS + ["/s/1/keys/" + u(key_fp("k_dsa")), "/s/2/hosts/" + str(_host_ids(s, 2)["c2"]),
+                               "/diff?a=1&b=2&tab=edges", "/diff?a=1&b=2&tab=findings"]:
+        s.go(path)
+        s.page.wait_for_timeout(200)
+        r = s.page.evaluate(_TEXT_JS)
+        bad += [(path, "dot", t) for t in r["dots"]] + [(path, "arrow", t) for t in r["arrows"]]
+        assert " · " not in r["body"], path
+    # the tooltip and the drawer
+    s.go("/s/1/heatmap")
+    p = s.page
+    p.locator("canvas.cells").focus()
+    rows, cols = heat(p)["rows"].split("|"), heat(p)["cols"].split("|")
+    for _ in range(rows.index("jump")):
+        p.keyboard.press("ArrowDown")
+    for _ in range(cols.index("a2")):
+        p.keyboard.press("ArrowRight")
+    tip = p.locator(".tooltip")
+    tip.get_by_text("Click to list the edges").wait_for()
+    assert [x.strip() for x in tip.inner_text().split("\n") if x.strip()][:2] == ["jump → a2", "1 host pair"]
+    assert " · " not in tip.inner_text()
+    p.keyboard.press("Enter")
+    d = p.get_by_role("dialog", name="jump → a2")
+    d.get_by_text("1 access edge").wait_for()
+    d.get_by_role("link", name="Open jump").wait_for()
+    d.get_by_role("link", name="Open a2").wait_for()
+    r = p.evaluate(_TEXT_JS)
+    bad += [("drawer", "dot", t) for t in r["dots"]] + [("drawer", "arrow", t) for t in r["arrows"]]
+    assert not bad, bad[:20]
+    s.close()
+
+
+def test_r8_sidebar_reaches_the_bottom_on_the_crawl_tree(browser, servers):
+    """§7.8: at 1280 x 800 the sidebar background reaches the bottom of /s/1/crawl, scrolled down too."""
+    s = Session(browser, servers["lab"].base, scheme="light", width=1280, height=800)
+    p = s.page
+    s.go("/s/1/crawl", wait="tr[data-tree]")
+    page_h = p.evaluate("document.documentElement.scrollHeight")
+    assert page_h > 800                                            # a long page
+    assert p.evaluate("document.documentElement.scrollWidth") <= 1280
+    col = p.evaluate("(() => { const r = document.querySelector('.side-col').getBoundingClientRect(); return [r.top + scrollY, r.bottom + scrollY, getComputedStyle(document.querySelector('.side-col')).backgroundColor]; })()")
+    assert col[0] == 0 and abs(col[1] - page_h) <= 1, (col, page_h)
+    page_bg = p.evaluate("getComputedStyle(document.body).backgroundColor")
+    assert col[2] == page_bg
+    p.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
+    p.wait_for_timeout(100)
+    hit = p.evaluate("document.elementFromPoint(100, 795).closest('.side-col') !== null")
+    assert hit
+    # the nav stays in view (sticky) and Crawl tree is the active item
+    assert p.get_by_role("navigation", name="Main").get_by_role("link", name="Crawl tree").get_attribute("aria-current") == "page"
+    s.shot("r8-crawl-scrolled-1280x800", full=False)
+    s.close()
+
+
+def test_r_crawl_filter_finds_a_collapsed_host_at_2000(syn):
+    """check-9 N3: the crawl tree filter finds a late host by name, also when its branch is collapsed."""
+    p = syn.page
+    syn.go("/s/1/crawl", wait="tr[data-tree]")
+    target = "syn-1987"
+    assert p.locator("td.hcell .hn", has_text=target).count() == 0           # collapsed at first
+    p.get_by_label("Filter by host name or IP").fill(target)
+    p.locator("tr.hit td.hcell .hn", has_text=target).first.wait_for()
+    hits = p.locator("tr.hit td.hcell .hn").all_inner_texts()
+    assert hits and all(target in h for h in hits), hits
+    # by IP as well
+    ip = next(h for h in p.request.get(f"{syn.base}/api/scans/1/hosts?page_size=1000&q={target}").json()["items"]
+              if h["display_name"].startswith(target))["ips"][0]
+    p.get_by_label("Filter by host name or IP").fill(ip)
+    p.locator("tr.hit td.hcell .hn", has_text=target).first.wait_for()
