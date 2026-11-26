@@ -2,7 +2,7 @@
   // Diff (design §4.12): pick A and B; tabs per category with added / removed / changed.
   import { api } from '../lib/api';
   import { route, setQuery } from '../lib/router.svelte';
-  import { Resource, scans } from '../lib/state.svelte';
+  import { diffPair, Resource, scans } from '../lib/state.svelte';
   import { fileLine, fmtTime, ruleTitle, STATUS_LABEL, EDGE_STATUS } from '../lib/format';
   import PageHead from '../components/PageHead.svelte';
   import Glyph from '../components/Glyph.svelte';
@@ -13,11 +13,9 @@
   import ErrorPanel from '../components/ErrorPanel.svelte';
   import Skeleton from '../components/Skeleton.svelte';
 
-  const completed = $derived(scans.items.filter((s) => s.status === 'completed'));
-  const defA = $derived(completed[1]?.id ?? completed[0]?.id ?? 0);
-  const defB = $derived(completed[0]?.id ?? 0);
-  const a = $derived(+(route.query.get('a') ?? defA));
-  const b = $derived(+(route.query.get('b') ?? defB));
+  const pair = $derived(diffPair(route.query));
+  const a = $derived(pair[0]);
+  const b = $derived(pair[1]);
   const tab = $derived(route.query.get('tab') ?? 'hosts');
   const res = new Resource<any>();
   const load = () => res.load(() => api(`/diff?a=${a}&b=${b}`));
@@ -38,6 +36,10 @@
   const identical = $derived(res.data && CATS.every(([k]) => { const c = counts(res.data[k]); return c.a + c.r + c.c === 0; }));
   const T: Record<string, [string, string, string]> = { added: ['+ Added', 'sev-good', 'added'], removed: ['− Removed', 'sev-low', 'removed'], changed: ['~ Changed', 'sev-medium', 'changed'] };
   const label = (s: any) => `Scan #${s.id} · ${s.label || 'unlabelled'} · ${fmtTime(s.started_at)}`;
+  const empty = (v: any) => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
+  // "route removed (was jump → b3 → c1 → c2)" instead of a chain ending in "→ –" (a value that went away)
+  const change = (f: string, v: any): [string, string] =>
+    !empty(v.a) && empty(v.b) ? [`${f} removed`, `(was ${fmtVal(f, v.a)})`] : [`${f}:`, `${fmtVal(f, v.a)} → ${fmtVal(f, v.b)}`];
   const fmtVal = (f: string, v: any) => (f === 'route' ? (v ?? []).join(' → ') || '–' : f === 'status' ? STATUS_LABEL[v] ?? EDGE_STATUS[v] ?? v ?? '–' : v === null || v === undefined ? '–' : String(v));
 </script>
 
@@ -87,7 +89,7 @@
             <td class="ct"><span class="chg {T[t][1]}"><Glyph kind={T[t][2]} />{T[t][0].slice(2)}</span></td>
             {#if tab === 'hosts'}
               <td class="mono">{x.host}</td>
-              <td>{#if t === 'changed'}{#each Object.entries(x.changes) as [f, v]}<div class="dense"><span class="secondary">{f}:</span> <span class="mono">{fmtVal(f, (v as any).a)} → {fmtVal(f, (v as any).b)}</span></div>{/each}{:else}{STATUS_LABEL[x.status] ?? x.status}{#if x.privilege}{' · '}{x.privilege}{/if}{/if}</td>
+              <td>{#if t === 'changed'}{#each Object.entries(x.changes) as [f, v]}{@const c = change(f, v)}<div class="dense"><span class="secondary">{c[0]}</span> <span class="mono">{c[1]}</span></div>{/each}{:else}{STATUS_LABEL[x.status] ?? x.status}{#if x.privilege}{' · '}{x.privilege}{/if}{/if}</td>
             {:else if tab === 'keys'}
               <td><Fp fp={x.fp} /></td>
               <td><span class="row nowrap"><KeyType alg={x.alg} bits={x.bits} /><StrengthChip strength={x.strength} /><span class="mono">{x.label || x.comment || ''}</span></span></td>
@@ -97,7 +99,7 @@
             {:else if tab === 'edges'}
               <td class="mono">{x.src === 'unknown' ? 'unknown' : `${x.src}:${x.src_user ?? ''}`} → {x.dst}{x.dst_user ? ':' + x.dst_user : ''}</td>
               <td><span class="row nowrap">{#if x.fp}<Fp fp={x.fp} />{/if}<span class="kchip">{x.kind}</span>
-                {#if t === 'changed'}{#each Object.entries(x.changes) as [f, v]}<span class="mono dense">{f}: {fmtVal(f, (v as any).a)} → {fmtVal(f, (v as any).b)}</span>{/each}{:else}<span class="secondary">{EDGE_STATUS[x.status] ?? x.status}</span>{/if}</span></td>
+                {#if t === 'changed'}{#each Object.entries(x.changes) as [f, v]}{@const c = change(f, v)}<span class="mono dense">{c[0]} {c[1]}</span>{/each}{:else}<span class="secondary">{EDGE_STATUS[x.status] ?? x.status}</span>{/if}</span></td>
             {:else}
               <td><span class="row nowrap"><SevBadge severity={x.severity} />{ruleTitle(x.rule)}</span></td>
               <td class="mono dense">{[x.host, x.user].filter(Boolean).join(' · ') || 'all hosts'} {fileLine(x.file, x.line)}{#if t === 'changed'}{' · '}severity {x.changes.severity?.a} → {x.changes.severity?.b}{/if}</td>

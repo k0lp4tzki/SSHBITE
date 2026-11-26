@@ -837,6 +837,17 @@ def get_diff(a: int, b: int, download: bool = False, s=Depends(session), conn: s
     return d
 
 
+_FNAME_UNSAFE = __import__("re").compile(r"[^A-Za-z0-9_.+-]+")
+
+
+def export_filename(sid: int, what: str, fmt: str, parts: list[str | None]) -> str:
+    """sshbite-scan1-findings.csv, or with the filters in the name: sshbite-scan1-findings-key_unknown_origin-high.csv
+    (only safe characters, at most 150 characters before the extension)."""
+    clean = [_FNAME_UNSAFE.sub("_", p).strip("_.") for p in parts if p]
+    base = "-".join([f"sshbite-scan{sid}-{what}", *[c for c in clean if c]])
+    return f"{base[:150]}.{fmt}"
+
+
 @router.get("/scans/{sid}/export/{name}")
 def export(sid: int, name: str, request: Request, severity_min: str | None = None, severity: str | None = None,
            rule: str | None = None,
@@ -869,7 +880,17 @@ def export(sid: int, name: str, request: Request, severity_min: str | None = Non
         order = {f["id"]: i for i, f in enumerate(_sort_findings(_finding_items(conn, sid)))}
         rows.sort(key=lambda r: order.get(r["finding_id"], 0))
     cols = COLUMNS[what]
-    fname = f"sshbite-scan{sid}-{what}.{fmt}"
+    host_name = None
+    if host_id is not None:
+        r = conn.execute("SELECT display_name FROM host WHERE id=?", (host_id,)).fetchone()
+        host_name = r[0] if r else str(host_id)
+    fname = export_filename(sid, what, fmt, [
+        "+".join(_csv_list(rule)), severity_min, ("only-" + "+".join(_csv_list(severity))) if severity else None,
+        host_name, ("key-" + fp_from_url(fp).removeprefix("SHA256:")[:8]) if fp else None,
+        ("q-" + q) if q and what in ("findings", "keys", "hosts") else None,
+        kind if kind in ("access", "evidence") else None, status, privilege,
+        (f"{group_kind}-{group}" if group_kind and group else None), strength,
+        origin if origin in ("known", "unknown") else None])
     if fmt == "csv":
         return Response(to_csv(cols, rows), media_type="text/csv; charset=utf-8",
                         headers={"Content-Disposition": f'attachment; filename="{fname}"'})

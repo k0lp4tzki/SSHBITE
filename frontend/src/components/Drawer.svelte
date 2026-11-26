@@ -34,5 +34,6 @@
     box-shadow: var(--e2); border-left: 1px solid var(--raised-border); z-index: 71; display: flex; flex-direction: column; }
   header { display: flex; align-items: center; justify-content: space-between; padding: var(--s4) var(--s5);
     border-bottom: 1px solid var(--border-subtle); }
-  .content { overflow: auto; padding: var(--s5); flex: 1; }
+  .content { overflow: auto; padding: var(--s5) var(--s3); flex: 1; }
+  .content :global(.table-wrap) { --sticky-bg: var(--bg-raised); }
 </style>

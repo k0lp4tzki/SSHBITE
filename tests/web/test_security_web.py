@@ -195,3 +195,18 @@ def test_small_chunked_body_still_works(lab_server):
            b"Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
            + f"{len(body):x}\r\n".encode() + body + b"\r\n0\r\n\r\n")
     assert _raw(lab_server.port, req).startswith(b"HTTP/1.1 204")
+
+
+# ---------------------------------------------------------------- F6a: export file name names the filter
+
+def test_export_filename_names_the_filter(lab):
+    r = lab.get("/api/scans/1/export/findings.csv")
+    assert 'filename="sshbite-scan1-findings.csv"' in r.headers["content-disposition"]
+    r = lab.get("/api/scans/1/export/findings.csv?rule=key_unknown_origin&severity_min=high")
+    assert r.status == 200
+    assert 'filename="sshbite-scan1-findings-key_unknown_origin-high.csv"' in r.headers["content-disposition"]
+    assert r.text.count("\r\n") == 4          # header + the 3 rows of spec 9.3 (a4, b1, c1)
+    r = lab.get("/api/scans/1/export/findings.json?q=../../etc/passwd%22;x")
+    name = r.headers["content-disposition"].split('filename="')[1].rstrip('"')
+    assert name.startswith("sshbite-scan1-findings-q-") and name.endswith(".json")
+    assert "/" not in name and '"' not in name and ";" not in name
