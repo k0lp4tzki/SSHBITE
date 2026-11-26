@@ -29,7 +29,7 @@ sshbite = "sshbite.cli:main"
 include = ["sshbite*"]
 
 [tool.setuptools.package-data]
-sshbite = ["collector/*.sh", "db/migrations/*.sql", "web/static/**/*"]
+sshbite = ["collector/*.sh", "collector/templates/*", "db/migrations/*.sql", "web/static/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

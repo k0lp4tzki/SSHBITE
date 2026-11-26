@@ -1,0 +1,9 @@
+# /etc/sudoers.d/sshbite - SSHBITE {version}, privilege.mode installed
+# install -m 0440 -o root -g root sudoers.d-sshbite /etc/sudoers.d/sshbite
+# check:  visudo -cf /etc/sudoers.d/sshbite  and  sudo -l -U sshbite
+# Exactly one command: the root-owned collector, no arguments ("").
+# Safe only if every directory up to it and the file are root-owned and not writable by others.
+Defaults:sshbite env_reset
+Defaults:sshbite secure_path="/usr/sbin:/usr/bin:/sbin:/bin"
+Defaults:sshbite !lecture, !log_output, !log_input, !requiretty
+sshbite ALL=(root) NOPASSWD: {collector_path} ""

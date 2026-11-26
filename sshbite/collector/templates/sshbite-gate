@@ -1,0 +1,34 @@
+#!/bin/sh
+# sshbite-gate - SSHBITE {version}, privilege.mode installed. Written by `sshbite collector export`.
+# Forced command of the audit key: authorized_keys command="{gate_path}".
+# sshd runs this instead of whatever the client asked for; the request is in SSH_ORIGINAL_COMMAND.
+# Exactly three requests are allowed, compared literally (no pattern, no eval, no sh -c):
+#   sudo -n -l {collector_path}   probe: may this account run the collector? (runs nothing)
+#   sudo -n {collector_path}      the installed read-only collector as root, stdin closed
+#   {resolve_path}   name resolution; the names on stdin are data
+# Everything else - a login shell, any other command, a script on stdin, sftp/scp, extra arguments -
+# is refused with exit 126 and logged to authpriv. This script never reads stdin.
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+LC_ALL=C
+export PATH LC_ALL
+umask 077
+SUDO=/usr/bin/sudo
+[ -x "$SUDO" ] || SUDO=/bin/sudo
+C=${SSH_ORIGINAL_COMMAND-}
+
+if [ "$C" = "sudo -n -l {collector_path}" ]; then
+  logger -p authpriv.info -t sshbite-gate -- "allowed: probe" 2>/dev/null || :
+  exec "$SUDO" -n -l {collector_path} </dev/null
+fi
+if [ "$C" = "sudo -n {collector_path}" ]; then
+  logger -p authpriv.info -t sshbite-gate -- "allowed: collect" 2>/dev/null || :
+  exec "$SUDO" -n {collector_path} </dev/null
+fi
+if [ "$C" = "{resolve_path}" ]; then
+  logger -p authpriv.info -t sshbite-gate -- "allowed: resolve" 2>/dev/null || :
+  exec {resolve_path}
+fi
+SHOWN=$(printf '%s' "$C" | tr -c '[:print:]' '?' | cut -c1-200)
+logger -p authpriv.warning -t sshbite-gate -- "denied: $SHOWN" 2>/dev/null || :
+echo 'sshbite-gate: denied (command not allowed)' >&2
+exit 126
