@@ -23,6 +23,7 @@
   import Field from '../components/Field.svelte';
   import ErrorPanel from '../components/ErrorPanel.svelte';
   import Skeleton from '../components/Skeleton.svelte';
+  import TabBar from '../components/TabBar.svelte';
 
   let { scan, hostId }: { scan: any; hostId: number } = $props();
   const sid = scan.id;
@@ -214,11 +215,11 @@
     </Strip>
   {/if}
 
-  <div class="tabs sticky" role="tablist">
+  <TabBar sticky selected={tab}>
     {#each tabs as t (t.key)}
       <button role="tab" aria-selected={tab === t.key} disabled={t.disabled} title={t.disabled ? 'No data: host was not scanned.' : ''} onclick={() => setTab(t.key)}><span>{t.label}{#if t.count}{' '}<span class="cnt">{t.count}</span>{/if}</span></button>
     {/each}
-  </div>
+  </TabBar>
 
   <section class="tabpanel" role="tabpanel">
     {#if tab === 'overview'}
@@ -274,16 +275,17 @@
           </div>
           {#if auth.length}
             <h3 class="sub-title sect">Authorized keys</h3>
-            <div class="table-wrap"><table class="t">
+            <div class="table-wrap"><table class="t ut">
+              {@render cols(COLS.auth)}
               <thead><tr><th>File:line</th><th>Strength</th><th>Type</th><th>Fingerprint</th><th>Comment</th><th>Options</th><th>Origin</th></tr></thead>
               <tbody>{#each auth as a (a.id)}<tr>
-                <td class="mono" title={fileLine(a.file, a.line)}>{midTrunc(fileLine(a.file, a.line), 36)}</td>
+                <td class="mono" title={fileLine(a.file, a.line)}>{midTrunc(fileLine(a.file, a.line), FL)}</td>
                 <td><StrengthChip strength={a.strength} /></td>
                 <td><KeyType alg={a.alg} bits={a.bits} /></td>
                 <td><Fp fp={a.fp} href={keyHref(sid, a.fp)} /></td>
-                <td>{a.comment ?? '–'}{#if a.label}<div class="meta secondary">“{a.label}”</div>{/if}</td>
-                <td><OptionChips options={a.options} /></td>
-                <td class="nowrap">{#if a.origin === 'ca'}<span class="kchip">CA trusted</span>
+                <td><div class="clamp2" title={a.comment ?? ''}>{a.comment ?? '–'}</div>{#if a.label}<div class="meta secondary clamp2" title={a.label}>“{a.label}”</div>{/if}</td>
+                <td class="optc"><OptionChips options={a.options} /></td>
+                <td>{#if a.origin === 'ca'}<span class="kchip">CA trusted</span>
                   {:else if a.origin === 'known'}<a class="plain" href={keyHref(sid, a.fp)}>Known private holder ({a.holders})</a>
                   {:else}<span class="state unknown">Unknown origin</span>{/if}</td>
               </tr>{/each}</tbody>
@@ -291,26 +293,29 @@
           {/if}
           {#if priv.length}
             <h3 class="sub-title sect">Private keys</h3>
-            <div class="table-wrap"><table class="t">
-              <thead><tr><th>Path</th><th>Type</th><th>Fingerprint</th><th>Encrypted</th><th>Mode</th><th>Owner</th></tr></thead>
+            <div class="table-wrap"><table class="t ut">
+              {@render cols(COLS.priv)}
+              <thead><tr><th>Path</th><th>Strength</th><th>Type</th><th>Fingerprint</th><th>Encrypted</th><th>Mode</th><th>Owner</th></tr></thead>
               <tbody>{#each priv as p (p.id)}<tr>
-                <td class="mono" title={p.path}>{midTrunc(p.path, 40)}</td>
-                <td><span class="kr"><KeyType alg={p.alg} bits={p.bits} /><StrengthChip strength={p.strength} /></span></td>
+                <td class="mono" title={p.path}>{midTrunc(p.path, FL)}</td>
+                <td><StrengthChip strength={p.strength} /></td>
+                <td><KeyType alg={p.alg} bits={p.bits} /></td>
                 <td><Fp fp={p.fp} href={keyHref(sid, p.fp)} /></td>
                 <td>{#if p.encrypted === 'no'}<Badge role="medium" label="no" />{:else}{p.encrypted}{/if}</td>
                 <td>{#if p.mode_bad}<Badge role="high" label={p.mode} />{:else}<span class="mono">{p.mode ?? '–'}</span>{/if}</td>
-                <td>{p.owner ?? '–'}</td>
+                <td class="wrap-any">{p.owner ?? '–'}</td>
               </tr>{/each}</tbody>
             </table></div>
           {/if}
           {#if kh.length}
             <h3 class="sub-title sect">known_hosts</h3>
             {#if unmatchedFor(u.username) > 0}<p class="dense secondary padx">{plural2(unmatchedFor(u.username))} could not be matched.</p>{/if}
-            <div class="table-wrap"><table class="t">
+            <div class="table-wrap"><table class="t ut">
+              {@render cols(COLS.kh)}
               <thead><tr><th>File:line</th><th>Pattern</th><th>Resolved host</th><th>Key</th><th>Match</th></tr></thead>
               <tbody>{#each kh as k (k.id)}<tr>
-                <td class="mono" title={fileLine(k.file, k.line)}>{midTrunc(fileLine(k.file, k.line), 36)}</td>
-                <td>{#if k.hashed}<span class="muted">hashed</span>{#if k.resolved_value}{' = ' + k.resolved_value}{/if}{:else}{k.patterns.join(',')}{/if}{#if k.marker} <span class="kchip">{k.marker}</span>{/if}</td>
+                <td class="mono" title={fileLine(k.file, k.line)}>{midTrunc(fileLine(k.file, k.line), FL)}</td>
+                <td class="wrap-any">{#if k.hashed}<span class="muted">hashed</span>{#if k.resolved_value}{' = ' + k.resolved_value}{/if}{:else}{k.patterns.join(',')}{/if}{#if k.marker} <span class="kchip">{k.marker}</span>{/if}</td>
                 <td>{#if k.target_host_id}<a class="plain" href={hostHref(sid, k.target_host_id)}>{k.target}</a>{:else}<span class="muted">–</span>{/if}</td>
                 <td><span class="kr"><KeyType alg={k.key_alg} /><Fp fp={k.key_fp} /></span></td>
                 <td>{#if k.matches_actual === 'yes'}<span class="state">matches</span>{:else if k.matches_actual === 'no'}<Badge role="low" label="stale" />{:else}<span class="state muted">unknown</span>{/if}</td>
@@ -319,12 +324,13 @@
           {/if}
           {#if cfg.length}
             <h3 class="sub-title sect">ssh config</h3>
-            <div class="table-wrap"><table class="t">
+            <div class="table-wrap"><table class="t ut">
+              {@render cols(COLS.cfg)}
               <thead><tr><th>File:line</th><th>Host</th><th>HostName</th><th>User</th><th>Port</th><th>IdentityFile</th><th>ProxyJump</th></tr></thead>
               <tbody>{#each cfg as c}<tr>
-                <td class="mono" title={fileLine(c.file, c.line)}>{midTrunc(fileLine(c.file, c.line), 36)}</td>
-                <td>{c.host_pattern ?? '–'}</td><td>{c.hostname ?? '–'}</td><td>{c.user ?? '–'}</td>
-                <td class="num">{c.port ?? '–'}</td><td class="mono">{c.identity_files.join(', ') || '–'}</td><td>{c.proxyjump ?? '–'}</td>
+                <td class="mono" title={fileLine(c.file, c.line)}>{midTrunc(fileLine(c.file, c.line), FL)}</td>
+                <td class="wrap-any">{c.host_pattern ?? '–'}</td><td class="wrap-any">{c.hostname ?? '–'}</td><td class="wrap-any">{c.user ?? '–'}</td>
+                <td class="num">{c.port ?? '–'}</td><td class="wrap-any" class:mono={c.identity_files.length > 0}>{c.identity_files.join(', ') || '–'}</td><td class="wrap-any">{c.proxyjump ?? '–'}</td>
               </tr>{/each}</tbody>
             </table></div>
           {/if}
@@ -357,7 +363,7 @@
               <tr>
                 <td class="ent"><a href={hostHref(sid, k.host_id)}>{k.host}</a></td>
                 <td>{k.username || '(system)'}</td>
-                <td class="mono" title={fileLine(k.file, k.line)}>{midTrunc(fileLine(k.file, k.line), 40)}{#if k.hashed} <span class="muted">(hashed)</span>{/if}</td>
+                <td class="mono" title={fileLine(k.file, k.line)}>{midTrunc(fileLine(k.file, k.line), 40)}{#if k.hashed} <span class="muted sans">(hashed)</span>{/if}</td>
                 <td><span class="kr"><KeyType alg={k.key_alg} /><Fp fp={k.key_fp} /></span></td>
                 <td>{#if k.matches_actual === 'yes'}<span class="state">matches</span>{:else if k.matches_actual === 'no'}<Badge role="low" label="Stale – key no longer presented" />{:else}<span class="state muted">unknown</span>{/if}</td>
               </tr>
@@ -373,10 +379,10 @@
           <tbody>
             {#each [...sshd.pin, ...sshd.sec] as r}
               {@const rk = risk(r.name, r.value)}
-              <tr class="pinned"><td class="sname">{NICE[r.name] ?? r.name}</td><td class="wrap-any"><span class="vrow"><span class="mono">{r.value}</span>{#if rk}<SevBadge severity={rk} />{/if}</span></td><td class="secondary">{r.source}</td><td class="mono">{fileLine(r.file, r.line) || '–'}</td></tr>
+              <tr class="pinned"><td class="sname">{NICE[r.name] ?? r.name}</td><td class="wrap-any"><span class="vrow"><span class:mono={isPathy(r.value)}>{r.value}</span>{#if rk}<SevBadge severity={rk} />{/if}</span></td><td class="secondary">{r.source}</td>{@render fl(r)}</tr>
             {/each}
             {#each showAllSshd ? sshd.rest : [] as r}
-              <tr><td>{NICE[r.name] ?? r.name}</td><td class="mono wrap-any">{r.value}</td><td class="secondary">{r.source}</td><td class="mono">{fileLine(r.file, r.line) || '–'}</td></tr>
+              <tr><td>{NICE[r.name] ?? r.name}</td><td class="wrap-any" class:mono={isPathy(r.value)}>{r.value}</td><td class="secondary">{r.source}</td>{@render fl(r)}</tr>
             {/each}
             {#if !sshd.pin.length && !sshd.rest.length}<tr><td class="empty" colspan="4">No sshd settings were read on {name}.</td></tr>{/if}
           </tbody>
@@ -396,7 +402,7 @@
           <thead><tr><th>Username</th><th class="r">UID</th><th>Shell</th><th>Login shell</th><th>Password</th><th>Expiry</th></tr></thead>
           <tbody>
             {#each shownAccounts as a (a.username)}
-              <tr><td class="ent">{#if sshUsers.has(a.username)}<a href="?tab=users#user-{encodeURIComponent(a.username)}">{a.username}</a>{:else}{a.username}{/if}</td><td class="r num">{a.uid}</td><td class="mono">{a.shell || '–'}</td>
+              <tr><td class="ent">{#if sshUsers.has(a.username)}<a href="?tab=users#user-{encodeURIComponent(a.username)}">{a.username}</a>{:else}{a.username}{/if}</td><td class="r num">{a.uid}</td><td class:mono={!!a.shell}>{a.shell || '–'}</td>
                 <td>{a.login_shell ? 'yes' : 'no'}</td><td>{a.pw_state}</td><td class="num">{a.expiry ?? '–'}</td></tr>
             {:else}<tr><td class="empty" colspan="6">{d.accounts.length ? 'No account on this host has SSH data.' : `No accounts were read on ${name}.`}</td></tr>{/each}
           </tbody>
@@ -411,7 +417,21 @@
   </section>
 {/if}
 
+{#snippet cols(w: number[])}<colgroup>{#each w as x}<col style:width="{x}%" />{/each}</colgroup>{/snippet}
+{#snippet fl(r: any)}<td class:mono={!!fileLine(r.file, r.line)}>{fileLine(r.file, r.line) || '–'}</td>{/snippet}
+
 <script lang="ts" module>
+  // Mono only for paths, commands and raw values (design-revision §3.4); yes / no / none / numbers stay Sans
+  // Users tab (check-12 F2): one fixed column grid per table kind, the same in every user panel of a host, so
+  // Strength, Type and Fingerprint line up from panel to panel. File:line is always the first 23.5 %.
+  const COLS = {
+    auth: [23.5, 9, 8.8, 13.4, 10, 17.6, 17.7],    // File:line, Strength, Type, Fingerprint, Comment, Options, Origin
+    priv: [23.5, 9, 8.8, 13.4, 14, 13, 18.3],    // Path, Strength, Type, Fingerprint, Encrypted, Mode, Owner
+    kh: [23.5, 21, 17.5, 22, 16],             // File:line, Pattern, Resolved host, Key, Match
+    cfg: [23.5, 12.5, 15.5, 10, 7.5, 17.5, 13.5],     // File:line, Host, HostName, User, Port, IdentityFile, ProxyJump
+  };
+  const FL = 28;   // characters of File:line / Path before the middle is cut (full value in the title)
+  function isPathy(v: string | null | undefined) { return !!v && /[\/%~=@"]/.test(v); }
   function plural2(v: number) { return v === 1 ? '1 hashed entry' : `${v} hashed entries`; }
 </script>
 <style>
@@ -432,8 +452,6 @@
   .vf { margin-bottom: var(--s2); }
   :global(.strip .code) { background: var(--bg-surface); max-width: 560px; }
   /* tabs: sticky under the top bar */
-  .tabs.sticky { position: sticky; top: var(--topbar); z-index: 5; background: var(--bg-page); }
-  :global(.has-synth) .tabs.sticky { top: calc(var(--topbar) + 32px); }
   .tabpanel { display: flex; flex-direction: column; gap: var(--s5); }
   .ov { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--s5); align-items: start; }
   .ptitle { margin-bottom: var(--s4); }
@@ -447,6 +465,13 @@
   .uh { display: flex; gap: var(--s6); align-items: center; flex-wrap: wrap; padding: var(--s4) var(--s5); }
   .user .sub-title.sect { margin: 0; padding: var(--s4) var(--s5) var(--s3); border-top: 1px solid var(--border-subtle); }
   .padx { padding: 0 var(--s5) var(--s3); }
+  /* fixed column grid of the Users tab; below 880 px the table scrolls inside its panel */
+  .ut { table-layout: fixed; min-width: 880px; }
+  .ut :global(td) { overflow: hidden; }
+  .ut :global(td.mono) { white-space: nowrap; text-overflow: ellipsis; }
+  .clamp2 { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  .optc :global(.chips) { max-width: 100%; }
+  .optc :global(.kchip.opt) { max-width: 100%; height: auto; min-height: 20px; white-space: normal; overflow-wrap: anywhere; }
   .kr { display: inline-flex; gap: var(--s3); align-items: center; white-space: nowrap; }
   .vrow { display: inline-flex; gap: var(--s3); align-items: center; flex-wrap: wrap; }
   .sname { font-weight: 500; }

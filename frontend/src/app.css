@@ -101,6 +101,7 @@ p { margin: 0; }
 
 /* type scale (revision §3.4): 11 axes only, 12, 13, 14, 16, 20 - nothing else */
 .mono { font-family: var(--mono); }
+.sans, table.t td.mono .sans, table.t .mono .sans { font-family: var(--sans); }
 .num, .tab { font-variant-numeric: tabular-nums; }
 .muted { color: var(--text-muted); }
 .secondary { color: var(--text-secondary); }
@@ -155,8 +156,9 @@ p { margin: 0; }
 }
 .input::placeholder, textarea::placeholder { color: var(--text-muted); }
 .input:hover, .select:hover { border-color: var(--text-secondary); }
-.input:focus, .select:focus, textarea.input:focus { outline: none; border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-ring); }
+.input:focus, .select:focus, textarea.input:focus { outline: none; border-color: var(--accent); }
+/* keyboard focus: the same 2 px solid accent ring with a 2 px offset as every other control (check-12 F9) */
+.input:focus-visible, .select:focus-visible, textarea.input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .input:disabled { background: var(--bg-subtle); color: var(--text-muted); }
 .input.error { border-color: var(--critical); }
 textarea.input { height: auto; padding: var(--s3); resize: vertical; line-height: 20px; }
@@ -194,7 +196,6 @@ label.field { display: flex; flex-direction: column; gap: var(--s2); font-size: 
   border-radius: var(--r1); font: 500 12px/16px var(--sans); white-space: nowrap; background: var(--bg-subtle);
   border: 1px solid var(--border-subtle); color: var(--text-secondary); }
 .kchip.opt { font-family: var(--mono); font-weight: 400; color: var(--text-primary); }
-.kchip.outline { border-color: var(--text-muted); }
 .chip.filter { background: var(--bg-selected); color: var(--accent); border-color: transparent; height: 24px;
   padding: 0 var(--s3); cursor: pointer; }
 .chip.filter:hover { border-color: var(--accent); }

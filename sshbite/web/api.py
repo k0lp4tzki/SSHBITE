@@ -158,8 +158,9 @@ def _scan_item(r: sqlite3.Row) -> dict:
 
 
 @router.get("/scans")
-def list_scans(page: int = Page, page_size: int = PageSize, s=Depends(session),
+def list_scans(request: Request, page: int = Page, page_size: int = PageSize, s=Depends(session),
                conn: sqlite3.Connection = Depends(get_db)):
+    request.app.state.views.warm(request.app.state.database)   # the UI reads this first: warm the newest views
     items = [_scan_item(r) for r in conn.execute("SELECT * FROM scan ORDER BY id DESC")]
     return _page(items, page, page_size)
 

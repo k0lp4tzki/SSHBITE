@@ -8,6 +8,7 @@ tens of milliseconds of set arithmetic.
 from __future__ import annotations
 
 import ipaddress
+import logging
 import re
 import sqlite3
 import threading
@@ -15,6 +16,8 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 
 from ..db import unj
+
+log = logging.getLogger(__name__)
 
 # hosts that were connected to; they are the rows and columns of the matrix (alias rows are not)
 MATRIX_STATUSES = ("ok", "partial", "unreachable", "timeout", "auth_failed", "hostkey_mismatch", "hostkey_unknown",
@@ -147,29 +150,80 @@ def _pair_item(metric: str, e: Edge):
 
 
 class Views:
-    """LRU cache of ScanViews."""
+    """LRU cache of ScanViews.
+
+    Building the view of a large scan is the expensive part of a first heatmap (2,000 hosts / 15,000 edges: the
+    edge rows, their JSON flags, the natural sort). Two things keep it off the user's first click:
+    - single flight: concurrent requests for the same scan (the heatmap page asks for the matrix and the ranking
+      at once) wait for one build instead of each building the view in parallel under the GIL;
+    - warm-up: `warm()` builds the newest completed scans in a background thread - at server start and whenever
+      the scan list is read (the UI reads it on every load), so a scan finished while the UI runs is warm too.
+    """
 
     def __init__(self, size: int = 6):
         self.size = size
         self._lock = threading.Lock()
         self._cache: OrderedDict = OrderedDict()
+        self._building: dict[int, threading.Lock] = {}
+        self._warming: set = set()
 
-    def get(self, conn: sqlite3.Connection, sid: int) -> ScanView:
+    @staticmethod
+    def _key(conn: sqlite3.Connection, sid: int):
         st = conn.execute("SELECT status, finished_at FROM scan WHERE id=?", (sid,)).fetchone()
-        key = (sid, st[0] if st else None, st[1] if st else None)
+        return (sid, st[0] if st else None, st[1] if st else None)
+
+    def cached(self, key) -> ScanView | None:
         with self._lock:
             v = self._cache.get(key)
             if v is not None:
                 self._cache.move_to_end(key)
-                return v
-        v = ScanView(conn, sid)
+            return v
+
+    def get(self, conn: sqlite3.Connection, sid: int) -> ScanView:
+        key = self._key(conn, sid)
+        v = self.cached(key)
+        if v is not None:
+            return v
         with self._lock:
-            for k in [k for k in self._cache if k[0] == sid]:
-                del self._cache[k]
-            self._cache[key] = v
-            while len(self._cache) > self.size:
-                self._cache.popitem(last=False)
+            build_lock = self._building.setdefault(sid, threading.Lock())
+        with build_lock:
+            v = self.cached(key)          # built by the request we waited for
+            if v is not None:
+                return v
+            v = ScanView(conn, sid)
+            with self._lock:
+                for k in [k for k in self._cache if k[0] == sid]:
+                    del self._cache[k]
+                self._cache[key] = v
+                while len(self._cache) > self.size:
+                    self._cache.popitem(last=False)
         return v
+
+    def warm(self, database: str, newest: int = 2) -> None:
+        """Build the views of the `newest` completed scans in a daemon thread; returns at once."""
+        with self._lock:
+            if database in self._warming:
+                return
+            self._warming.add(database)
+
+        def run():
+            try:
+                conn = sqlite3.connect(database, timeout=30, check_same_thread=False)
+                conn.row_factory = sqlite3.Row      # as a request's connection (api.open_db)
+                try:
+                    conn.execute("PRAGMA busy_timeout = 30000")
+                    for (sid,) in conn.execute("SELECT id FROM scan WHERE status='completed' ORDER BY id DESC LIMIT ?",
+                                               (newest,)).fetchall():
+                        self.get(conn, sid)
+                finally:
+                    conn.close()
+            except Exception as e:  # noqa: BLE001 - a warm-up is an optimisation; a request builds the view itself
+                log.warning("view warm-up of %s failed: %s", database, e)
+            finally:
+                with self._lock:
+                    self._warming.discard(database)
+
+        threading.Thread(target=run, name="sshbite-view-warmup", daemon=True).start()
 
 
 # ------------------------------------------------------------------ heatmap

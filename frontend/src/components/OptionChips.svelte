@@ -1,5 +1,5 @@
 <script lang="ts">
-  // authorized_keys options as chips (design §6.2): from= truncated at 40 chars, command= outlined.
+  // authorized_keys options as chips (design §6.2): from= truncated at 40 chars, every chip with the same border.
   let { options, expiry = null }: { options: [string, string | null][]; expiry?: string | null } = $props();
   function text(name: string, value: string | null) {
     if (name === 'expiry-time') return `expiry ${value}`;
@@ -10,11 +10,11 @@
 </script>
 
 {#if options.length === 0}
-  <span class="muted">–</span>
+  <span class="muted sans">–</span>
 {:else}
   <span class="chips">
     {#each options as [name, value]}
-      <span class="kchip opt" class:outline={name === 'command'} title={text(name, value)}>{trunc(text(name, value))}</span>
+      <span class="kchip opt" title={text(name, value)}>{trunc(text(name, value))}</span>
     {/each}
   </span>
 {/if}
