@@ -338,8 +338,9 @@ async def _matrix(entry, targets: list[str]) -> list[dict]:
                 add(target, "probe", f"sudo -n -l {P}", rc, out, err, "allowed")
                 rc, out, err = await _try(conn, f"sudo -n {P}", "id\n")
                 add(target, "collector (stdin: id)", f"sudo -n {P}   [stdin: id]", rc, out, err, "allowed")
-                rc, out, err = await _try(conn, R, "a1\n")
-                add(target, "resolve a1", f"{R}   [stdin: a1]", rc, out, err, "allowed")
+                name = "r1" if target == "r1" else "a1"     # r1 is alone on lab_r and knows only itself
+                rc, out, err = await _try(conn, R, f"{name}\n")
+                add(target, f"resolve {name}", f"{R}   [stdin: {name}]", rc, out, err, "allowed")
                 # forwarding: an A host (jump, r1) only to port 22 (permitopen); a B host nowhere
                 variant_a = AK[target][0] == "A"
                 own = "172.30.1.11" if target == "jump" else LAB_HOSTS[target][0]
@@ -403,6 +404,8 @@ def test_i04_attack_matrix(entry, evidence):
             assert "uid=" not in r["stdout"] and "#END" in r["stdout"], what
         elif r["label"] == "resolve a1":
             assert r["rc"] == 0 and "a1\t172.30.1.11" in r["stdout"].splitlines(), what
+        elif r["label"] == "resolve r1":
+            assert r["rc"] == 0 and f"r1\t{L.R1_IP}" in r["stdout"].splitlines(), what
         else:
             assert r["rc"] == 0, what
 
@@ -489,8 +492,11 @@ def _r1_scan(ctl, cfg, r1cfg, label, evidence):
     assert diff == "", diff
     conn = _db(cfg)
     sid = conn.execute("SELECT max(id) FROM scan WHERE status='completed'").fetchone()[0]
-    rows = list(_rows(conn, sid).values())
-    assert len(rows) == 1, [r["display_name"] for r in rows]
+    # alice's known_hosts names jump (172.30.1.5): with --no-crawl it is a row with status max_depth
+    all_rows = _rows(conn, sid)
+    others = {n: r["status"] for n, r in all_rows.items() if n != "r1"}
+    assert set(others.values()) <= {"max_depth"}, others
+    rows = [all_rows["r1"]]
     _write(evidence, f"scans-show-{label}.txt", L.sshbite(r1cfg, "scans", "show", str(sid)).stdout)
     return rows[0], sid
 
