@@ -42,6 +42,12 @@ class _Group(click.Group):
             ctx.exit(exc.exit_code)
         except (click.exceptions.Exit, click.exceptions.Abort, click.ClickException, SystemExit):
             raise
+        except BrokenPipeError:  # e.g. `sshbite collector show | head`
+            try:
+                sys.stdout = open(os.devnull, "w")
+            except OSError:
+                pass
+            ctx.exit(0)
         except KeyboardInterrupt:
             click.echo("interrupted", err=True)
             ctx.exit(4)
