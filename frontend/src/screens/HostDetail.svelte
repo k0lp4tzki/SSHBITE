@@ -213,6 +213,11 @@
       <p class="vf">Verify out-of-band, then run:</p>
       <CodeBlock cmd="sshbite hostkey accept {hs.connect_addr}{hs.connect_port && hs.connect_port !== 22 ? ':' + hs.connect_port : ''}" />
     </Strip>
+  {:else if hs.status === 'collector_error'}
+    <Strip role="high">
+      <p class="st">Collector error:</p>
+      <p class="mono dense wrap" data-testid="collector-error">{hs.error ?? 'no message'}</p>
+    </Strip>
   {/if}
 
   <TabBar sticky selected={tab}>
@@ -444,6 +449,7 @@
   /* Route attempts: its own section, 16 px above and below (the page gap) */
   .att .err { font-size: 12px; }
   .st { font-weight: 500; }
+  .wrap { overflow-wrap: anywhere; }
   .inner { margin-top: var(--s3); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r2);
     overflow: hidden; max-width: 720px; }
   .hk { display: flex; flex-direction: column; gap: var(--s3); margin: var(--s3) 0; }
