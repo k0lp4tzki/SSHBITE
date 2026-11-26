@@ -158,3 +158,37 @@ def test_synth_2000_matches_spec_and_derives_fast(tmp_path):
     again = synth(conn, 2000, 42)
     assert q(f"SELECT count(*) FROM edge WHERE scan_id={again['scan_id']}") == res["access_edges"] + \
         q(f"SELECT count(*) FROM edge WHERE scan_id={res['scan_id']} AND kind='evidence'")
+
+
+def test_collector_show_installed(tmp_path):
+    r = run("-c", "/nonexistent/sshbite.yaml", "collector", "show")
+    assert r.exit_code == 0
+    p = "/usr/local/libexec/sshbite/sshbite-collect"
+    block = r.output.split("===== literal commands sent on exec channels (privilege.mode: installed, "
+                           f"collector_path {p})\n", 1)[1].splitlines()
+    assert [x.split("   (")[0] for x in block] == [f"sudo -n -l {p}", f"sudo -n {p}",
+                                                    "/usr/local/libexec/sshbite/sshbite-resolve"]
+    cfg = tmp_path / "c.yaml"
+    cfg.write_text(yaml.safe_dump({"entry": {"host": "j"}, "privilege": {"mode": "installed",
+                                                                          "collector_path": "/opt/sb/c"}}))
+    r = run("-c", str(cfg), "collector", "show")
+    assert "(privilege.mode: installed, collector_path /opt/sb/c)\nsudo -n -l /opt/sb/c" in r.output
+    assert "\n/opt/sb/sshbite-resolve   (name resolution" in r.output
+
+
+def test_ask_password_installed(tmp_path, monkeypatch):
+    from sshbite import cli as cli_mod
+
+    monkeypatch.setattr(cli_mod, "_stdin_is_tty", lambda: True)
+    cfg = tmp_path / "c.yaml"
+    cfg.write_text(yaml.safe_dump({"database": str(tmp_path / "d" / "s.db"), "entry": {"host": "127.0.0.1", "port": 1},
+                                   "privilege": {"mode": "installed"}}))
+    r = CliRunner().invoke(main, ["-c", str(cfg), "scan", "--ask-sudo-password"], input="pw\n")
+    assert r.exit_code == 2
+    assert "privilege.mode installed never sends a sudo password - remove --ask-sudo-password" in r.stderr
+    assert "sudo password" not in r.stdout     # no prompt was shown
+    # the environment variable only warns; the scan goes on (here: to the dry run)
+    r = CliRunner().invoke(main, ["-c", str(cfg), "scan", "--dry-run"], env={"SSHBITE_SUDO_PASSWORD": "x"})
+    assert r.exit_code == 0, r.output
+    assert "warning: SSHBITE_SUDO_PASSWORD is ignored with privilege.mode installed" in r.stderr
+    assert "dry run: no connection made" in r.stdout

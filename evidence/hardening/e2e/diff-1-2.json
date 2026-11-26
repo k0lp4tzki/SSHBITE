@@ -1,0 +1,192 @@
+{
+  "a": {
+    "id": 1,
+    "started_at": "2026-11-26T23:23:21Z",
+    "label": "scan1",
+    "synthetic": false
+  },
+  "b": {
+    "id": 2,
+    "started_at": "2026-11-26T23:23:43Z",
+    "label": "scan2",
+    "synthetic": false
+  },
+  "hosts": {
+    "added": [],
+    "removed": [],
+    "changed": [
+      {
+        "identity": "hk:SHA256:6pwTM0ENKw1R/jWBzDYJ10BKhm93GjJ9wEu+Re7/wgM",
+        "host": "c2",
+        "status": "hostkey_mismatch",
+        "privilege": null,
+        "route": null,
+        "changes": {
+          "status": {
+            "a": "ok",
+            "b": "hostkey_mismatch"
+          },
+          "privilege": {
+            "a": "root",
+            "b": null
+          },
+          "route": {
+            "a": [
+              "jump",
+              "b3",
+              "c1",
+              "c2"
+            ],
+            "b": null
+          }
+        }
+      }
+    ]
+  },
+  "keys": {
+    "added": [
+      {
+        "fp": "SHA256:gh7vGFXzaOfeTFQ51XPJESCQZZrNeYoqiIo7+tX5DLU",
+        "alg": "ssh-ed25519",
+        "bits": 256,
+        "strength": "good",
+        "label": null,
+        "comment": "new-unknown"
+      }
+    ],
+    "removed": [
+      {
+        "fp": "SHA256:GrNpjgltnfb1yfFOO9qmrVMSdTpEx5qgAV+O2A9czjU",
+        "alg": "ssh-ed25519",
+        "bits": 256,
+        "strength": "good",
+        "label": null,
+        "comment": "ops-ca"
+      }
+    ],
+    "changed": []
+  },
+  "placements": {
+    "added": [
+      {
+        "kind": "authorized",
+        "host": "b2",
+        "user": "www",
+        "fp": "SHA256:gh7vGFXzaOfeTFQ51XPJESCQZZrNeYoqiIo7+tX5DLU",
+        "file": "/home/www/.ssh/authorized_keys",
+        "line": 2
+      }
+    ],
+    "removed": [
+      {
+        "kind": "authorized",
+        "host": "c2",
+        "user": "root",
+        "fp": "SHA256:GrNpjgltnfb1yfFOO9qmrVMSdTpEx5qgAV+O2A9czjU",
+        "file": "/root/.ssh/authorized_keys",
+        "line": 1
+      },
+      {
+        "kind": "authorized",
+        "host": "c2",
+        "user": "svc",
+        "fp": "SHA256:OsxPnUumA5TZLreiiMoeJU5AaUCrsfK5U2CzxkdUwPA",
+        "file": "/home/svc/.ssh/authorized_keys",
+        "line": 1
+      },
+      {
+        "kind": "authorized",
+        "host": "a5",
+        "user": "root",
+        "fp": "SHA256:udc9qDdY4Kt6SaStdiwmguabv6Gl8LCVupPjvcypxbo",
+        "file": "/root/.ssh/authorized_keys",
+        "line": 1
+      }
+    ],
+    "changed": []
+  },
+  "edges": {
+    "added": [
+      {
+        "kind": "access",
+        "src": "unknown",
+        "src_user": null,
+        "dst": "b2",
+        "dst_user": "www",
+        "fp": "SHA256:gh7vGFXzaOfeTFQ51XPJESCQZZrNeYoqiIo7+tX5DLU",
+        "status": "unknown_origin",
+        "effective": true
+      }
+    ],
+    "removed": [
+      {
+        "kind": "access",
+        "src": "jump",
+        "src_user": "ops",
+        "dst": "a5",
+        "dst_user": "root",
+        "fp": "SHA256:udc9qDdY4Kt6SaStdiwmguabv6Gl8LCVupPjvcypxbo",
+        "status": "confirmed",
+        "effective": true
+      },
+      {
+        "kind": "access",
+        "src": "b3",
+        "src_user": "ops2",
+        "dst": "c2",
+        "dst_user": "svc",
+        "fp": "SHA256:OsxPnUumA5TZLreiiMoeJU5AaUCrsfK5U2CzxkdUwPA",
+        "status": "confirmed",
+        "effective": true
+      }
+    ],
+    "changed": []
+  },
+  "findings": {
+    "added": [
+      {
+        "ident": "7e253b30db0ca82d499d3c009726a917f65fd038",
+        "rule": "key_unknown_origin",
+        "severity": "high",
+        "host": "b2",
+        "user": "www",
+        "fp": "SHA256:gh7vGFXzaOfeTFQ51XPJESCQZZrNeYoqiIo7+tX5DLU",
+        "file": "/home/www/.ssh/authorized_keys",
+        "line": 2
+      },
+      {
+        "ident": "a6da9f3a1d00f0b69d139c33f24b7c77e4e17db0",
+        "rule": "host_key_changed",
+        "severity": "critical",
+        "host": "c2",
+        "user": null,
+        "fp": null,
+        "file": null,
+        "line": null
+      }
+    ],
+    "removed": [
+      {
+        "ident": "e4f6417fff804a20d0d4f7a69432af849a3bc63d",
+        "rule": "root_authorized_key",
+        "severity": "high",
+        "host": "a5",
+        "user": "root",
+        "fp": "SHA256:udc9qDdY4Kt6SaStdiwmguabv6Gl8LCVupPjvcypxbo",
+        "file": "/root/.ssh/authorized_keys",
+        "line": 1
+      },
+      {
+        "ident": "f2a2b24a72ef2fb3ef8e150a3eccad91477037e0",
+        "rule": "cert_authority_trusted",
+        "severity": "info",
+        "host": "c2",
+        "user": "root",
+        "fp": "SHA256:GrNpjgltnfb1yfFOO9qmrVMSdTpEx5qgAV+O2A9czjU",
+        "file": "/root/.ssh/authorized_keys",
+        "line": 1
+      }
+    ],
+    "changed": []
+  }
+}

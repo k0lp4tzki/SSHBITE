@@ -325,3 +325,101 @@ def test_nopasswd_only_for_sh_never_sends_the_password(tmp_path, audit):
         assert not [c for c in srv.seen if "-S" in c]
     c = sqlite3.connect(tmp_path / "data" / "sshbite.db")
     assert c.execute("SELECT status, privilege FROM host_scan").fetchone() == ("ok", "root")
+
+
+# ---------------------------------------------------------------- privilege.mode installed (spec 4)
+
+P_INST = "/usr/local/libexec/sshbite/sshbite-collect"
+CMD_INST = commands("installed")
+
+
+def make_installed_handler(header_b: str, seen: list):
+    out = ROOT_OUT.decode().split("\n", 1)[1]
+
+    async def handle(process):
+        cmd = process.command or ""
+        seen.append(cmd)
+        if cmd == CMD_INST["probe"]:
+            process.stdout.write(P_INST + "\n")
+            process.exit(0)
+        elif cmd == CMD_INST["run"]:
+            process.stdout.write(f"#SSHBITE 1 {header_b}\n" + out)
+            process.exit(0)
+        elif cmd == "/usr/local/libexec/sshbite/sshbite-resolve":
+            process.exit(0)
+        else:   # what the gate would do with anything else
+            process.stderr.write("sshbite-gate: denied (command not allowed)\n")
+            process.exit(126)
+    return handle
+
+
+class InstalledServer(ServerThread):
+    def __init__(self, header_b: str, client_pub: bytes):
+        super().__init__("installed", client_pub)
+        self.header_b = header_b
+
+    def _run(self):
+        asyncio.set_event_loop(self.loop)
+
+        async def start():
+            self.server = await asyncssh.listen("127.0.0.1", 0, server_host_keys=[self.host_key],
+                                                process_factory=make_installed_handler(self.header_b, self.seen),
+                                                server_factory=lambda: _Srv(self.client_pub))
+            self.port = self.server.sockets[0].getsockname()[1]
+            self.ready.set()
+        self.loop.run_until_complete(start())
+        self.loop.run_forever()
+
+
+def _installed_config(tmp_path, srv, kp) -> str:
+    p = _config(tmp_path, srv, kp)
+    data = yaml.safe_load(open(p))
+    data["privilege"] = {"mode": "installed"}
+    open(p, "w").write(yaml.safe_dump(data))
+    return p
+
+
+def _export_sha() -> str:
+    import hashlib
+
+    return hashlib.sha256(("#!/bin/sh\n" + collector.collect_script()).encode()).hexdigest()
+
+
+def test_installed_scan_ok(tmp_path, audit):
+    key, kp = audit
+    b = collector.declared_sha_short(collector.collect_script())
+    with InstalledServer(b, key.public_data) as srv:
+        cfg = _installed_config(tmp_path, srv, kp)
+        r = CliRunner().invoke(main, ["-c", cfg, "scan", "--no-crawl"], env={"SSHBITE_SUDO_PASSWORD": PASSWORD})
+        assert r.exit_code == 0, r.output
+        assert "warning: SSHBITE_SUDO_PASSWORD is ignored with privilege.mode installed" in r.stderr
+        assert srv.seen[:2] == [CMD_INST["probe"], CMD_INST["run"]]
+        assert all("/bin/sh" not in c and "-S" not in c for c in srv.seen)
+        v = CliRunner().invoke(main, ["-c", cfg, "config", "validate", "--connect"])
+        assert v.exit_code == 0, v.output
+        assert v.stdout.splitlines()[-1] == (f"entry OK, pinned key matches, sudo: root (installed {P_INST}, "
+                                             f"collector B={b} matches)")
+    c = sqlite3.connect(tmp_path / "data" / "sshbite.db")
+    assert c.execute("SELECT status, privilege, error FROM host_scan").fetchone() == ("ok", "root", None)
+    sha, params = c.execute("SELECT collector_sha256, params FROM scan").fetchone()
+    assert sha == _export_sha()
+    import json
+    p = json.loads(params)
+    assert p["privilege_mode"] == "installed" and p["collector_path"] == P_INST and p["sudo_password_given"] is False
+
+
+def test_installed_header_mismatch(tmp_path, audit):
+    key, kp = audit
+    b = collector.declared_sha_short(collector.collect_script())
+    with InstalledServer("000000000000", key.public_data) as srv:
+        cfg = _installed_config(tmp_path, srv, kp)
+        r = CliRunner().invoke(main, ["-c", cfg, "scan", "--no-crawl"])
+        assert r.exit_code == 0, r.output
+        v = CliRunner().invoke(main, ["-c", cfg, "config", "validate", "--connect"])
+    text = (f"privilege.mode installed: installed collector version differs from this SSHBITE (expected B={b}, "
+            "host has B=000000000000) - run 'sshbite collector export' and reinstall sshbite-collect")
+    c = sqlite3.connect(tmp_path / "data" / "sshbite.db")
+    assert c.execute("SELECT status, error FROM host_scan").fetchone() == ("collector_error", text)
+    assert c.execute("SELECT collector_sha256 FROM scan").fetchone()[0] == _export_sha()
+    assert v.exit_code == 3
+    assert v.stdout.splitlines()[-1] == f"entry OK, pinned key matches, sudo: FAILED - {text}"

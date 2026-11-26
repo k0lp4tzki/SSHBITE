@@ -25,6 +25,56 @@ only where the first does not exist. The audit account's `PATH` never decides wh
 
 With `privilege.mode: sudo-login` the sudo commands carry `-i`; with `none` only `/bin/sh -s` is used.
 
+### `privilege.mode: installed`
+
+In this mode (recommended, [install.md](install.md#privileges-installed-collector-recommended)) nothing
+above is sent. These are the only command strings, P = `privilege.collector_path`
+(default `/usr/local/libexec/sshbite/sshbite-collect`):
+
+| Command | Where | stdin |
+|---|---|---|
+| `sudo -n -l P` | every host: the probe | empty (EOF at once) |
+| `sudo -n P` | if the probe succeeded: the installed collector as root | empty (EOF at once) |
+| `<dir of P>/sshbite-resolve` | entry host (and a referencing host for names the entry cannot resolve) | host names, one per line, as data |
+
+No script, no `/bin/sh`, no `-S`, no password and no unprivileged fallback. `sudo` stands without a path
+here; the gate runs `/usr/bin/sudo` (or `/bin/sudo` where that does not exist). The installed
+`sshbite-collect` is `#!/bin/sh` plus `collect.sh` byte for byte; the scan stores the SHA-256 of that file
+(`collector sha256` in `sshbite scans show`), the same value as in the export's `SHA256SUMS`. The
+collector's first output line carries B as before; a host with a different B is `collector_error`
+(*installed collector version differs*).
+
+`sshbite-resolve` is `#!/bin/sh` plus `resolve.sh`: `while IFS= read -r n; do getent hosts -- "$n" | …`.
+Each name is read as one line into a variable and only ever passed, quoted and after `--`, as an argument
+to `getent` and as an awk variable – never evaluated or executed. SSHBITE also sends only names that match
+`[A-Za-z0-9._-]`.
+
+### The gate `sshbite-gate`
+
+The audit key's `authorized_keys` line runs the gate (`command="…/sshbite-gate"`), whatever the client
+asks for. It is a short POSIX sh script, written by `sshbite collector export`; read it there. It
+
+- sets `PATH=/usr/sbin:/usr/bin:/sbin:/bin`, `LC_ALL=C` and `umask 077`;
+- compares `SSH_ORIGINAL_COMMAND` with `[ "$C" = "…" ]` against exactly the three strings of the table –
+  no pattern, no `case`, no `eval`, no `sh -c`;
+- runs `exec "$SUDO" -n -l P </dev/null`, `exec "$SUDO" -n P </dev/null` or `exec …/sshbite-resolve`
+  (stdin passed through for the names) – the sudo calls get `/dev/null` as stdin, so nothing a client
+  sends can reach them;
+- refuses everything else – an empty or missing command (interactive login), subsystems such as sftp,
+  the commands of the legacy modes, extra arguments, other spacing, appended `; …` – with
+  `sshbite-gate: denied (command not allowed)` on stderr and **exit 126**;
+- logs every request to syslog `authpriv` (`allowed: probe|collect|resolve`, or `denied: <command>`
+  with non-printable characters as `?`, at most 200 characters); a missing syslog does not change the
+  result;
+- never reads or hashes stdin.
+
+The sudoers file allows the account exactly one command: `sshbite ALL=(root) NOPASSWD: P ""` – P without
+arguments. `restrict` in `authorized_keys` disables pty, agent and X11 forwarding; only the entry host (and
+hops) may forward, and only to port 22 (`permitopen`). The lab test `tests/e2e/test_lab_installed.py`
+(i04) tries a shell with and without pty, `/bin/sh -s` with a script, both legacy sudo commands,
+`sudo -n -l P; id`, `sudo -n P x`, `sudo -n /bin/sh`, sftp, a forward to another port and a login from
+another address: all are refused.
+
 On the entry host and on hops of a chained route SSHBITE additionally opens `direct-tcpip` channels (port
 forwarding) to the next host. It does **not** use the hop's ssh client, so no `known_hosts` file on a hop
 is read or written. It never requests a pty, agent forwarding, X11 forwarding, sftp or scp, and it never
@@ -46,7 +96,12 @@ The output has three parts:
 <the complete script>
 ===== literal commands sent on exec channels (privilege.mode: sudo / sudo-login)
 <every command string of the table above>
+===== literal commands sent on exec channels (privilege.mode: installed, collector_path /usr/local/libexec/sshbite/sshbite-collect)
+<the three command strings of mode installed>
 ```
+
+The installed files themselves come from `sshbite collector export DIR`; `sshbite-collect` and
+`sshbite-resolve` there are the two scripts above with a `#!/bin/sh` line in front.
 
 Review against the installed version: the scripts are part of the package and printed from it.
 Every scan stores the SHA-256 of the `collect.sh` it sent – shown by `sshbite scans show ID`
@@ -140,6 +195,15 @@ This is accepted as a residual risk and not changed in v1, because:
 
 If you find such content in a scan, treat that host and user as hostile, delete the scan
 (`sshbite scans delete ID`) and its backups.
+
+## Residual risk: the audit key reveals the inventory
+
+Even with `privilege.mode: installed`, whoever holds the audit key and connects from an allowed address
+can run the installed collector and read what it prints: every `authorized_keys` line, `known_hosts`,
+ssh configs, public keys, `sshd -T` and from `/etc/shadow` only `name:first character:expiry`. That is a
+map of who may log in where – valuable to an attacker, but not root: the key gives no shell, no command of
+one's own, no root file outside this inventory and no write access. Protect the key accordingly (mode
+0600, a dedicated machine, `from=` on every host).
 
 ## How read-only behaviour is tested
 

@@ -71,6 +71,10 @@ class LabControl:
                 raise RuntimeError(f"{host}: {args or 'script'} failed ({r.exit_status}): {r.stderr}")
             return r.stdout
 
+    def run_text(self, host: str, text: str) -> str:
+        """Run a generated script (text) as root on HOST with `sh -s`; its stdout. Raises on a non-zero exit."""
+        return asyncio.run(self._run(host, text))
+
     def run(self, host: str, script_file: str, args: str = "") -> str:
         script = (LAB / script_file).read_text()
         return asyncio.run(self._run(host, script, args))
@@ -103,3 +107,33 @@ def sshbite(config: Path, *args: str, env: dict | None = None, input: str | None
     e.update(env or {})
     return subprocess.run([sys.executable, "-m", "sshbite.cli", "-c", str(config), *args], capture_output=True,
                           text=True, env=e, input=input, timeout=timeout, cwd=str(ROOT))
+
+
+# ---------------------------------------------------------------- privilege.mode installed (lab/installed.sh)
+
+GATE_OPTS = 'command="/usr/local/libexec/sshbite/sshbite-gate"'
+_EOF_MARK = "SSHBITE_EXPORT_EOF"
+
+
+def installed_line(variant: str, source: str) -> str:
+    """One authorized_keys line of the exported template (variant A, B or C) with from= and the audit key."""
+    pub = " ".join((KEYS / "audit_ed25519.pub").read_text().split()[:2])
+    fwd = 'port-forwarding,permitopen="*:22",' if variant in ("A", "C") else ""
+    return f'restrict,{fwd}from="{source}",{GATE_OPTS} {pub} sshbite-audit'
+
+
+def installed_apply_script(export_dir: Path, line: str) -> str:
+    """A generated script: the export files as heredocs, then lab/installed.sh apply on them."""
+    assert "'" not in line
+    parts = ["set -eu", 'D=$(mktemp -d /tmp/sshbite-export.XXXXXX)']
+    for f in sorted(export_dir.iterdir()):
+        text = f.read_text()
+        assert text.endswith("\n") and _EOF_MARK not in text
+        parts.append(f"cat > \"$D/{f.name}\" <<'{_EOF_MARK}'\n{text}{_EOF_MARK}")
+    parts.append(f"set -- apply \"$D\" '{line}'")
+    parts.append((LAB / "installed.sh").read_text())
+    return "\n".join(parts) + "\n"
+
+
+def installed_remove_script() -> str:
+    return "set -- remove\n" + (LAB / "installed.sh").read_text()

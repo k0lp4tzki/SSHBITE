@@ -1,0 +1,35 @@
+$ SSHBITE_LAB_ENTRY=jump:22 SSHBITE_EVIDENCE_DIR=evidence/hardening/e2e pytest -m e2e tests/e2e/test_lab.py tests/e2e/test_lab_installed.py -v -rs
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /workspace/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace
+configfile: pyproject.toml
+plugins: anyio-4.16.0
+collecting ... collected 23 items
+
+tests/e2e/test_lab.py::test_00_lab_reset_and_scripts PASSED              [  4%]
+tests/e2e/test_lab.py::test_00b_sshd_and_ssh_keygen_write_nothing PASSED [  8%]
+tests/e2e/test_lab.py::test_01_pin_negative PASSED                       [ 13%]
+tests/e2e/test_lab.py::test_02_scan1_runs_read_only PASSED               [ 17%]
+tests/e2e/test_lab.py::test_03_scan1_hosts PASSED                        [ 21%]
+tests/e2e/test_lab.py::test_04_scan1_references PASSED                   [ 26%]
+tests/e2e/test_lab.py::test_05_scan1_access_edges PASSED                 [ 30%]
+tests/e2e/test_lab.py::test_06_scan1_evidence_edges PASSED               [ 34%]
+tests/e2e/test_lab.py::test_07_scan1_metrics PASSED                      [ 39%]
+tests/e2e/test_lab.py::test_08_scan1_findings PASSED                     [ 43%]
+tests/e2e/test_lab.py::test_09_scan1_parsing PASSED                      [ 47%]
+tests/e2e/test_lab.py::test_10_scan1_exports PASSED                      [ 52%]
+tests/e2e/test_lab.py::test_20_scan2 PASSED                              [ 56%]
+tests/e2e/test_lab.py::test_21_diff_1_2 PASSED                           [ 60%]
+tests/e2e/test_lab.py::test_30_scan3 PASSED                              [ 65%]
+tests/e2e/test_lab.py::test_31_reset_lab PASSED                          [ 69%]
+tests/e2e/test_lab_installed.py::test_i00_sudo_baseline PASSED           [ 73%]
+tests/e2e/test_lab_installed.py::test_i01_apply PASSED                   [ 78%]
+tests/e2e/test_lab_installed.py::test_i02_validate PASSED                [ 82%]
+tests/e2e/test_lab_installed.py::test_i03_scan_installed PASSED          [ 86%]
+tests/e2e/test_lab_installed.py::test_i04_attack_matrix PASSED           [ 91%]
+tests/e2e/test_lab_installed.py::test_i05_failures PASSED                [ 95%]
+tests/e2e/test_lab_installed.py::test_i99_remove PASSED                  [100%]
+
+======================== 23 passed in 98.16s (0:01:38) =========================
+exit 0

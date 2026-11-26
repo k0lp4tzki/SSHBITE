@@ -52,6 +52,15 @@ this account). With `privilege.mode: none` SSHBITE never calls sudo (all hosts b
 - **sudo log** (auth log, journal or sudo's own log file): one line per sudo command, i.e.
   `COMMAND=/bin/true` and `COMMAND=/bin/sh -s` per host, and `incorrect password attempt` for a wrong
   sudo password, plus PAM session lines for root.
+- **With `privilege.mode: installed`** the sudo log gets two entries per host instead: the probe
+  `sudo -n -l <collector>` and the collector run `sudo -n <collector>`; `config validate --connect` adds
+  the same two on the entry host. The gate `sshbite-gate` logs every request of the audit key to syslog
+  facility `authpriv` with the tag `sshbite-gate`: `allowed: probe`, `allowed: collect` and
+  `allowed: resolve` (info) – three to four lines per host and scan – and `denied: <command>` (warning)
+  for anything else. A `denied` line from the SSHBITE machine's address during a scan means a config or
+  installation mismatch; at any other time it is worth a look. No sudo password is ever sent, so the
+  "incident" mail above cannot be caused by a wrong password; a host whose sudo rule lacks `NOPASSWD`
+  still refuses the probe (and may mail).
 - **sudo I/O logging:** if `log_input`/`log_output` is enabled for the account, sudo records the
   collector script and its complete output (authorized_keys contents, file lists, the first character of
   each shadow hash field) under its I/O log directory (e.g. `/var/log/sudo-io`). That directory then holds

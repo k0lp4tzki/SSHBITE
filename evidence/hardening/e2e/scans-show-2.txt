@@ -1,0 +1,35 @@
+scan 2  completed  label: scan2
+started 2026-11-26T23:23:43Z  finished 2026-11-26T23:23:57Z  entry jump:22
+tool 0.1.0  collector sha256 6c262392665b6cd321c7ac52834a69c1e1fcf2fe171552b863742c4ec9940f05
+hosts: 1 excluded, 1 hostkey_mismatch, 10 ok, 2 out_of_scope, 1 partial, 1 unreachable, 1 unresolvable
+findings: 5 critical, 15 high, 15 medium, 2 low, 0 info
+access edges: 19 (18 effective, 4 unknown origin); unresolved hashed known_hosts entries: 1
+
+host               status            privilege     depth  discovered via                               route
+jump               ok                root              0  entry                                        jump
+203.0.113.10       out_of_scope      -                 1  jump /home/ops/.ssh/config:7                 -
+a1                 ok                root              1  jump /home/ops/.ssh/config:2                 jump -> a1
+b1                 ok                root              1  jump /home/ops/.ssh/config:4                 jump -> b1
+a2                 ok                root              2  a1 /home/deploy/.ssh/known_hosts:1 (hashed)  jump -> a2
+a3                 ok                root              2  a1 /home/deploy/.ssh/config:1                jump -> a3
+b2                 ok                root              2  b1 /home/admin/.ssh/known_hosts:1            jump -> b2
+b3                 ok                root              2  b1 /home/admin/.ssh/known_hosts:2            jump -> b3
+b5                 partial           unprivileged      2  b1 /home/admin/.ssh/config:1                 jump -> b5
+                    reason: sudo: a password is required
+                    reason: sudo password not accepted: Sorry, try again.
+                    reason: unreadable: /root/.ssh
+                    reason: unreadable: /home/carol/.ssh
+10.20.30.40        out_of_scope      -                 3  b3 /home/ops2/.ssh/config:5                  -
+172.30.1.99        unreachable       -                 3  a2 /home/deploy/.ssh/known_hosts:1           -
+                    tried jump -> 172.30.1.99: 172.30.1.99: channel open failed: No route to host
+                    tried jump -> a2 -> 172.30.1.99: 172.30.1.99: channel open failed: No route to host
+172.30.2.14        excluded          -                 3  b3 /home/ops2/.ssh/known_hosts:1             -
+a4                 ok                sudo_password     3  a2 /home/deploy/.ssh/config:2                jump -> a4
+a5                 ok                root              3  a3 /home/app/.ssh/config:1                   jump -> a5
+c1                 ok                root              3  b3 /home/ops2/.ssh/config:2                  jump -> b3 -> c1
+                    tried jump -> c1: 172.30.3.21: timeout
+git.example.com    unresolvable      -                 3  b2 /home/www/.ssh/known_hosts:1              -
+c2                 hostkey_mismatch  -                 4  c1 /root/.ssh/known_hosts:1                  -
+                    tried jump -> c2: 172.30.3.22: timeout
+                    tried jump -> b3 -> c1 -> c2: 172.30.3.22: host key changed: offered ssh-ed25519 SHA256:eSIvYRwsuUx7QEj0uExNChaGxKEzM66rPSeBUGhsdJ0; trusted ssh-ed25519 SHA256:6pwTM0ENKw1R/jWBzDYJ10BKhm93GjJ9wEu+Re7/wgM
+                    error: host key changed: offered ssh-ed25519 SHA256:eSIvYRwsuUx7QEj0uExNChaGxKEzM66rPSeBUGhsdJ0; trusted ssh-ed25519 SHA256:6pwTM0ENKw1R/jWBzDYJ10BKhm93GjJ9wEu+Re7/wgM

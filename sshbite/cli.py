@@ -12,7 +12,8 @@ import time
 import click
 
 from . import __version__
-from .config import EXAMPLE_CONFIG, Config, check_files, load_config, resolve_config_path, scope_warnings
+from .config import (EXAMPLE_CONFIG, Config, check_files, load_config, privilege_warnings, resolve_config_path,
+                     scope_warnings)
 from .errors import ConfigError, EntryError, SshbiteError
 from .privilege import RedactingFilter, SudoSecret
 
@@ -105,7 +106,7 @@ def config_validate(ctx: click.Context, connect: bool) -> None:
     path = resolve_config_path(ctx.obj["config_path"])
     cfg = load_config(ctx.obj["config_path"])
     res = check_files(cfg)
-    for w in [*res.warnings, *scope_warnings(cfg)]:
+    for w in [*res.warnings, *privilege_warnings(cfg), *scope_warnings(cfg)]:
         click.echo(f"warning: {w}", err=True)
     if res.errors:
         for e in res.errors:
@@ -115,6 +116,8 @@ def config_validate(ctx: click.Context, connect: bool) -> None:
     if connect:
         msg = asyncio.run(_check_entry(cfg))
         click.echo(msg)
+        if cfg.privilege.mode == "installed" and "sudo: FAILED - " in msg:
+            ctx.exit(3)   # a scan would run into collector_error on the entry
 
 
 async def _check_entry(cfg: Config) -> str:
@@ -139,7 +142,9 @@ async def _check_entry(cfg: Config) -> str:
         raise EntryError(f"entry {cfg.entry.host}:{cfg.entry.port} {what}: {exc.message}") from None
     try:
         mode = cfg.privilege.mode
-        if mode == "none":
+        if mode == "installed":
+            sudo = await _check_installed(conn, cfg)
+        elif mode == "none":
             sudo = "not used (privilege.mode none)"
         else:
             r = await run(conn, commands(mode)["probe"], None, max_bytes=65536)
@@ -153,6 +158,34 @@ async def _check_entry(cfg: Config) -> str:
     finally:
         await tr.close()
     return f"entry OK, pinned key matches, sudo: {sudo}"
+
+
+async def _check_installed(conn, cfg: Config) -> str:
+    """Probe, then the collector; only its header line is read, the rest is discarded."""
+    from . import collector
+    from .privilege import commands, installed_probe_error, installed_stderr_error, installed_version_error
+    from .transport import run
+
+    path = cfg.privilege.collector_path
+    cmds = commands("installed", path)
+    probe = await run(conn, cmds["probe"], None, max_bytes=65536)
+    if probe.rc != 0:
+        return "FAILED - " + installed_probe_error(path, probe.rc, probe.stderr)
+    # max_bytes: the header line is short; the collector's further output is cut off and thrown away
+    res = await run(conn, cmds["run"], None, max_bytes=4096)
+    first = res.stdout.decode("utf-8", "replace").split("\n", 1)[0]
+    parts = first.split(" ")
+    got = parts[2] if len(parts) == 3 and parts[:2] == ["#SSHBITE", "1"] else ""
+    want = collector.declared_sha_short(collector.collect_script())
+    if got == want:
+        return f"root (installed {path}, collector B={want} matches)"
+    if got:
+        return "FAILED - " + installed_version_error(want, got)
+    err = installed_stderr_error(path, res.stderr)
+    if err is None:
+        line = (res.stderr.strip().splitlines() or [""])[0][:200]
+        err = "no collector output" + (f": {line}" if line else "")
+    return "FAILED - " + err
 
 
 # ---------------------------------------------------------------- scan
@@ -176,6 +209,11 @@ def scan_cmd(ctx, max_depth, max_hosts, concurrency, timeout, no_crawl, ask_sudo
                        no_crawl=no_crawl, label=label)
     for w in scope_warnings(cfg):
         click.echo(f"warning: {w}", err=True)
+    if cfg.privilege.mode == "installed":
+        if ask_sudo_password:
+            raise ConfigError("privilege.mode installed never sends a sudo password - remove --ask-sudo-password")
+        if os.environ.pop("SSHBITE_SUDO_PASSWORD", None):
+            click.echo("warning: SSHBITE_SUDO_PASSWORD is ignored with privilege.mode installed", err=True)
     if dry_run:
         _dry_run(cfg, opts)
         return
@@ -542,8 +580,19 @@ def collector_group() -> None:
     """The fixed scripts that run on targets."""
 
 
+def _configured_collector_path(ctx: click.Context) -> str:
+    """privilege.collector_path if the config loads, else the default."""
+    from .config import DEFAULT_COLLECTOR_PATH
+
+    try:
+        return load_config(ctx.obj["config_path"]).privilege.collector_path
+    except SshbiteError:
+        return DEFAULT_COLLECTOR_PATH
+
+
 @collector_group.command("show")
-def collector_show() -> None:
+@click.pass_context
+def collector_show(ctx: click.Context) -> None:
     """Print both target scripts with their SHA-256 for review."""
     from . import collector
     from .collector.lint import lint
@@ -564,6 +613,37 @@ def collector_show() -> None:
             if c not in seen:
                 seen.append(c)
                 click.echo(c)
+    from .config import sibling_path
+
+    path = _configured_collector_path(ctx)
+    cmds = commands("installed", path)
+    click.echo(f"===== literal commands sent on exec channels (privilege.mode: installed, collector_path {path})")
+    click.echo(cmds["probe"] + "   (probe, stdin empty)")
+    click.echo(cmds["run"] + "   (the installed collector, stdin empty)")
+    click.echo(sibling_path(path, "sshbite-resolve") + "   (name resolution; the names are its stdin data)")
+
+
+@collector_group.command("export")
+@click.argument("directory", metavar="DIR", type=click.Path(file_okay=True, dir_okay=True))
+@click.option("--collector-path", "collector_path", metavar="P",
+              help="Where the collector is installed on the hosts (default: privilege.collector_path, "
+                   "else /usr/local/libexec/sshbite/sshbite-collect)")
+@click.pass_context
+def collector_export(ctx: click.Context, directory: str, collector_path: str | None) -> None:
+    """Write collector, resolve, gate, sudoers and authorized_keys templates with SHA256SUMS (privilege.mode installed)."""
+    from .collector import bundle
+    from .config import COLLECTOR_PATH_RULE, collector_path_ok
+
+    if collector_path is None:
+        collector_path = _configured_collector_path(ctx)
+    elif not collector_path_ok(collector_path):
+        raise ConfigError(f"--collector-path: {COLLECTOR_PATH_RULE}")
+    try:
+        files = bundle.write(directory, collector_path)
+    except bundle.ExportError as exc:
+        raise ConfigError(str(exc)) from None
+    click.echo(files["SHA256SUMS"].decode(), nl=False)
+    click.echo(f"written to {directory} - verify with: cd {directory} && sha256sum -c SHA256SUMS")
 
 
 @main.command("synth")

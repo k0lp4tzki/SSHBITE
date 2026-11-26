@@ -1,0 +1,21 @@
+scan: entry jump:22, max depth 10, max hosts 1000, concurrency 20
+depth 0: 1 queued, 0 running, 0 done
+depth 0: 0 queued, 0 running, 1 done
+depth 1: 2 queued, 0 running, 1 done
+depth 1: 0 queued, 0 running, 3 done
+depth 2: 5 queued, 0 running, 3 done
+depth 2: 0 queued, 1 running, 7 done
+depth 2: 0 queued, 0 running, 8 done (1 partial)
+depth 3: 4 queued, 0 running, 8 done (1 partial)
+depth 3: 0 queued, 2 running, 10 done (1 partial)
+depth 3: 0 queued, 0 running, 12 done (1 partial, 1 unreachable)
+depth 4: 1 queued, 0 running, 12 done (1 partial, 1 unreachable)
+depth 4: 0 queued, 1 running, 12 done (1 partial, 1 unreachable)
+depth 4: 0 queued, 0 running, 13 done (1 partial, 1 unreachable, 1 hostkey mismatch)
+
+scan 2 completed in 14 s
+hosts:    13 connected; 10 ok, 1 partial, 1 unreachable, 1 hostkey_mismatch, 1 excluded, 2 out_of_scope, 1 unresolvable
+findings: 37 - 5 critical, 15 high, 15 medium, 2 low, 0 info
+edges:    19 access (18 effective, 4 unknown origin); keys: 10
+scan id:  2
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)

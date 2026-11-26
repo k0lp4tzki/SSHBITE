@@ -27,7 +27,8 @@ audit:
   key_file: /etc/sshbite/audit_ed25519      # must be 0600
   key_passphrase_env: null
 privilege:
-  mode: sudo        # sudo: sudo -n /bin/sh -s | sudo-login: sudo -n -i /bin/sh -s | none
+  mode: sudo   # sudo | sudo-login | none | installed (recommended, see docs/install.md)
+  # collector_path: /usr/local/libexec/sshbite/sshbite-collect   # only for mode installed
   password_scope: []  # CIDRs / hostname globs that may receive the sudo password; empty = every host
 crawl:
   max_depth: 10
@@ -101,8 +102,9 @@ In the Docker image use `database: /data/sshbite.db` and paths under `/etc/sshbi
 
 | Key | Default | Meaning |
 |---|---|---|
-| `privilege.mode` | `sudo` | `sudo`: probe `sudo -n /bin/true`, then run the collector as `sudo -n /bin/sh -s`. `sudo-login`: the same with `-i` (root's login environment). `none`: never call sudo; every host is scanned unprivileged and marked `partial`. With a sudo password (`--ask-sudo-password` or `SSHBITE_SUDO_PASSWORD`) a host that asks for one is tried with `sudo -S -k -p ''`. sudo is always run by its absolute path (`/usr/bin/sudo`, else `/bin/sudo`). |
-| `privilege.password_scope` | `[]` | CIDRs or host name globs (include syntax) of the hosts that may receive the sudo password. Empty = every host. A host outside the scope that asks for a password is not sent it: it is scanned unprivileged and marked `partial` with *sudo password not sent (outside privilege.password_scope)*. A compromised host can imitate a sudo prompt – see [operations.md](operations.md#the-sudo-password). |
+| `privilege.mode` | `sudo` | `installed` (recommended): runs the collector that `sshbite collector export` wrote and you installed on every host ([install.md](install.md#privileges-installed-collector-recommended)): probe `sudo -n -l P`, then `sudo -n P`, both with empty stdin (P = `collector_path`); names are resolved with the exported `sshbite-resolve` next to P. No script is sent to a shell, no sudo password is ever sent, and there is no unprivileged fallback: a host whose probe fails, or whose collector has another version, is `collector_error` with a message that says what to fix. `--ask-sudo-password` is refused (exit 2); `SSHBITE_SUDO_PASSWORD` is ignored with a warning. `sudo` (the default; legacy - equivalent to full root for whoever holds the audit key, see [install.md](install.md#legacy-sudo-binsh--s-equivalent-to-full-root)): probe `sudo -n /bin/true`, then run the collector as `sudo -n /bin/sh -s`. `sudo-login`: the same with `-i` (root's login environment). `none`: never call sudo; every host is scanned unprivileged and marked `partial`. With a sudo password (`--ask-sudo-password` or `SSHBITE_SUDO_PASSWORD`) a host that asks for one is tried with `sudo -S -k -p ''`. sudo is always run by its absolute path (`/usr/bin/sudo`, else `/bin/sudo`). |
+| `privilege.collector_path` | `/usr/local/libexec/sshbite/sshbite-collect` | Only for mode `installed`: where the collector is installed on the hosts. An absolute path of letters, digits, `.`, `_`, `-` and `/`, no `.` or `..` segment, at most 200 characters. `sshbite-resolve` and `sshbite-gate` are expected in the same directory. In another mode `config validate` warns that the key is ignored. |
+| `privilege.password_scope` | `[]` | CIDRs or host name globs (include syntax) of the hosts that may receive the sudo password. Empty = every host. A host outside the scope that asks for a password is not sent it: it is scanned unprivileged and marked `partial` with *sudo password not sent (outside privilege.password_scope)*. A compromised host can imitate a sudo prompt – see [operations.md](operations.md#the-sudo-password). Must be empty with mode `installed` (error, exit 2). |
 
 ### `crawl`
 
