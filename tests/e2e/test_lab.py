@@ -91,13 +91,17 @@ def _db(cfg) -> sqlite3.Connection:
 
 
 FP = {name: L.key_fp(f) for name, f in EXP["keys"].items()}
+_SNAPSHOTS: list[tuple[str, dict, dict]] = []
 
 
 def _scan_bracketed(ctl, cfg, label: str, evidence, env: dict | None = None, config_key: str = "path"):
     """Snapshot all hosts, run the scan, snapshot again; return (process, snapshot diff)."""
     before = ctl.snapshot_all()
+    for h, text in before.items():  # the snapshot really covers the files a scan reads
+        assert "/etc/ssh/sshd_config " in text and "/home/sshbite/.ssh/authorized_keys" in text, h
     proc = L.sshbite(cfg[config_key], "scan", "--label", label, env=env)
     after = ctl.snapshot_all()
+    _SNAPSHOTS.append((label, before, after))
     diff = L.snapshot_diff(before, after)
     _write(evidence, f"snapshot-{label}.diff", diff)
     _write(evidence, f"snapshot-{label}-before.txt",
@@ -147,6 +151,18 @@ def test_00_lab_reset_and_scripts(ctl, evidence):
 
     assert lint(collector.collect_script()) == []
     assert lint(collector.resolve_script()) == []
+
+
+def test_00b_sshd_and_ssh_keygen_write_nothing(ctl, evidence):
+    """Spec assumption: `sshd -T` and `ssh-keygen -y/-l` write nothing - checked on the whole root filesystem
+    (mtime/ctime/size/mode of every path except /proc, /sys, /dev, /run, /var/log), not only /etc, /root, /home."""
+    out = []
+    for host, key in (("jump", "/home/ops/.ssh/id_ed25519"), ("a1", "/home/deploy/.ssh/id_rsa"),
+                      ("b2", "/home/www/.ssh/backup_rsa")):
+        res = ctl.run(host, "writecheck.sh", key)
+        out.append(f"{host} ({key}): {res.strip()}")
+        assert res.startswith("NO CHANGES"), (host, res)
+    _write(evidence, "writecheck.txt", "\n".join(out) + "\n")
 
 
 def test_01_pin_negative(ctl, cfg, evidence):
@@ -368,6 +384,14 @@ def test_20_scan2(ctl, cfg, state, evidence):
         ctl.run(host, "labctl.sh", action)
     proc, diff = _scan_bracketed(ctl, cfg, "scan2", evidence, env={"SSHBITE_SUDO_PASSWORD": "labsudo"})
     _write(evidence, "console-scan2.txt", proc.stdout + proc.stderr)
+    # the snapshot detects changes: the lab changes made above show up between scan 1 and scan 2
+    after_scan1 = [a for lbl, _b, a in _SNAPSHOTS if lbl == "scan1"][0]
+    before_scan2 = [b for lbl, b, _a in _SNAPSHOTS if lbl == "scan2"][0]
+    between = L.snapshot_diff(after_scan1, before_scan2)
+    _write(evidence, "snapshot-lab-changes-before-scan2.diff", between)
+    for path in ("a5/before", "b2/before", "c2/before", "/root/.ssh/authorized_keys", "/home/www/.ssh/authorized_keys",
+                 "/etc/ssh/ssh_host_ed25519_key"):
+        assert path in between, path
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert diff == "", "lab changed during scan 2:\n" + diff
     conn = _db(cfg)
