@@ -146,7 +146,7 @@ More in [operations.md](operations.md#the-sudo-password).
 ## How this was checked
 
 The lab test checks that `/etc`, `/root` and `/home` of 13 real OpenSSH hosts (Debian 12, OpenSSH 9.2,
-sudo 1.9) are byte-identical before and after every scan, and that `sshd -T` and `ssh-keygen` change
+sudo 1.9) and of an AlmaLinux 9 host are byte-identical before and after every scan, and that `sshd -T` and `ssh-keygen` change
 nothing on the root filesystem outside `/proc`, `/sys`, `/dev`, `/run` and `/var/log` (see
 [review.md](review.md#how-read-only-behaviour-is-tested)). The log entries, mails, access times and
 monitoring effects above are not avoidable by SSHBITE. The sudo mails in the table were captured in the
