@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8"]
+test = ["pytest>=8", "playwright>=1.45"]
 
 [project.scripts]
 sshbite = "sshbite.cli:main"
