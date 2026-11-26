@@ -19,12 +19,20 @@ ALLOWED_COMMANDS = {
     # ifconfig is named in spec 3.5 (META fallback) but not in the 3.6 list; it is read-only
     # with -a and allowed only in exactly that form (see ARG_RULES).
     "ifconfig",
+    # spec 7.1: reads in user homes run as the account; only in the one form of _check_setpriv
+    "setpriv",
 }
 FORBIDDEN_COMMANDS = {
     "rm", "mv", "cp", "tee", "touch", "mkdir", "mktemp", "chmod", "chown", "ln", "dd", "install",
     "truncate", "ssh", "scp", "sftp", "curl", "wget", "eval", "exec", ".", "source", "sh", "bash",
     "sudo", "su", "xargs", "env", "nohup", "nc", "socat", "python", "python3", "perl",
+    # spec 7.1: runuser opens a PAM session (log entries, possibly writes); setpriv only switches ids
+    "runuser",
 }
+# spec 7.5: the only allowed setpriv form, compared with the raw (quoted) words, and what it may run
+SETPRIV_ARGS = ['--reuid="$uid"', '--regid="$gid"', "--init-groups", "--no-new-privs", "--"]
+SETPRIV_WRAPPED = {"ls", "stat", "head", "test", "ssh-keygen"}
+SETPRIV_FORM = "setpriv: only '--reuid=\"$uid\" --regid=\"$gid\" --init-groups --no-new-privs -- CMD' is allowed"
 BUILTINS = {"set", "export", "read", "continue", "break", "return", "shift", ":"}
 KEYWORDS_PREFIX = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "fi", "done", "}", "esac"}
 ALLOWED_REDIRECTIONS = {"2>/dev/null", "2>&1", "</dev/null"}
@@ -353,12 +361,31 @@ class Linter:
             return
         if raw.startswith("/") and raw not in ("/usr/sbin/sshd",):
             self.violations.append(Violation(cmd.line, f"unexpected command path {raw}"))
+        if name == "setpriv":
+            self._check_setpriv(cmd, args)
+            return
         a = [w.literal for w in args]
         rule = ARG_RULES.get(name)
         if rule:
             msg = rule(a)
             if msg:
                 self.violations.append(Violation(cmd.line, f"{name}: {msg}"))
+
+    def _check_setpriv(self, cmd: Tok, args: list[Tok]) -> None:
+        """setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs -- CMD ARGS (spec 7.5)."""
+        n = len(SETPRIV_ARGS)
+        if [w.value for w in args[:n]] != SETPRIV_ARGS or len(args) <= n:
+            self.violations.append(Violation(cmd.line, SETPRIV_FORM))
+            return
+        wrapped = args[n]
+        if "$" in wrapped.literal:
+            self.violations.append(Violation(wrapped.line, f"command name built from data: {wrapped.value}"))
+            return
+        name = wrapped.literal.rsplit("/", 1)[-1] if wrapped.literal.startswith("/") else wrapped.literal
+        if name not in SETPRIV_WRAPPED:
+            self.violations.append(Violation(wrapped.line, f"setpriv: command '{name}' may not be wrapped"))
+            return
+        self._check_command(wrapped, args[n + 1:])
 
 
 def _ssh_keygen(a: list[str]) -> str | None:

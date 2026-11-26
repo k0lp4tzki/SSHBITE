@@ -29,6 +29,7 @@ from .transport import Hop, HostKeyPolicy, RouteError, Transport, run
 
 log = logging.getLogger("sshbite.crawl")
 
+SETPRIV_MISSING = "setpriv (util-linux) missing: files in user homes not read"
 CONNECTED_STATUSES = ("ok", "partial", "unreachable", "timeout", "auth_failed", "hostkey_mismatch",
                       "hostkey_unknown", "collector_error", "output_limit")
 DATA_STATUSES = ("ok", "partial", "collector_error", "output_limit")
@@ -592,11 +593,21 @@ class Scanner:
             t.status = "partial"
         else:
             t.status = "ok"
+        if t.status in ("ok", "partial", "output_limit"):
+            # spec 7.3: the collector ran as root without setpriv and read nothing in user homes
+            if c.value("setpriv") == "no":
+                if t.status == "ok":
+                    t.status = "partial"
+                t.partial_reasons.append(SETPRIV_MISSING)
+            # spec 7.4: files the account itself cannot read (sshd cannot use them either); the status stays
+            for path, reason in t.data.unreadable:
+                if reason == "unreadable by account":
+                    t.partial_reasons.append(f"unreadable by account: {path}")
         if outcome.privilege == "unprivileged" or t.status in ("partial", "output_limit"):
             for path, reason in t.data.unreadable:
                 if reason == "unreadable":
                     t.partial_reasons.append(f"unreadable: {path}")
-            t.partial_reasons = t.partial_reasons[:50]
+        t.partial_reasons = t.partial_reasons[:50]
 
     # ---- references -----------------------------------------------------------
     def _new_ref(self, **kw) -> Ref:
