@@ -573,6 +573,39 @@ error: audit.key_file: /tmp/ts/k644: mode is 0644, must be 0600 (chmod 600 /tmp/
 exit=2
 ```
 
+### Entry host key not pinned (troubleshooting, added after QA check-3)
+
+Equivalent: native, as a normal user, on this branch (code unchanged since `c42fa9d`), Python
+3.12 venv from `requirements-runtime.lock`, `sshbite.cli:main` run directly. Config from `init-config` with
+the `host_keys:` line removed, `entry.host: 172.30.1.5` (no lab reachable; the scan stops before connecting).
+
+```text
++ sshbite --config c2.yaml config validate
+warning: config file /tmp/repro/c2.yaml is group- or world-readable (chmod 600 recommended)
+warning: crawl.include is empty: …
+error: entry.host_keys: missing - pin the entry host key (scan aborts without it)
+exit=2
++ sshbite --config c2.yaml scan
+warning: crawl.include is empty: …
+scan: entry 172.30.1.5:22, max depth 10, max hosts 1000, concurrency 20
+error: ENTRY HOST KEY NOT PINNED - scan aborted: set entry.host_keys in the config
+exit=3
++ sshbite --config c2.yaml scans list
+  id  started               status     hosts  findings  label
+   1  2026-11-27T09:27:51Z  aborted        0         0  
+exit=0
+```
+
+The aborted scan takes a scan ID (here 1); the next successful scan would be 2. This backs the note in
+install.md Schritt 10.
+
+### Which address is `unreachable` in step 10
+
+Not re-run. In the step-10 output `14 connected; 13 ok, 1 unreachable`, the 13 `ok` hosts are the 13 prepared
+lab hosts (jump, a1–a5, b1–b5, c1, c2; r1 was not prepared and is not reached). The unreachable address is
+`172.30.1.99`: `lab/expected.yaml` lists it as `unreachable`, found in `a2 /home/deploy/.ssh/known_hosts:1`, and
+no lab container has that address (`lab/compose.yaml`).
+
 ---
 
 ## Update (guide section „Aktualisierung“)

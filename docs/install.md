@@ -321,7 +321,7 @@ docker exec sshbite sshbite scans list
 ```
 
 **Prüfung:** Der Scan endet mit einer Zusammenfassung und Exit-Code 0, `scans list` zeigt ihn als
-`completed`. Im Testlauf gegen das Lab (13 Hosts, Modus installed) sah das so aus:
+`completed`. Im Testlauf gegen das Lab (Modus installed) sah das so aus:
 
 ```text
 scan: entry 172.30.1.5:22, max depth 10, max hosts 1000, concurrency 20
@@ -335,6 +335,13 @@ UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
   id  started               status     hosts  findings  label
    1  2026-11-27T09:04:16Z  completed     14        36  first
 ```
+
+Gezählt werden alle Adressen, zu denen der Scan eine Verbindung versucht hat: Die 13 vorbereiteten
+Lab-Hosts (`jump`, `a1`–`a5`, `b1`–`b5`, `c1`, `c2`; `r1` war nicht vorbereitet) sind `ok`. Die 14. Adresse,
+`172.30.1.99`, steht in einer `known_hosts`-Datei des Lab, gehört aber zu keinem Host: Sie ist `unreachable`.
+
+Ihr erster erfolgreicher Scan muss nicht die ID 1 haben. Auch abgebrochene Scans (zum Beispiel nach einem
+falschen Host-Key) belegen eine Scan-ID und erscheinen in `scans list` mit dem Status `aborted`.
 
 Ihr Scan zeigt Ihre Hosts. Ein Host mit dem Status `collector_error` ist nicht richtig vorbereitet, siehe
 [Fehlerbehebung](#fehlerbehebung).
@@ -414,8 +421,11 @@ Kopieren Sie das Export-Verzeichnis und den öffentlichen Audit-Schlüssel auf d
 scp -r sshbite-export /etc/sshbite/audit_ed25519.pub root@<HOST>:/root/
 ```
 
-`<HOST>` ist der Zielhost. In dieser Form nicht getestet: Im Lab scheiterte `scp` ohne `-O` (siehe
-[Fehlerbehebung](#fehlerbehebung)); kopiert wurde mit `scp -O` über einen Root-Zugang des Lab-Hosts. Alle weiteren Befehle dieses Abschnitts laufen **auf dem Zielhost als root**.
+`<HOST>` ist der Zielhost. Dieser Befehl ist in dieser Form nicht getestet. Im Lab scheiterte `scp` ohne
+`-O` (siehe [Fehlerbehebung](#fehlerbehebung)). Kopiert wurde mit `scp -O` über einen Root-Zugang des
+Lab-Hosts.
+
+Alle weiteren Befehle dieses Abschnitts laufen **auf dem Zielhost als root**.
 
 ### Collector, Gate und sudo-Regel installieren
 
@@ -514,6 +524,8 @@ root 755 /usr/local/libexec/sshbite/sshbite-resolve
 ```
 
 - `sha256sum -c` meldet fünfmal `OK`, `visudo -cf` meldet `/etc/sudoers.d/sshbite: parsed OK`.
+- `passwd -l sshbite` gibt `passwd: password changed.` aus. Das ist harmlos: Das Passwort des Kontos ist
+  damit gesperrt.
 - `sudo -l -U sshbite` listet **nur** `(root) NOPASSWD: /usr/local/libexec/sshbite/sshbite-collect ""`.
 - `stat` zeigt überall `root` und keine Schreibrechte für Gruppe oder andere (`755`): Die sudo-Regel ist
   nur sicher, wenn die Datei und jedes Verzeichnis darüber root gehören.
@@ -726,7 +738,8 @@ known_hosts-Datei geprüft, siehe `hostkeys` in [configuration.md](configuration
 SSHBITE läuft hier direkt auf dem Scanner-Rechner, als eigenes Systemkonto `sshbite-app`. Die Installation
 aus dem Git-Checkout baut die Oberfläche mit `npm ci` und `npm run build`: **Node 22 mit npm ist dafür
 nötig.** Das Repository enthält kein fertiges Wheel; Sie können aber auf einem Rechner mit Node eines
-bauen (unten) und es ohne Node installieren.
+bauen (unten) und es ohne Node installieren. Gebaut wurde mit Node 22; die unabhängige Prüfung hat die
+Oberfläche auch mit Node 24 ohne Fehler gebaut.
 
 > **Testumfang:** Die Installation mit pip, `sshbite --version`, `collector export`, `config validate
 > --connect`, `user add`, `scan` und `serve` wurden mit Python 3.12 und Node 22 als normaler Benutzer
@@ -1043,7 +1056,7 @@ den Host als `auth_failed`.
 | `subsystem request failed on channel 0` und `scp: Connection closed` beim Kopieren auf den Zielhost | Neuere `scp` übertragen per SFTP; der sshd des Zielhosts bietet kein SFTP-Subsystem an. | `scp -O` (altes SCP-Protokoll) verwenden, oder die Dateien mit Ihrem Konfigurationsmanagement verteilen. |
 | `error: audit.key_file: /etc/sshbite/audit_ed25519: mode is 0644, must be 0600 (chmod 600 /etc/sshbite/audit_ed25519)`, Exit-Code 2 | Der Audit-Schlüssel hat nicht den Modus 0600 oder gehört nicht dem Konto, das SSHBITE ausführt (10001 bei Docker, `sshbite-app` bei Pfad C). | [Pfad B Schritt 6](#schritt-6-dateien-dem-container-benutzer-geben) bzw. `chown` aus Pfad C wiederholen. |
 | `error: ENTRY HOST KEY MISMATCH – scan aborted`, Exit-Code 3 | Der Einstiegshost zeigt einen anderen Host-Key als festgelegt. | Nicht einfach übernehmen: Fingerabdruck an der Konsole prüfen ([Host-Key festlegen](#host-key-festlegen-und-konfiguration-schreiben)). |
-| `error: entry.host_keys: missing - pin the entry host key (scan aborts without it)` | Kein Host-Key festgelegt. | [Host-Key festlegen](#host-key-festlegen-und-konfiguration-schreiben). |
+| `error: entry.host_keys: missing - pin the entry host key (scan aborts without it)`, Exit-Code 2, bei `config validate`; `error: ENTRY HOST KEY NOT PINNED - scan aborted: set entry.host_keys in the config`, Exit-Code 3, bei `scan` | Kein Host-Key festgelegt (`entry.host_keys` fehlt in der Konfiguration). | [Host-Key festlegen](#host-key-festlegen-und-konfiguration-schreiben). |
 | `sudo: FAILED - …`, Exit-Code 3, bei `config validate --connect` | Der Einstiegshost ist nicht richtig vorbereitet. | Meldung in [Fehlermeldungen im Modus installed](#fehlermeldungen-im-modus-installed) nachschlagen. |
 | `error: entry <ENTRY-HOST>:22 authentication failed: authentication failed: Permission denied for user sshbite on host <ENTRY-HOST>`, Exit-Code 3 | Das Audit-Konto lehnt den Schlüssel ab: falsche `from=`-Adresse, `authorized_keys` fehlt oder hat falschen Besitzer/Modus. | Bei Docker steht in `from=` die Adresse des Docker-Hosts; `authorized_keys` root:root 0644. |
 | Container startet immer neu, oder `internal error: OSError: [Errno 30] Read-only file system: '/var/lib/sshbite'`, Exit-Code 4 | `database:` steht nicht auf `/data/sshbite.db`; der Container darf außerhalb von `/data` nicht schreiben. | `database: /data/sshbite.db` eintragen, `docker compose -f docs/compose.example.yaml up -d`. |
