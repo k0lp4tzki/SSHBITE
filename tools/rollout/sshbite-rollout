@@ -1,0 +1,787 @@
+#!/usr/bin/env bash
+# sshbite-rollout - set up SSHBITE end to end: check, plan, apply, validate, remove.
+#
+# Runs as root on the scanner machine, from a checkout of this repository. It does what docs/install.md
+# describes by hand: the scanner side (audit key, image or venv, config, service) and - through
+# tools/rollout/host-agent.sh - every host of the inventory (audit account, collector, gate, sudo rule,
+# authorized_keys line, sshd block). Read docs/rollout.md first.
+#
+#   sshbite-rollout init                 schreibt /etc/sshbite/rollout.conf und rollout.hosts (Vorlagen)
+#   sshbite-rollout check                Voraussetzungen hier und auf jedem Host      (ändert nichts)
+#   sshbite-rollout plan                 alles, was `apply` ändern würde              (ändert nichts)
+#   sshbite-rollout apply [--scan]       einrichten, dann das Ergebnis prüfen
+#   sshbite-rollout validate             Hosts und Verbindung erneut prüfen           (ändert nichts)
+#   sshbite-rollout remove [--yes]       ohne --yes: was entfernt würde               (ändert nichts)
+#
+# Optionen: -c DATEI (Standard /etc/sshbite/rollout.conf), --host ADRESSE (nur dieser Host; mehrfach möglich),
+#           --adopt-existing-account, --remove-foreign-sudoers, --write-config, --rebuild, --scan, --yes
+# Exit-Code: 0 nichts fehlgeschlagen, 1 mindestens ein FAIL, 2 Fehler in den Optionen oder Dateien.
+# Anleitung: docs/rollout.md
+
+set -u -o pipefail
+export LC_ALL=C
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO=$(cd "$HERE/../.." && pwd)
+AGENT=$HERE/host-agent.sh
+STATE=/var/lib/sshbite-rollout
+ETC=${SSHBITE_ROLLOUT_ETC:-/etc/sshbite}
+CONF=$ETC/rollout.conf
+CONTAINER=sshbite
+VENV=/opt/sshbite
+APP_USER=sshbite-app
+FILES=(authorized_keys.sshbite sshbite-collect sshbite-gate sshbite-resolve sudoers.d-sshbite)
+
+FAILS=0 PLANS=0 WARNS=0 DONES=0
+HOST_FAILED=()
+
+# ---------------------------------------------------------------- output
+if [ -t 1 ]; then
+  C_OK=$'\e[32m' C_WARN=$'\e[33m' C_FAIL=$'\e[31m' C_PLAN=$'\e[36m' C_HEAD=$'\e[1m' C_OFF=$'\e[0m'
+else
+  C_OK='' C_WARN='' C_FAIL='' C_PLAN='' C_HEAD='' C_OFF=''
+fi
+head_() { printf '\n%s== %s ==%s\n' "$C_HEAD" "$1" "$C_OFF"; }
+line() {   # line LEVEL TEXT
+  case "$1" in
+    OK) printf '  %s[ OK ]%s %s\n' "$C_OK" "$C_OFF" "$2" ;;
+    INFO) printf '  [INFO] %s\n' "$2" ;;
+    WARN) WARNS=$((WARNS + 1)); printf '  %s[WARN]%s %s\n' "$C_WARN" "$C_OFF" "$2" ;;
+    PLAN) PLANS=$((PLANS + 1)); printf '  %s[PLAN]%s %s\n' "$C_PLAN" "$C_OFF" "$2" ;;
+    DONE) DONES=$((DONES + 1)); printf '  %s[DONE]%s %s\n' "$C_OK" "$C_OFF" "$2" ;;
+    FAIL) FAILS=$((FAILS + 1)); printf '  %s[FAIL]%s %s\n' "$C_FAIL" "$C_OFF" "$2" ;;
+  esac
+}
+die() { printf 'sshbite-rollout: %s\n' "$1" >&2; exit 2; }
+# todo TEXT: returns 0 when the caller has to change it now (apply); prints PLAN or FAIL otherwise
+todo() {
+  case "$CMD" in
+    apply) return 0 ;;
+    validate) line FAIL "nicht eingerichtet: $1"; return 1 ;;
+    *) line PLAN "$1"; return 1 ;;
+  esac
+}
+
+# ---------------------------------------------------------------- arguments
+CMD=${1:-}
+[ $# -gt 0 ] && shift
+ONLY_HOSTS=()
+ADOPT=no RM_FOREIGN=no WRITE_CONFIG=no REBUILD=no SCAN=no YES=no
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -c | --config) [ $# -ge 2 ] || die "$1 braucht einen Dateinamen"; CONF=$2; shift ;;
+    --host) [ $# -ge 2 ] || die "--host braucht eine Adresse"; ONLY_HOSTS+=("$2"); shift ;;
+    --adopt-existing-account) ADOPT=yes ;;
+    --remove-foreign-sudoers) RM_FOREIGN=yes ;;
+    --write-config) WRITE_CONFIG=yes ;;
+    --rebuild) REBUILD=yes ;;
+    --scan) SCAN=yes ;;
+    --yes) YES=yes ;;
+    -h | --help) CMD=help ;;
+    *) die "unbekannte Option: $1" ;;
+  esac
+  shift
+done
+usage() { sed -n '9,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+case "$CMD" in
+  init | check | plan | apply | validate | remove) ;;
+  help | -h | --help | '') usage; [ "$CMD" = '' ] && exit 2; exit 0 ;;
+  *) die "unbekannter Befehl: $CMD (init, check, plan, apply, validate, remove)" ;;
+esac
+[ "$(id -u)" = 0 ] || die "bitte als root ausführen"
+[ -r "$AGENT" ] || die "$AGENT fehlt: das Skript muss aus einem Checkout des Repositorys laufen"
+
+# ---------------------------------------------------------------- init
+if [ "$CMD" = init ]; then
+  install -d -m 0700 "$ETC"
+  for pair in "rollout.conf.example:$CONF" "rollout.hosts.example:$ETC/rollout.hosts"; do
+    src=$HERE/${pair%%:*} dst=${pair#*:}
+    if [ -e "$dst" ]; then
+      printf 'vorhanden, nicht überschrieben: %s\n' "$dst"
+    else
+      install -m 0600 "$src" "$dst" && printf 'geschrieben: %s\n' "$dst"
+    fi
+  done
+  printf 'Jetzt beide Dateien ausfüllen, dann: %s plan\n' "$0"
+  exit 0
+fi
+
+# ---------------------------------------------------------------- configuration
+AUDIT_USER=sshbite
+MODE=docker
+ENTRY_HOST=
+ENTRY_PORT=22
+CRAWL_INCLUDE=
+COLLECTOR_PATH=/usr/local/libexec/sshbite/sshbite-collect
+SCANNER_FROM=
+ENTRY_FROM=
+SSH_USER=root
+SSH_SUDO=no
+SSH_OPTS=
+INVENTORY=
+
+[ -r "$CONF" ] || die "$CONF nicht lesbar: mit '$0 init' anlegen und ausfüllen"
+n=0
+while IFS= read -r raw || [ -n "$raw" ]; do
+  n=$((n + 1))
+  l=${raw%%#*}
+  l=${l#"${l%%[![:space:]]*}"}
+  l=${l%"${l##*[![:space:]]}"}
+  [ -n "$l" ] || continue
+  [[ $l =~ ^([A-Z_]+)[[:space:]]*=[[:space:]]*(.*)$ ]] || die "$CONF Zeile $n: erwartet NAME=wert"
+  k=${BASH_REMATCH[1]} v=${BASH_REMATCH[2]}
+  v=${v#\"}; v=${v%\"}; v=${v#\'}; v=${v%\'}
+  case "$k" in
+    AUDIT_USER | MODE | ENTRY_HOST | ENTRY_PORT | CRAWL_INCLUDE | COLLECTOR_PATH | SCANNER_FROM | ENTRY_FROM | SSH_USER | SSH_SUDO | SSH_OPTS | INVENTORY)
+      printf -v "$k" '%s' "$v" ;;
+    *) die "$CONF Zeile $n: unbekannter Schlüssel $k" ;;
+  esac
+done < "$CONF"
+[ -n "$INVENTORY" ] || INVENTORY=$(dirname "$CONF")/rollout.hosts
+
+RE_ADDR='^[A-Za-z0-9._:-]{1,253}$'
+RE_FROM='^[0-9A-Fa-f.:/]+(,[0-9A-Fa-f.:/]+)*$'
+RE_USER='^[a-z_][a-z0-9_-]{0,31}$'
+[[ $AUDIT_USER =~ $RE_USER && $AUDIT_USER != root ]] \
+  || die "AUDIT_USER='$AUDIT_USER': ein Kontoname aus Kleinbuchstaben, Ziffern, '_' und '-' (höchstens 32 Zeichen, nicht root)"
+[[ $MODE == docker || $MODE == native ]] || die "MODE='$MODE': docker oder native"
+[[ $ENTRY_HOST =~ $RE_ADDR ]] || die "ENTRY_HOST fehlt oder ist kein Hostname bzw. keine Adresse"
+[[ $ENTRY_PORT =~ ^[0-9]{1,5}$ ]] || die "ENTRY_PORT='$ENTRY_PORT': eine Portnummer"
+[[ $COLLECTOR_PATH =~ ^/([A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+$ && $COLLECTOR_PATH != */./* && $COLLECTOR_PATH != */../* && ${#COLLECTOR_PATH} -le 200 ]] \
+  || die "COLLECTOR_PATH='$COLLECTOR_PATH': ein absoluter Pfad aus Buchstaben, Ziffern, '.', '_', '-' und '/'"
+[[ $COLLECTOR_PATH == */*/* ]] || die "COLLECTOR_PATH='$COLLECTOR_PATH': der Collector braucht ein eigenes Verzeichnis"
+[[ -z $CRAWL_INCLUDE || $CRAWL_INCLUDE =~ ^[0-9A-Fa-f.:/]+([,[:space:]]+[0-9A-Fa-f.:/]+)*$ ]] \
+  || die "CRAWL_INCLUDE='$CRAWL_INCLUDE': Netze in CIDR-Schreibweise, durch Komma getrennt"
+[[ -z $SCANNER_FROM || $SCANNER_FROM =~ $RE_FROM ]] || die "SCANNER_FROM='$SCANNER_FROM': Adressen oder CIDRs, durch Komma getrennt"
+[[ -z $ENTRY_FROM || $ENTRY_FROM =~ $RE_FROM ]] || die "ENTRY_FROM='$ENTRY_FROM': Adressen oder CIDRs, durch Komma getrennt"
+[[ $SSH_USER =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]] || die "SSH_USER='$SSH_USER': ein Kontoname"
+[[ $SSH_SUDO == yes || $SSH_SUDO == no ]] || die "SSH_SUDO='$SSH_SUDO': yes oder no"
+[[ $SSH_OPTS != *[\'\"\`\$\;\&\|\<\>\\]* ]] || die "SSH_OPTS: nur einfache ssh-Optionen ohne Anführungszeichen und Shell-Zeichen"
+
+VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$REPO/pyproject.toml" | head -n 1)
+[ -n "$VERSION" ] || die "Version in $REPO/pyproject.toml nicht gefunden"
+IMAGE=sshbite:$VERSION
+if [ "$MODE" = docker ]; then
+  DATABASE=/data/sshbite.db OWNER=10001 OWNER_GROUP=10001
+else
+  DATABASE=/var/lib/sshbite/sshbite.db OWNER=$APP_USER OWNER_GROUP=$APP_USER
+fi
+KEY=$ETC/audit_ed25519
+YAML=$ETC/sshbite.yaml
+SEEDS=$ETC/seeds.hosts
+
+# ---------------------------------------------------------------- addresses
+resolve() {   # first address of a name; an address stays as it is
+  if [[ $1 =~ ^[0-9.]+$ || $1 == *:* ]]; then printf '%s' "$1"; return; fi
+  getent ahosts "$1" 2>/dev/null | awk 'NR == 1 {print $1}'
+}
+command -v ip >/dev/null 2>&1 || die "das Programm ip fehlt (Paket iproute2): es bestimmt die eigenen Adressen und die from=-Adressen"
+LOCAL_ADDRS=$(ip -o addr show 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
+is_local() {
+  local a
+  a=$(resolve "$1")
+  [ -n "$a" ] && grep -qxF "$a" <<< "$LOCAL_ADDRS"
+}
+route_src() { ip -o route get "$1" 2>/dev/null | sed -n 's/.* src \([^ ]*\).*/\1/p' | head -n 1; }
+
+ENTRY_ADDR=$(resolve "$ENTRY_HOST")
+[ -n "$ENTRY_ADDR" ] || die "ENTRY_HOST=$ENTRY_HOST lässt sich nicht auflösen"
+ENTRY_LOCAL=no
+is_local "$ENTRY_HOST" && ENTRY_LOCAL=yes
+if [ "$ENTRY_LOCAL" = yes ] && [[ $ENTRY_ADDR == 127.* || $ENTRY_ADDR == ::1 ]]; then
+  die "ENTRY_HOST=$ENTRY_HOST ist eine Loopback-Adresse: bitte die Adresse dieses Rechners im Netz eintragen (so heißt der Host dann auch im Scan)"
+fi
+
+# ---------------------------------------------------------------- inventory
+# H_ADDR[i] H_VARIANT[i] H_FROM[i] H_PORT[i] H_USER[i]; index 0 is the entry host
+H_ADDR=("$ENTRY_HOST") H_VARIANT=(A) H_FROM=("$SCANNER_FROM") H_PORT=(22) H_USER=("$SSH_USER")
+if [ -r "$INVENTORY" ]; then
+  n=0
+  while IFS= read -r raw || [ -n "$raw" ]; do
+    n=$((n + 1))
+    l=${raw%%#*}
+    read -r -a w <<< "$l"
+    [ ${#w[@]} -gt 0 ] || continue
+    addr=${w[0]} variant=B from='' port=22 user=$SSH_USER
+    [[ $addr =~ $RE_ADDR ]] || die "$INVENTORY Zeile $n: '$addr' ist kein Hostname und keine Adresse"
+    for o in "${w[@]:1}"; do
+      case "$o" in
+        hop) variant=C ;;
+        from=*) from=${o#from=}; [[ $from =~ $RE_FROM ]] || die "$INVENTORY Zeile $n: from= braucht Adressen oder CIDRs" ;;
+        port=*) port=${o#port=}; [[ $port =~ ^[0-9]{1,5}$ ]] || die "$INVENTORY Zeile $n: port= braucht eine Zahl" ;;
+        user=*) user=${o#user=}; [[ $user =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]] || die "$INVENTORY Zeile $n: user= braucht einen Kontonamen" ;;
+        *) die "$INVENTORY Zeile $n: unbekannte Angabe '$o' (hop, from=, port=, user=)" ;;
+      esac
+    done
+    if [ "$addr" = "$ENTRY_HOST" ] || [ "$(resolve "$addr")" = "$ENTRY_ADDR" ]; then
+      # the entry host may be listed to give its admin port or user; it stays variant A
+      [ "$variant" = B ] || die "$INVENTORY Zeile $n: der Einstiegshost kann kein hop sein"
+      H_PORT[0]=$port H_USER[0]=$user
+      [ -z "$from" ] || H_FROM[0]=$from
+      continue
+    fi
+    for a in "${H_ADDR[@]}"; do [ "$a" != "$addr" ] || die "$INVENTORY Zeile $n: $addr steht doppelt in der Liste"; done
+    [ "$variant" != C ] || [ -n "$from" ] || die "$INVENTORY Zeile $n: ein hop braucht from=<Adresse der vorherigen Zwischenstation>"
+    H_ADDR+=("$addr") H_VARIANT+=("$variant") H_FROM+=("$from") H_PORT+=("$port") H_USER+=("$user")
+  done < "$INVENTORY"
+elif [ -e "$INVENTORY" ]; then
+  die "$INVENTORY nicht lesbar"
+fi
+for h in ${ONLY_HOSTS[@]+"${ONLY_HOSTS[@]}"}; do
+  found=no
+  for a in "${H_ADDR[@]}"; do [ "$a" = "$h" ] && found=yes; done
+  [ "$found" = yes ] || die "--host $h: steht nicht in $INVENTORY und ist nicht der Einstiegshost"
+done
+selected() {
+  [ ${#ONLY_HOSTS[@]} -eq 0 ] && return 0
+  local h
+  for h in "${ONLY_HOSTS[@]}"; do [ "$h" = "$1" ] && return 0; done
+  return 1
+}
+# the from= value of every host: what the host sees as the source address of the audit login
+for i in "${!H_ADDR[@]}"; do
+  [ -z "${H_FROM[$i]}" ] || continue
+  if [ "$i" = 0 ]; then
+    H_FROM[0]=$(route_src "$ENTRY_ADDR")
+  elif [ -n "$ENTRY_FROM" ]; then
+    H_FROM[$i]=$ENTRY_FROM
+  elif [ "$ENTRY_LOCAL" = yes ]; then
+    H_FROM[$i]=$(route_src "$(resolve "${H_ADDR[$i]}")")
+  else
+    H_FROM[$i]=$ENTRY_ADDR
+  fi
+  [[ ${H_FROM[$i]} =~ $RE_FROM ]] || die "für ${H_ADDR[$i]} lässt sich die from=-Adresse nicht bestimmen: from= in $INVENTORY angeben"
+done
+
+# ---------------------------------------------------------------- scanner: prerequisites
+OS_ID=$(sed -n 's/^ID=//p' /etc/os-release 2>/dev/null | tr -d '"')
+OS_VER=$(sed -n 's/^VERSION_ID=//p' /etc/os-release 2>/dev/null | tr -d '"')
+pkg_hint() {   # pkg_hint WHAT
+  case "$OS_ID:$1" in
+    sles:docker | sled:docker) printf 'SUSEConnect -p sle-module-containers/%s/%s && zypper install docker && systemctl enable --now docker' "$OS_VER" "$(uname -m)" ;;
+    opensuse*:docker) printf 'zypper install docker && systemctl enable --now docker' ;;
+    debian:docker | ubuntu:docker) printf 'apt-get install docker.io' ;;
+    *:docker) printf 'Docker Engine installieren und starten' ;;
+    sles:python | sled:python) printf 'SUSEConnect -p sle-module-python3/%s/%s && zypper install python312' "$OS_VER" "$(uname -m)" ;;
+    opensuse*:python) printf 'zypper install python312' ;;
+    *:python) printf 'Python 3.12 installieren' ;;
+    sles:node | sled:node | opensuse*:node) printf 'zypper search nodejs (gebraucht wird Node 22 mit npm; sonst MODE=docker)' ;;
+    *:node) printf 'Node 22 mit npm installieren (oder MODE=docker)' ;;
+    sles:ssh | sled:ssh | opensuse*:ssh) printf 'zypper install openssh-clients' ;;
+    *:ssh) printf 'das Paket openssh-client installieren' ;;
+  esac
+}
+PYTHON=
+software_present() {
+  if [ "$MODE" = docker ]; then
+    docker image inspect "$IMAGE" >/dev/null 2>&1
+  else
+    [ -x "$VENV/bin/sshbite" ] && [ "$("$VENV/bin/sshbite" --version 2>/dev/null)" = "sshbite, version $VERSION" ]
+  fi
+}
+scanner_check() {
+  head_ "Scanner-Rechner $(hostname) (${OS_ID:-?} ${OS_VER:-}, Modus $MODE)"
+  local missing='' t
+  for t in ssh ssh-keygen sha256sum base64 ip getent awk sed install; do
+    command -v "$t" >/dev/null 2>&1 || missing="$missing $t"
+  done
+  if [ -n "$missing" ]; then
+    line FAIL "fehlende Programme:$missing ($(pkg_hint ssh), dazu coreutils und iproute2)"
+  else
+    line OK "ssh, ssh-keygen und die Basiswerkzeuge sind vorhanden"
+  fi
+  if [ "$MODE" = docker ]; then
+    if ! command -v docker >/dev/null 2>&1; then
+      line FAIL "docker fehlt: $(pkg_hint docker)"
+    elif ! docker info >/dev/null 2>&1; then
+      line FAIL "der Docker-Dienst antwortet nicht: systemctl enable --now docker"
+    else
+      line OK "Docker $(docker version --format '{{.Server.Version}}' 2>/dev/null) läuft"
+    fi
+  else
+    for t in python3.12 python3.13; do
+      [ -z "$PYTHON" ] && command -v "$t" >/dev/null 2>&1 && PYTHON=$t
+    done
+    if software_present; then
+      line OK "SSHBITE $VERSION ist in $VENV installiert"
+    else
+      if [ -n "$PYTHON" ]; then line OK "$PYTHON ist vorhanden"; else line FAIL "Python 3.12 fehlt: $(pkg_hint python)"; fi
+      local nv
+      nv=$(node --version 2>/dev/null | sed 's/^v\([0-9]*\).*/\1/')
+      if [ -n "$nv" ] && [ "$nv" -ge 22 ] && command -v npm >/dev/null 2>&1; then
+        line OK "Node $(node --version) mit npm ist vorhanden (baut die Oberfläche)"
+      else
+        line FAIL "Node 22 mit npm fehlt (die Installation aus dem Checkout baut die Oberfläche): $(pkg_hint node)"
+      fi
+    fi
+    command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] \
+      || line FAIL "systemd läuft hier nicht: MODE=native startet die Oberfläche als systemd-Dienst"
+    command -v runuser >/dev/null 2>&1 || line FAIL "runuser (util-linux) fehlt"
+  fi
+  if [ "$ENTRY_LOCAL" = yes ]; then
+    line INFO "dieser Rechner ist zugleich der Einstiegshost ($ENTRY_HOST): er wird ohne SSH direkt eingerichtet"
+    command -v sshd >/dev/null 2>&1 || [ -x /usr/sbin/sshd ] || line FAIL "sshd fehlt: der Einstiegshost braucht einen SSH-Dienst (openssh-server)"
+  fi
+}
+
+# ---------------------------------------------------------------- scanner: key, software, export
+scanner_key() {
+  if [ ! -d "$ETC" ]; then
+    if todo "$ETC anlegen (0700)"; then install -d -m 0700 "$ETC" && line DONE "$ETC angelegt"; fi
+  fi
+  if [ -f "$KEY" ] && [ -f "$KEY.pub" ]; then
+    if [ "$(stat -c %a "$KEY")" = 600 ]; then
+      line OK "Audit-Schlüssel $KEY ist vorhanden ($(ssh-keygen -lf "$KEY.pub" 2>/dev/null | awk '{print $2}'))"
+    elif todo "Modus von $KEY auf 0600 setzen (ist $(stat -c %a "$KEY"))"; then
+      chmod 600 "$KEY" && line DONE "$KEY hat den Modus 0600"
+    fi
+  elif [ -e "$KEY" ] || [ -e "$KEY.pub" ]; then
+    line FAIL "von $KEY und $KEY.pub ist nur eine Datei da: von Hand klären"
+  elif todo "Audit-Schlüssel erzeugen: $KEY (ed25519, ohne Passphrase)"; then
+    ssh-keygen -q -t ed25519 -N '' -C "sshbite-audit $(date +%F)" -f "$KEY" \
+      && line DONE "Audit-Schlüssel erzeugt ($(ssh-keygen -lf "$KEY.pub" | awk '{print $2}'))"
+  fi
+}
+
+scanner_software() {
+  if [ "$REBUILD" != yes ] && software_present; then
+    if [ "$MODE" = docker ]; then line OK "Image $IMAGE ist gebaut"; else line OK "SSHBITE $VERSION ist in $VENV installiert"; fi
+    return
+  fi
+  if [ "$MODE" = docker ]; then
+    if todo "Image $IMAGE aus $REPO bauen (docker build, einige Minuten, braucht Internetzugang)"; then
+      if docker build -q -t "$IMAGE" "$REPO" >/dev/null; then line DONE "Image $IMAGE gebaut"; else line FAIL "docker build ist fehlgeschlagen: 'docker build -t $IMAGE $REPO' zeigt den Grund"; fi
+    fi
+    return
+  fi
+  if todo "SSHBITE $VERSION nach $VENV installieren (venv, Abhängigkeiten mit Prüfsummen, baut die Oberfläche)"; then
+    if "$PYTHON" -m venv "$VENV" \
+      && "$VENV/bin/pip" install -q --disable-pip-version-check --require-hashes -r "$REPO/requirements-runtime.lock" \
+      && "$VENV/bin/pip" install -q --disable-pip-version-check --no-deps "$REPO"; then
+      line DONE "SSHBITE $("$VENV/bin/sshbite" --version | awk '{print $3}') in $VENV installiert"
+    else
+      line FAIL "die Installation nach $VENV ist fehlgeschlagen (Ausgabe von pip oben)"
+    fi
+  fi
+}
+
+scanner_app_user() {
+  [ "$MODE" = native ] || return 0
+  if getent passwd "$APP_USER" >/dev/null 2>&1; then
+    line OK "Dienstkonto $APP_USER ist vorhanden"
+  elif todo "Dienstkonto $APP_USER anlegen (Systemkonto ohne Shell, Home /var/lib/sshbite)"; then
+    local nologin=/usr/sbin/nologin
+    [ -x "$nologin" ] || nologin=/sbin/nologin
+    useradd --system -U --home-dir /var/lib/sshbite --shell "$nologin" "$APP_USER" && line DONE "Dienstkonto $APP_USER angelegt"
+  fi
+  if [ ! -d /var/lib/sshbite ]; then
+    if todo "/var/lib/sshbite anlegen ($APP_USER, 0700)"; then
+      install -d -m 0700 -o "$APP_USER" -g "$APP_USER" /var/lib/sshbite && line DONE "/var/lib/sshbite angelegt"
+    fi
+  fi
+  if [ "$(readlink /usr/local/bin/sshbite 2>/dev/null)" != "$VENV/bin/sshbite" ]; then
+    if todo "/usr/local/bin/sshbite auf $VENV/bin/sshbite zeigen lassen"; then
+      ln -sfn "$VENV/bin/sshbite" /usr/local/bin/sshbite && line DONE "/usr/local/bin/sshbite zeigt auf $VENV/bin/sshbite"
+    fi
+  fi
+}
+
+# the files of `sshbite collector export` for this version, path and account; "" before the first build
+EXPORT=
+WORK=
+cleanup() { [ -z "$WORK" ] || rm -rf "$WORK"; }
+trap cleanup EXIT
+make_export() {
+  software_present || return 0
+  WORK=$(mktemp -d /tmp/sshbite-rollout.XXXXXX) || die "mktemp"
+  chmod 700 "$WORK"
+  mkdir "$WORK/export"
+  local err=$WORK/export.err rc
+  if [ "$MODE" = docker ]; then
+    docker run --rm --network none --user 0:0 -v "$WORK/export:/out" "$IMAGE" \
+      sshbite collector export /out --collector-path "$COLLECTOR_PATH" --audit-user "$AUDIT_USER" >/dev/null 2>"$err"
+  else
+    "$VENV/bin/sshbite" -c /nonexistent collector export "$WORK/export" \
+      --collector-path "$COLLECTOR_PATH" --audit-user "$AUDIT_USER" >/dev/null 2>"$err"
+  fi
+  rc=$?
+  if [ $rc -ne 0 ]; then
+    if grep -q 'audit-user' "$err"; then
+      line FAIL "die installierte SSHBITE-Fassung kennt --audit-user noch nicht: mit --rebuild neu bauen"
+    else
+      line FAIL "sshbite collector export ist fehlgeschlagen: $(head -n 1 "$err")"
+    fi
+    return
+  fi
+  if (cd "$WORK/export" && sha256sum -c --quiet SHA256SUMS) >/dev/null 2>&1; then
+    EXPORT=$WORK/export
+    line OK "Collector exportiert und Prüfsummen geprüft (Konto $AUDIT_USER, Pfad $COLLECTOR_PATH)"
+  else
+    line FAIL "die Prüfsummen des Exports stimmen nicht"
+  fi
+}
+
+# ---------------------------------------------------------------- hosts
+PUBKEY=
+read_pubkey() {
+  [ -f "$KEY.pub" ] || return 0
+  local t k
+  read -r t k _ < "$KEY.pub"
+  [[ $t =~ ^(ssh-ed25519|ecdsa-sha2-nistp(256|384|521)|ssh-rsa)$ && $k =~ ^[A-Za-z0-9+/=]+$ ]] \
+    || die "$KEY.pub ist keine OpenSSH-Schlüsselzeile"
+  PUBKEY="$t $k sshbite-audit"
+}
+ak_line() {   # ak_line VARIANT FROM
+  [ -n "$EXPORT" ] && [ -n "$PUBKEY" ] || return 0
+  local n tpl
+  case "$1" in A) n=1 ;; B) n=2 ;; C) n=3 ;; esac
+  tpl=$(grep -v '^#' "$EXPORT/authorized_keys.sshbite" | sed -n "${n}p")
+  tpl=${tpl//<SCANNER-IP>/$2}
+  tpl=${tpl//<ENTRY-HOST-IP>/$2}
+  tpl=${tpl//<PREVIOUS-HOP-IP>/$2}
+  printf '%s' "${tpl//<AUDIT-PUBLIC-KEY>/$PUBKEY}"
+}
+bundle() {   # bundle ACTION VARIANT FROM WANT_HOSTKEYS  -> the script for one host on stdout
+  local action=$1 variant=$2 from=$3 f
+  printf "ACTION='%s'\nAUDIT_USER='%s'\nVARIANT='%s'\nFROM='%s'\nCOLLECTOR_PATH='%s'\n" \
+    "$action" "$AUDIT_USER" "$variant" "$from" "$COLLECTOR_PATH"
+  printf "ADOPT='%s'\nRM_FOREIGN='%s'\nWANT_HOSTKEYS='%s'\n" "$ADOPT" "$RM_FOREIGN" "$4"
+  printf "AK_LINE='%s'\n" "$(ak_line "$variant" "$from")"
+  if [ -n "$EXPORT" ]; then
+    printf "HAVE_FILES='yes'\nexpect_sum() {\n  case \"\$1\" in\n"
+    for f in "${FILES[@]}"; do printf "    %s) echo '%s' ;;\n" "$f" "$(sha256sum "$EXPORT/$f" | cut -d' ' -f1)"; done
+    printf "  esac\n}\nemit_file() {\n  case \"\$1\" in\n"
+    for f in "${FILES[@]}"; do
+      printf "    %s) base64 -d <<'SSHBITE_ROLLOUT_B64'\n" "$f"
+      base64 "$EXPORT/$f"
+      printf "SSHBITE_ROLLOUT_B64\n    ;;\n"
+    done
+    printf "  esac\n}\n"
+  else
+    printf "HAVE_FILES='no'\nexpect_sum() { :; }\nemit_file() { :; }\n"
+  fi
+  cat "$AGENT"
+}
+ENTRY_KEYS=()
+run_host() {   # run_host INDEX ACTION
+  local i=$1 action=$2 addr variant from want=no role out rc lvl text target
+  addr=${H_ADDR[$i]} variant=${H_VARIANT[$i]} from=${H_FROM[$i]}
+  case "$variant" in A) role=Einstiegshost ;; B) role=Zielhost ;; C) role=Zwischenstation ;; esac
+  [ "$i" = 0 ] && want=yes
+  if is_local "$addr"; then target="lokal"; else target="${H_USER[$i]}@$addr:${H_PORT[$i]}"; fi
+  head_ "$addr ($role, Variante $variant, from=\"$from\", $target)"
+  local before=$FAILS
+  [ -n "$WORK" ] || { WORK=$(mktemp -d /tmp/sshbite-rollout.XXXXXX) && chmod 700 "$WORK"; }
+  bundle "$action" "$variant" "$from" "$want" > "$WORK/bundle.sh"
+  if is_local "$addr"; then
+    out=$(sh -s < "$WORK/bundle.sh" 2>"$WORK/host.err")
+    rc=$?
+  else
+    local remote='sh -s'
+    [ "$SSH_SUDO" = yes ] && [ "${H_USER[$i]}" != root ] && remote='sudo -n sh -s'
+    # shellcheck disable=SC2086  # SSH_OPTS is a list of plain options (validated above)
+    out=$(ssh $SSH_OPTS -o BatchMode=yes -o ConnectTimeout=15 -p "${H_PORT[$i]}" -l "${H_USER[$i]}" "$addr" "$remote" \
+      < "$WORK/bundle.sh" 2>"$WORK/host.err")
+    rc=$?
+  fi
+  local summary=no
+  while IFS=$'\t' read -r lvl text; do
+    case "$lvl" in
+      OK | INFO | WARN | PLAN | DONE | FAIL) line "$lvl" "$text" ;;
+      HOSTKEY) [ "$i" = 0 ] && ENTRY_KEYS+=("$text") ;;
+      SUMMARY) summary=yes ;;
+    esac
+  done <<< "$out"
+  if [ "$summary" != yes ]; then
+    local why
+    why=$(grep -v '^$' "$WORK/host.err" | tail -n 1)
+    case "$why" in
+      *'Host key verification failed'*) why="der Host-Key von $addr ist diesem Rechner nicht bekannt: einmal von Hand 'ssh -p ${H_PORT[$i]} ${H_USER[$i]}@$addr' aufrufen und den Fingerabdruck prüfen" ;;
+      *'Permission denied'*) why="${H_USER[$i]}@$addr lehnt die Anmeldung ab: das Skript braucht eine Anmeldung per Schlüssel ohne Passwortabfrage" ;;
+      *'a password is required'* | *'a terminal is required'*) why="sudo fragt auf $addr nach einem Passwort: SSH_SUDO=yes braucht sudo ohne Passwort für ${H_USER[$i]}" ;;
+    esac
+    line FAIL "keine Antwort vom Host (Exit-Code $rc): ${why:-keine Meldung}"
+  fi
+  [ "$FAILS" = "$before" ] || HOST_FAILED+=("$addr")
+}
+run_hosts() {   # run_hosts ACTION
+  local i
+  for i in "${!H_ADDR[@]}"; do
+    selected "${H_ADDR[$i]}" || continue
+    run_host "$i" "$1"
+  done
+}
+
+# ---------------------------------------------------------------- scanner: config, service, connection
+MARK='# written by sshbite-rollout - change rollout.conf and run `sshbite-rollout apply`, or edit and keep'
+want_yaml() {
+  local k keys='' inc=''
+  for k in "${ENTRY_KEYS[@]}"; do keys="$keys${keys:+, }\"$k\""; done
+  [ -z "$CRAWL_INCLUDE" ] || inc=$(tr -s ', \t' ' ' <<< "$CRAWL_INCLUDE" | sed 's/^ //; s/ $//; s/ /, /g')
+  cat <<EOF
+$MARK
+database: $DATABASE
+entry:
+  host: $ENTRY_HOST
+  port: $ENTRY_PORT
+  host_keys: [$keys]
+audit:
+  user: $AUDIT_USER
+  key_file: $KEY
+privilege:
+  mode: installed
+  collector_path: $COLLECTOR_PATH
+crawl:
+  include: [$inc]
+EOF
+  # every host of the inventory is scanned, whether or not another host refers to it
+  [ ${#H_ADDR[@]} -le 1 ] || printf 'seeds:\n  hosts_file: %s\n' "$SEEDS"
+}
+want_seeds() {
+  local i
+  printf '# written by sshbite-rollout from %s: the hosts it set up, scanned from depth 0\n' "$INVENTORY"
+  for i in "${!H_ADDR[@]}"; do
+    [ "$i" = 0 ] && continue
+    if [[ ${H_ADDR[$i]} == *:* ]]; then printf '[%s]:%s\n' "${H_ADDR[$i]}" "${H_PORT[$i]}"; else printf '%s:%s\n' "${H_ADDR[$i]}" "${H_PORT[$i]}"; fi
+  done
+}
+scanner_config() {
+  head_ "Scanner-Rechner: Konfiguration und Dienst"
+  if [ ${#ENTRY_KEYS[@]} -eq 0 ]; then
+    if [ -f "$YAML" ]; then
+      line INFO "$YAML bleibt, wie sie ist: der Einstiegshost hat keinen Host-Key geliefert"
+    else
+      line FAIL "$YAML lässt sich nicht schreiben: der Einstiegshost hat keinen Host-Key geliefert (siehe oben)"
+    fi
+    return
+  fi
+  local new old_sum
+  if [ ${#H_ADDR[@]} -gt 1 ] && [ "$(cat "$SEEDS" 2>/dev/null)" != "$(want_seeds)" ]; then
+    if todo "$SEEDS schreiben: die $((${#H_ADDR[@]} - 1)) Host(s) aus $INVENTORY als Startpunkte des Scans (seeds.hosts_file)"; then
+      want_seeds > "$SEEDS" && chmod 600 "$SEEDS" && line DONE "$SEEDS geschrieben"
+    fi
+  fi
+  new=$(want_yaml)
+  if [ ! -f "$YAML" ]; then
+    if todo "$YAML schreiben (Einstiegshost $ENTRY_HOST mit ${#ENTRY_KEYS[@]} festgelegten Host-Key(s), Konto $AUDIT_USER, crawl.include [${CRAWL_INCLUDE:-leer}])"; then
+      write_yaml "$new"
+    fi
+  elif [ "$(cat "$YAML")" = "$new" ]; then
+    line OK "$YAML passt zu rollout.conf (${#ENTRY_KEYS[@]} festgelegte(r) Host-Key(s) des Einstiegshosts)"
+  else
+    old_sum=$(cat "$STATE/config.sha256" 2>/dev/null)
+    if [ "$WRITE_CONFIG" = yes ] || [ "$(sha256sum "$YAML" | cut -d' ' -f1)" = "$old_sum" ]; then
+      if todo "$YAML neu schreiben (weicht von rollout.conf ab; die alte Fassung kommt nach $STATE/backup)"; then
+        install -d -m 0700 "$STATE/backup"
+        cp -p "$YAML" "$STATE/backup/sshbite.yaml.$(date -u +%Y%m%dT%H%M%SZ)"
+        write_yaml "$new"
+      fi
+    else
+      line WARN "$YAML wurde von Hand geändert und weicht von rollout.conf ab; sie bleibt, wie sie ist (mit --write-config neu schreiben). Unterschied:"
+      diff <(printf '%s\n' "$new") "$YAML" | sed 's/^/         /' | head -n 20
+    fi
+  fi
+  [ -n "$CRAWL_INCLUDE" ] || line WARN "CRAWL_INCLUDE ist leer: der Scan folgt dann jedem Host, den er findet, ohne Grenze"
+}
+write_yaml() {
+  local tmp
+  tmp=$(mktemp "$ETC/.sshbite.yaml.XXXXXX") || { line FAIL "mktemp in $ETC"; return; }
+  printf '%s\n' "$1" > "$tmp"
+  chmod 600 "$tmp"
+  mv "$tmp" "$YAML"
+  install -d -m 0700 "$STATE"
+  sha256sum "$YAML" | cut -d' ' -f1 > "$STATE/config.sha256"
+  line DONE "$YAML geschrieben"
+}
+scanner_owner() {
+  local f bad=''
+  [ -d "$ETC" ] || return 0
+  if [ "$MODE" = native ] && ! getent passwd "$APP_USER" >/dev/null 2>&1; then return 0; fi
+  local uid=$OWNER
+  [ "$MODE" = native ] && uid=$(id -u "$APP_USER")
+  for f in "$ETC" "$KEY" "$KEY.pub" "$YAML" "$SEEDS"; do
+    [ -e "$f" ] || continue
+    [ "$(stat -c %u "$f")" = "$uid" ] || bad="$bad ${f##*/}"
+  done
+  [ "$(stat -c %a "$ETC")" = 700 ] || bad="$bad (Modus)"
+  [ ! -f "$YAML" ] || [ "$(stat -c %a "$YAML")" = 600 ] || bad="$bad (Modus)"
+  if [ -z "$bad" ]; then
+    line OK "$ETC, Schlüssel und Konfiguration gehören $OWNER"
+  elif todo "$ETC, den Audit-Schlüssel und sshbite.yaml an $OWNER geben (0700/0600)"; then
+    chown "$OWNER:$OWNER_GROUP" "$ETC" && chmod 700 "$ETC"
+    for f in "$KEY" "$KEY.pub" "$YAML" "$SEEDS"; do
+      [ -e "$f" ] && chown "$OWNER:$OWNER_GROUP" "$f" && chmod 600 "$f"
+    done
+    line DONE "$ETC, Schlüssel und Konfiguration gehören $OWNER"
+  fi
+}
+service_running() {
+  if [ "$MODE" = docker ]; then
+    [ "$(docker inspect -f '{{.State.Running}} {{.Config.Image}}' "$CONTAINER" 2>/dev/null)" = "true $IMAGE" ]
+  else
+    systemctl is-active --quiet sshbite-serve.service 2>/dev/null
+  fi
+}
+scanner_service() {
+  if [ "$MODE" = docker ]; then
+    local cur
+    cur=$(docker inspect -f '{{.Config.Image}} {{index .Config.Labels "sshbite.rollout"}}' "$CONTAINER" 2>/dev/null)
+    if [ -n "$cur" ] && [ "${cur#* }" != 1 ]; then
+      line FAIL "es gibt schon einen Container '$CONTAINER', den dieses Skript nicht gestartet hat (Image ${cur%% *}): erst von Hand entfernen (docker rm -f $CONTAINER; das Volume mit der Datenbank bleibt)"
+      return
+    fi
+    if service_running && [ "$REBUILD" != yes ]; then
+      line OK "Container $CONTAINER läuft mit $IMAGE (Oberfläche auf http://127.0.0.1:8722/)"
+      return
+    fi
+    if todo "Container $CONTAINER starten: $IMAGE, Netz des Hosts, Oberfläche nur auf 127.0.0.1:8722, Volume sshbite-data, $ETC nur lesend"; then
+      docker rm -f "$CONTAINER" >/dev/null 2>&1
+      # --network host: the audit login then comes from this machine's own address, also when this machine
+      # is the entry host (a bridge network would show the container address, which no from= can name)
+      if docker run -d --name "$CONTAINER" --label sshbite.rollout=1 --restart unless-stopped --network host \
+        -v sshbite-data:/data -v "$ETC:/etc/sshbite:ro" --read-only --tmpfs /tmp --cap-drop ALL \
+        --security-opt no-new-privileges:true "$IMAGE" sshbite serve --bind 127.0.0.1 >/dev/null; then
+        line DONE "Container $CONTAINER gestartet (Oberfläche auf http://127.0.0.1:8722/)"
+      else
+        line FAIL "docker run ist fehlgeschlagen"
+      fi
+    fi
+    return
+  fi
+  local unit=/etc/systemd/system/sshbite-serve.service
+  if ! cmp -s "$REPO/docs/systemd/sshbite-serve.service" "$unit"; then
+    if todo "$unit installieren"; then
+      install -m 0644 "$REPO/docs/systemd/sshbite-serve.service" "$unit" && systemctl daemon-reload && line DONE "$unit installiert"
+    fi
+  fi
+  if service_running && [ "$REBUILD" != yes ]; then
+    line OK "sshbite-serve.service läuft (Oberfläche auf http://127.0.0.1:8722/)"
+  elif todo "sshbite-serve.service aktivieren und starten"; then
+    if systemctl enable --now sshbite-serve.service >/dev/null 2>&1 && systemctl restart sshbite-serve.service; then
+      line DONE "sshbite-serve.service läuft"
+    else
+      line FAIL "sshbite-serve.service startet nicht: journalctl -u sshbite-serve.service"
+    fi
+  fi
+}
+sb() {   # the sshbite command line of the installed scanner
+  if [ "$MODE" = docker ]; then
+    docker exec "$CONTAINER" sshbite "$@"
+  else
+    runuser -u "$APP_USER" -- env SSHBITE_CONFIG="$YAML" "$VENV/bin/sshbite" "$@"
+  fi
+}
+sb_hint() {
+  if [ "$MODE" = docker ]; then printf 'docker exec -it %s sshbite %s' "$CONTAINER" "$1"
+  else printf 'runuser -u %s -- env SSHBITE_CONFIG=%s sshbite %s' "$APP_USER" "$YAML" "$1"; fi
+}
+scanner_connect() {
+  head_ "Verbindung: sshbite config validate --connect"
+  if ! service_running; then
+    line FAIL "SSHBITE läuft nicht: die Verbindung lässt sich nicht prüfen"
+    return
+  fi
+  local out rc
+  out=$(sb config validate --connect 2>&1)
+  rc=$?
+  sed 's/^/         /' <<< "$out"
+  if [ $rc -eq 0 ]; then
+    line OK "der Einstiegshost antwortet, der Host-Key passt, der installierte Collector läuft als root"
+  else
+    line FAIL "config validate --connect endet mit Exit-Code $rc (Abhilfe: docs/install.md, Fehlermeldungen im Modus installed)"
+    case "$out" in
+      *'Permission denied for user'*)
+        line INFO "der Einstiegshost lehnt den Audit-Schlüssel ab. Die Schlüsselzeile erlaubt nur from=\"${H_FROM[0]}\": sieht der Einstiegshost diesen Rechner unter einer anderen Adresse (NAT, mehrere Netzkarten), diese als SCANNER_FROM in rollout.conf eintragen und 'apply' wiederholen. Auf dem Einstiegshost zeigt das sshd-Log die Adresse ('Connection from ...')." ;;
+      *unreachable*) line INFO "der Einstiegshost ist von hier nicht erreichbar: läuft dort sshd auf Port $ENTRY_PORT, und lässt die Firewall die Verbindung zu?" ;;
+    esac
+  fi
+}
+
+# ---------------------------------------------------------------- the commands
+finish() {
+  printf '\n%s== Ergebnis ==%s\n' "$C_HEAD" "$C_OFF"
+  [ ${#HOST_FAILED[@]} -eq 0 ] || printf '  Hosts mit FAIL: %s\n' "${HOST_FAILED[*]}"
+  printf '  %s FAIL, %s WARN' "$FAILS" "$WARNS"
+  case "$CMD" in
+    apply) printf ', %s Änderung(en) ausgeführt\n' "$DONES" ;;
+    remove) if [ "$YES" = yes ]; then printf ', %s Änderung(en) ausgeführt\n' "$DONES"; else printf ', %s Änderung(en) geplant\n' "$PLANS"; fi ;;
+    plan) printf ', %s Änderung(en) geplant\n' "$PLANS" ;;
+    *) printf '\n' ;;
+  esac
+  [ "$FAILS" -eq 0 ]
+  exit
+}
+
+case "$CMD" in
+  check)
+    scanner_check
+    run_hosts check
+    finish
+    ;;
+  plan | apply | validate)
+    scanner_check
+    if [ "$FAILS" -gt 0 ] && [ "$CMD" = apply ]; then
+      printf '\nNichts geändert: erst die FAIL-Punkte des Scanner-Rechners klären.\n'
+      finish
+    fi
+    scanner_key
+    scanner_software
+    scanner_app_user
+    read_pubkey
+    make_export
+    if [ "$CMD" = apply ] && [ -z "$EXPORT" ]; then
+      printf '\nNichts auf den Hosts geändert: ohne den Export gibt es nichts auszurollen.\n'
+      finish
+    fi
+    [ -n "$EXPORT" ] || line INFO "SSHBITE ist hier noch nicht gebaut: der Abgleich der Collector-Dateien folgt bei 'apply'"
+    case "$CMD" in plan) run_hosts plan ;; apply) run_hosts apply ;; validate) run_hosts verify ;; esac
+    if [ "$CMD" = apply ] && [[ " ${HOST_FAILED[*]-} " == *" $ENTRY_HOST "* ]]; then
+      printf '\nDer Einstiegshost ist nicht fertig: Konfiguration und Dienst bleiben unverändert.\n'
+      finish
+    fi
+    if [ ${#ONLY_HOSTS[@]} -gt 0 ] && ! selected "$ENTRY_HOST"; then
+      line INFO "nur einzelne Hosts gewählt: Konfiguration, Dienst und Verbindung wurden nicht angefasst"
+      finish
+    fi
+    scanner_config
+    scanner_owner
+    scanner_service
+    if [ "$CMD" != plan ]; then
+      if [ "$CMD" = apply ] && [ "$MODE" = docker ]; then sleep 2; fi
+      scanner_connect
+    fi
+    if [ "$CMD" = apply ] && [ "$FAILS" -eq 0 ]; then
+      if [ "$SCAN" = yes ]; then
+        head_ "Erster Scan"
+        if sb scan --label rollout 2>&1 | sed 's/^/         /'; then line OK "Scan beendet"; else line FAIL "der Scan ist fehlgeschlagen"; fi
+      fi
+      head_ "Wie es weitergeht"
+      printf '  1. Anmeldung für die Oberfläche anlegen (fragt das Passwort ab, mindestens 12 Zeichen):\n       %s\n' "$(sb_hint 'user add admin')"
+      [ "$SCAN" = yes ] || printf '  2. Erster Scan (vorher docs/side-effects.md lesen):\n       %s\n' "$(sb_hint 'scan --label first')"
+      printf '  3. Oberfläche: http://127.0.0.1:8722/ (von einem Arbeitsplatz: ssh -L 8722:127.0.0.1:8722 <konto>@%s)\n' "$(hostname)"
+    fi
+    finish
+    ;;
+  remove)
+    if [ "$YES" = yes ]; then run_hosts remove; else run_hosts remove-plan; fi
+    head_ "Scanner-Rechner"
+    if [ "$MODE" = docker ] && docker inspect "$CONTAINER" >/dev/null 2>&1; then
+      if [ "$YES" = yes ]; then
+        docker rm -f "$CONTAINER" >/dev/null && line DONE "Container $CONTAINER entfernt"
+      else
+        line PLAN "Container $CONTAINER stoppen und entfernen"
+      fi
+    elif [ "$MODE" = native ] && [ -f /etc/systemd/system/sshbite-serve.service ]; then
+      if [ "$YES" = yes ]; then
+        systemctl disable --now sshbite-serve.service >/dev/null 2>&1
+        rm -f /etc/systemd/system/sshbite-serve.service && systemctl daemon-reload && line DONE "sshbite-serve.service entfernt"
+      else
+        line PLAN "sshbite-serve.service stoppen und entfernen"
+      fi
+    fi
+    line INFO "es bleiben: die Datenbank mit den Scans, $ETC (Schlüssel, Konfiguration) und das Image bzw. $VENV - siehe docs/install.md, Deinstallation"
+    [ "$YES" = yes ] || printf '\nNichts geändert. Zum Entfernen: %s remove --yes\n' "$0"
+    finish
+    ;;
+esac

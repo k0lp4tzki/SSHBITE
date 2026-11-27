@@ -590,6 +590,16 @@ def _configured_collector_path(ctx: click.Context) -> str:
         return DEFAULT_COLLECTOR_PATH
 
 
+def _configured_audit_user(ctx: click.Context) -> str:
+    """audit.user if the config loads, else the default."""
+    from .config import DEFAULT_AUDIT_USER
+
+    try:
+        return load_config(ctx.obj["config_path"]).audit.user
+    except SshbiteError:
+        return DEFAULT_AUDIT_USER
+
+
 @collector_group.command("show")
 @click.pass_context
 def collector_show(ctx: click.Context) -> None:
@@ -628,18 +638,28 @@ def collector_show(ctx: click.Context) -> None:
 @click.option("--collector-path", "collector_path", metavar="P",
               help="Where the collector is installed on the hosts (default: privilege.collector_path, "
                    "else /usr/local/libexec/sshbite/sshbite-collect)")
+@click.option("--audit-user", "audit_user", metavar="NAME",
+              help="The audit account on the hosts, written into the sudoers rule (default: audit.user, "
+                   "else sshbite)")
 @click.pass_context
-def collector_export(ctx: click.Context, directory: str, collector_path: str | None) -> None:
+def collector_export(ctx: click.Context, directory: str, collector_path: str | None,
+                     audit_user: str | None) -> None:
     """Write collector, resolve, gate, sudoers and authorized_keys templates with SHA256SUMS (privilege.mode installed)."""
     from .collector import bundle
-    from .config import COLLECTOR_PATH_RULE, collector_path_ok
+    from .config import AUDIT_USER_RULE, COLLECTOR_PATH_RULE, audit_user_ok, collector_path_ok
 
     if collector_path is None:
         collector_path = _configured_collector_path(ctx)
     elif not collector_path_ok(collector_path):
         raise ConfigError(f"--collector-path: {COLLECTOR_PATH_RULE}")
+    if audit_user is None:
+        audit_user = _configured_audit_user(ctx)
+        if not audit_user_ok(audit_user):
+            raise ConfigError(f"audit.user: {audit_user!r} cannot be written into a sudoers rule: {AUDIT_USER_RULE}")
+    elif not audit_user_ok(audit_user):
+        raise ConfigError(f"--audit-user: {AUDIT_USER_RULE}")
     try:
-        files = bundle.write(directory, collector_path)
+        files = bundle.write(directory, collector_path, audit_user)
     except bundle.ExportError as exc:
         raise ConfigError(str(exc)) from None
     click.echo(files["SHA256SUMS"].decode(), nl=False)

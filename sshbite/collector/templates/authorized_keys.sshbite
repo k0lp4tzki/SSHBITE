@@ -1,4 +1,4 @@
-# /home/sshbite/.ssh/authorized_keys (root:root 0644). One line per key, choose the variant for this host.
+# /home/{audit_user}/.ssh/authorized_keys (root:root 0644). One line per key, choose the variant for this host.
 # <AUDIT-PUBLIC-KEY> = content of /etc/sshbite/audit_ed25519.pub
 # (A) entry host: login only from the scanner, forwarding only to SSH ports (add permitopen="*:<PORT>" per extra SSH port)
 #     permitlisten="localhost:22": no remote listener (ssh -R). authorized_keys knows no "none" here (sshd then

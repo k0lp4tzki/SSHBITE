@@ -30,7 +30,8 @@ SQLite-Datenbank, eine Oberfläche auf `127.0.0.1` hinter einer Anmeldung, keine
 
 ## Schnellstart (Docker)
 
-Die vollständige Anleitung mit allen Prüfungen steht in [docs/install.md](docs/install.md). Kurzfassung
+Alles in einem Durchgang erledigt [`tools/rollout/sshbite-rollout`](docs/rollout.md) (prüfen, planen,
+einrichten, validieren). Die vollständige Anleitung mit allen Prüfungen steht in [docs/install.md](docs/install.md). Kurzfassung
 für den empfohlenen Modus `privilege.mode: installed`, alles als root auf dem Docker-Host:
 
 1. **Image bauen** ([Schritt 1](docs/install.md#schritt-1-image-bauen)):
@@ -129,6 +130,7 @@ neues Passwort entfernen Sie das Lab mit `docker compose -f compose.lab.yaml dow
 | | |
 |---|---|
 | [Installation](docs/install.md) | Docker, pip, Zielhosts vorbereiten (installierter Collector), Host-Key festlegen, erster Scan, Aktualisierung, Deinstallation, Fehlerbehebung |
+| [Einrichtung mit einem Skript](docs/rollout.md) | `sshbite-rollout`: prüfen, planen, einrichten, validieren, entfernen – Scanner-Rechner und alle Hosts |
 | [Konfiguration](docs/configuration.md) | jeder Konfigurationsschlüssel mit Standardwert und Bedeutung |
 | [Scans ausführen](docs/scanning.md) | Crawl, Umfang, Seeds, sudo-Passwörter (Legacy-Modus), Host-Status, Exit-Codes |
 | [Betrieb](docs/operations.md) | systemd-Units für Oberfläche und nächtlichen Scan, Reverse Proxy, Sicherung, Aktualisierung |

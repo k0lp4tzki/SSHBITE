@@ -93,6 +93,12 @@ jobs:
           | tee pytest-e2e.txt; test "${PIPESTATUS[0]}" = 0
       - name: the e2e test ran (not skipped)
         run: "! grep -q SKIPPED pytest-e2e.txt"
+      - name: sshbite-rollout - shellcheck, then the host agent against a fresh container of a lab image
+        run: |
+          shellcheck --severity=warning -s bash tools/rollout/sshbite-rollout
+          { printf 'ACTION=x AUDIT_USER=x VARIANT=x FROM=x AK_LINE=x COLLECTOR_PATH=/a/b HAVE_FILES=x ADOPT=x RM_FOREIGN=x WANT_HOSTKEYS=x\nexpect_sum() { :; }\nemit_file() { :; }\n'; cat tools/rollout/host-agent.sh; } | shellcheck --severity=warning -s sh -
+          .venv/bin/python -m pytest -m e2e tests/e2e/test_rollout.py -v -rs | tee pytest-rollout.txt; test "${PIPESTATUS[0]}" = 0
+          ! grep -q SKIPPED pytest-rollout.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with: {name: e2e-evidence, path: "e2e-evidence\npytest-e2e.txt", if-no-files-found: ignore}

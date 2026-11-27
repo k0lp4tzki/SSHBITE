@@ -110,3 +110,45 @@ def test_export_refuses_non_empty_dir_and_bad_path(tmp_path):
         assert ("--collector-path: must be an absolute path of letters, digits, '.', '_', '-' and '/' "
                 "(no '.' or '..' segments, at most 200 characters)") in r.stderr, bad
         assert not (tmp_path / "n").exists()
+
+
+def test_export_audit_user_option_and_config(tmp_path):
+    """The audit account is free to choose: --audit-user, else audit.user, else sshbite."""
+    default = tmp_path / "d"
+    assert _export(str(default)).exit_code == 0
+    out = tmp_path / "o"
+    assert _export(str(out), "--audit-user", "svc_audit-1").exit_code == 0
+    sudoers = (out / "sudoers.d-sshbite").read_text()
+    rules = [x for x in sudoers.splitlines() if x and not x.startswith("#")]
+    assert rules == ["Defaults:svc_audit-1 env_reset",
+                     'Defaults:svc_audit-1 secure_path="/usr/sbin:/usr/bin:/sbin:/bin"',
+                     "Defaults:svc_audit-1 !lecture, !log_output, !log_input, !requiretty",
+                     f'svc_audit-1 ALL=(root) NOPASSWD: {P} ""']
+    assert "sudo -l -U svc_audit-1" in sudoers and "{audit_user}" not in sudoers
+    ak = (out / "authorized_keys.sshbite").read_text()
+    assert ak.startswith("# /home/svc_audit-1/.ssh/authorized_keys") and "{audit_user}" not in ak
+    # nothing else depends on the account name: gate, collector and resolve are byte-identical
+    for name in ("sshbite-gate", "sshbite-collect", "sshbite-resolve"):
+        assert (out / name).read_bytes() == (default / name).read_bytes(), name
+    c = subprocess.run(["sha256sum", "-c", "SHA256SUMS"], cwd=out, capture_output=True, text=True)
+    assert c.returncode == 0 and c.stdout.count(": OK") == 5, c.stdout + c.stderr
+    # default: audit.user of a loadable config
+    cfg = tmp_path / "c.yaml"
+    cfg.write_text(yaml.safe_dump({"entry": {"host": "j"}, "audit": {"user": "auditor"}}))
+    out2 = tmp_path / "o2"
+    assert _export(str(out2), config=cfg).exit_code == 0
+    assert f'\nauditor ALL=(root) NOPASSWD: {P} ""' in (out2 / "sudoers.d-sshbite").read_text()
+
+
+def test_export_refuses_bad_audit_user(tmp_path):
+    for bad in ("root", "", "Admin", "a b", "x;id", "a,b", "ALL", "%wheel", "1abc", "a" * 33, "abc\n", "a\nb ALL=(ALL) ALL"):
+        r = _export(str(tmp_path / "n"), "--audit-user", bad)
+        assert r.exit_code == 2, bad
+        assert "--audit-user: must be an account name of lower-case letters" in r.stderr, bad
+        assert not (tmp_path / "n").exists()
+    # a config whose audit.user cannot go into a sudoers rule: refused, with the reason
+    cfg = tmp_path / "c.yaml"
+    cfg.write_text(yaml.safe_dump({"entry": {"host": "j"}, "audit": {"user": "root"}}))
+    r = _export(str(tmp_path / "n"), config=cfg)
+    assert r.exit_code == 2 and "audit.user: 'root' cannot be written into a sudoers rule" in r.stderr
+    assert not (tmp_path / "n").exists()

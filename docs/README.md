@@ -5,6 +5,7 @@
 | Seite | Inhalt |
 |---|---|
 | [install.md](install.md) | Installation mit Docker oder pip; Zielhosts vorbereiten (installierter Collector); Host-Key des Einstiegshosts festlegen; erster Scan; Aktualisierung; Deinstallation; Fehlerbehebung |
+| [rollout.md](rollout.md) | Einrichtung mit einem Skript: `sshbite-rollout` prüft, plant, richtet Scanner-Rechner und Hosts ein und prüft das Ergebnis; frei wählbarer Name des Audit-Kontos; Scanner-Rechner zugleich Einstiegshost |
 | [configuration.md](configuration.md) | Jeder Konfigurationsschlüssel mit Standardwert und Bedeutung; Umgebungsvariablen |
 | [scanning.md](scanning.md) | Was ein Scan tut; Umfang des Crawls; Seeds; `--ask-sudo-password` (Legacy-Modus); Host-Status; Exit-Codes |
 | [operations.md](operations.md) | systemd-Units für die Oberfläche und einen nächtlichen Scan; Reverse Proxy; Betrieb mit Docker; UI-Anmeldungen; Sicherung, Wiederherstellung, Aktualisierung |
