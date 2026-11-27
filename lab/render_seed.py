@@ -99,6 +99,13 @@ FILES: dict[str, dict[str, str]] = {
         "/home/svc/.ssh/authorized_keys": f"{pub('k_bridge')}\n",
         "/root/.ssh/authorized_keys": f'cert-authority,principals="ops" {pub("k_ca")}\n',
     },
+    # AlmaLinux 9, stand-alone on lab_r (spec 8.2): no other host refers to it. authorized_keys2 is
+    # root-owned 0600 in alice's home - sshd (reading as alice) cannot use it, and neither may SSHBITE.
+    "r1": {
+        "/home/alice/.ssh/authorized_keys": f"{pub('k_ops')}\n",
+        "/home/alice/.ssh/authorized_keys2": f"{pub('k_orphan')}\n",
+        "/home/alice/.ssh/known_hosts": f"172.30.1.5 {hk('jump')}\n",
+    },
 }
 
 

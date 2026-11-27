@@ -6,7 +6,7 @@
 |---|---|
 | `sshbite/` | The Python package: CLI, crawl, transport, collector scripts, parsers, derivation, DB, web API |
 | `frontend/` | The UI: Svelte 5 + TypeScript + Vite. `npm run build` writes `sshbite/web/static/` |
-| `lab/` | The test lab: 13 OpenSSH hosts behind a jump host (docker compose) |
+| `lab/` | The test lab: 13 OpenSSH hosts (Debian 12) behind a jump host, plus the stand-alone AlmaLinux 9 host r1 (docker compose) |
 | `tests/` | `unit/`, `web/` (HTTP API), `e2e/` (against the lab), `browser/` (Playwright) |
 | `Dockerfile`, `compose.lab.yaml` | The image; `compose.lab.yaml` = the lab plus the image scanning it (lab demo only) |
 | `.github/workflows/ci.yml` | CI |
@@ -45,7 +45,13 @@ docker compose -f lab/compose.yaml down        # remove the lab
 
 - The jump host is published on `127.0.0.1:2222`. If the lab runs elsewhere, render the config with
   `LAB_NO_START=1 LAB_ENTRY_HOST=<host> LAB_ENTRY_PORT=<port> lab/up.sh` and point the e2e test at it with
-  `SSHBITE_LAB_ENTRY=<host>:<port>`. The test needs to reach the lab addresses (172.30.1-3.0/24) directly.
+  `SSHBITE_LAB_ENTRY=<host>:<port>`. The test needs to reach the lab addresses (172.30.1-4.0/24) directly.
+- r1 (AlmaLinux 9, `lab/image/Dockerfile.el9`) sits alone on `lab_r` (172.30.4.11, published on
+  `127.0.0.1:2223`) and is scanned directly by `tests/e2e/test_lab_installed.py` (i04, i06-i08); point the
+  test at it with `SSHBITE_LAB_R1=<host>:<port>` if it answers elsewhere. No other lab host refers to it,
+  so it is not part of `lab/expected.yaml`. `lab/local/up.sh` does not build r1.
+- `lab/race.sh start|count N|stop` (run as root on a lab host through the lab control) sets up the
+  symlink race of review.md for test i08.
 - Without docker or podman, `lab/local/up.sh` (root) builds the same hosts with network, mount and PID
   namespaces; `lab/local/down.sh` removes them.
 - `docker compose -f compose.lab.yaml up -d --build` at the top level starts the lab **and** the SSHBITE
@@ -83,7 +89,7 @@ docker compose -f lab/compose.yaml down        # remove the lab
 |---|---|
 | `lint` | `ruff check .` (config in `pyproject.toml`), `npm run check` (svelte-check), the collector allowlist lint via `sshbite collector show`, `docker compose config` of both compose files |
 | `unit` | `pytest tests/unit tests/web`; fails if anything was skipped |
-| `e2e` | `lab/up.sh` (docker compose, 13 hosts), `pytest tests/e2e`; fails if skipped; uploads the transcripts |
+| `e2e` | `lab/up.sh` (docker compose, 13 hosts + r1), `pytest tests/e2e/test_lab.py tests/e2e/test_lab_installed.py`; fails if skipped; uploads the transcripts |
 | `browser` | Playwright + Chromium, `pytest tests/browser`; fails if skipped |
 | `image` | `docker build`; checks uid 10001, `sshbite --version`, the lint inside the image; `docker compose up` of lab + image: the image validates the pinned entry, scans the lab (20 access edges) and serves the UI with its CSP; an unauthenticated write gets 401 |
 

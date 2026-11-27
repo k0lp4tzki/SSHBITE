@@ -69,3 +69,16 @@ def test_garbage_does_not_crash():
     assert c.garbage >= 1 and len(max(c.cmds.get("", [""]) + [""], key=len)) <= 16384
     assert records.parse_mode("-rw-r--r--") == 0o644 and records.parse_mode("600") == 0o600
     assert records.parse_mode("garbage") is None
+
+
+def test_unknown_values_and_skip_reasons_pass_through():
+    """Spec 7.4 assumption: #V setpriv and new #X reasons reach Collected unchanged."""
+    from sshbite.parse import records
+
+    c = records.parse("#SSHBITE 1 x\n#S META\n#V setpriv\tno\n#S USERS\n#V user\talice\n"
+                      "#X /home/alice/.ssh\tnot read: setpriv missing\n"
+                      "#X /home/alice/.ssh/authorized_keys2\tunreadable by account\n#END 2\n")
+    assert c.value("setpriv") == "no"
+    assert c.skipped == [("/home/alice/.ssh", "not read: setpriv missing"),
+                         ("/home/alice/.ssh/authorized_keys2", "unreadable by account")]
+    assert c.users == ["alice"] and c.garbage == 0

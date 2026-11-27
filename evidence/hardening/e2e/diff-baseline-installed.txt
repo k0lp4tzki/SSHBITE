@@ -1,0 +1,19 @@
+$ sshbite diff 1 2   # baseline (mode sudo) -> installed
+diff scan 1 -> scan 2
+
+hosts: 0 added, 0 removed, 2 changed
+  ~ a4 (ok, root): privilege: sudo_password -> root
+  ~ b5 (ok, root): status: partial -> ok, privilege: unprivileged -> root
+
+keys: 1 added, 0 removed, 0 changed
+  + SHA256:r4OgRpsAgsXQTqCSTXs3ACLdXZIPakIsci3dqzzs9tE ssh-ed25519 256 good carol@b5
+
+placements: 1 added, 0 removed, 0 changed
+  + authorized b5:carol SHA256:r4OgRpsAgsXQTqCSTXs3ACLdXZIPakIsci3dqzzs9tE (/home/carol/.ssh/authorized_keys:1)
+
+edges: 1 added, 0 removed, 0 changed
+  + access unknown -> b5:carol SHA256:r4OgRpsAgsXQTqCSTXs3ACLdXZIPakIsci3dqzzs9tE [unknown_origin]
+
+findings: 1 added, 1 removed, 0 changed
+  + high key_unknown_origin b5:carol SHA256:r4OgRpsAgsXQTqCSTXs3ACLdXZIPakIsci3dqzzs9tE /home/carol/.ssh/authorized_keys:1
+  - medium partial_scan b5

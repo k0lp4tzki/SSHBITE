@@ -66,6 +66,11 @@
   });
   const hkFinding = $derived((d?.findings ?? []).find((f: any) => f.rule === 'host_key_changed'));
   const stale = $derived((d?.known_by ?? []).filter((k: any) => k.matches_actual === 'no').length);
+  // check-4: an output or time limit cut the inventory short (whole host: output_limit; one account: a budget)
+  const CUT = ['output limit of ', 'output budget exceeded: ', 'time budget exceeded: '];
+  const cutShort = $derived(hs?.status === 'output_limit' || (hs?.partial_reasons ?? []).some((r: string) => CUT.some((c) => r.startsWith(c))));
+  const timedOut = $derived((hs?.partial_reasons ?? []).filter((r: string) => r.startsWith('read timed out: ')));
+  const unreadable = $derived((hs?.partial_reasons ?? []).filter((r: string) => !r.startsWith('read timed out: ')));
 
   const PINNED = ['permitrootlogin', 'passwordauthentication', 'pubkeyauthentication', 'authorizedkeysfile', 'trustedusercakeys'];
   const SECOND = ['allowusers', 'allowgroups', 'denyusers', 'denygroups'];
@@ -192,9 +197,26 @@
 
   {#if hs.status === 'partial' || hs.status === 'output_limit'}
     <Strip role="warning">
-      <span>Scanned partially:</span>
+      <span class="st" data-testid="partial-title">{cutShort ? 'Inventory incomplete – data of this host is missing:' : 'Scanned partially:'}</span>
       <ul class="reasons">{#each hs.partial_reasons as r}<li>{r}</li>{:else}<li>{hs.error ?? hs.status}</li>{/each}</ul>
-      <span class="secondary">Rerun with <span class="mono">--ask-sudo-password</span> or grant sudo to the audit account.</span>
+      {#if hs.partial_reasons?.some((r: string) => r.startsWith('setpriv (util-linux) missing') || r.startsWith('timeout (coreutils) missing'))}
+        <span class="secondary">Install util-linux (<span class="mono">/usr/bin/setpriv</span>) and coreutils (<span class="mono">/usr/bin/timeout</span>) on this host and scan again: files in user homes are only read as their owner, with a time limit.</span>
+      {:else if cutShort}
+        <span class="secondary">Accounts or files after the limit were not read. A local user can cause this on purpose (very large or blocking files in <span class="mono">~/.ssh</span>): look at the account named above on the host itself.</span>
+      {:else}
+        <span class="secondary">Rerun with <span class="mono">--ask-sudo-password</span> or grant sudo to the audit account.</span>
+      {/if}
+    </Strip>
+  {:else if hs.status === 'ok' && hs.partial_reasons?.length}
+    <Strip role="info">
+      {#if unreadable.length}
+        <span>Not read: the account cannot read these files itself, so sshd cannot use them either.</span>
+        <ul class="reasons" data-testid="ok-reasons">{#each unreadable as r}<li class="mono">{r}</li>{/each}</ul>
+      {/if}
+      {#if timedOut.length}
+        <span>Not read: reading these files as their owner took longer than 5 s (e.g. a FIFO in place of the file); the other files were read.</span>
+        <ul class="reasons" data-testid="timeout-reasons">{#each timedOut as r}<li class="mono">{r}</li>{/each}</ul>
+      {/if}
     </Strip>
   {:else if UNREACHED.includes(hs.status)}
     <Strip role="high">
@@ -212,6 +234,11 @@
       {:else if hs.error}<p class="mono dense">{hs.error}</p>{/if}
       <p class="vf">Verify out-of-band, then run:</p>
       <CodeBlock cmd="sshbite hostkey accept {hs.connect_addr}{hs.connect_port && hs.connect_port !== 22 ? ':' + hs.connect_port : ''}" />
+    </Strip>
+  {:else if hs.status === 'collector_error'}
+    <Strip role="high">
+      <p class="st">Collector error:</p>
+      <p class="mono dense wrap" data-testid="collector-error">{hs.error ?? 'no message'}</p>
     </Strip>
   {/if}
 
@@ -444,6 +471,7 @@
   /* Route attempts: its own section, 16 px above and below (the page gap) */
   .att .err { font-size: 12px; }
   .st { font-weight: 500; }
+  .wrap { overflow-wrap: anywhere; }
   .inner { margin-top: var(--s3); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r2);
     overflow: hidden; max-width: 720px; }
   .hk { display: flex; flex-direction: column; gap: var(--s3); margin: var(--s3) 0; }

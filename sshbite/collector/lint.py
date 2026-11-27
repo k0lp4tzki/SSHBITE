@@ -19,15 +19,37 @@ ALLOWED_COMMANDS = {
     # ifconfig is named in spec 3.5 (META fallback) but not in the 3.6 list; it is read-only
     # with -a and allowed only in exactly that form (see ARG_RULES).
     "ifconfig",
+    # spec 7.1: reads in user homes run as the account; only in the forms of _check_setpriv, and only
+    # behind the time limit of _check_timeout (check-4 finding 1)
+    "setpriv", "timeout",
 }
 FORBIDDEN_COMMANDS = {
     "rm", "mv", "cp", "tee", "touch", "mkdir", "mktemp", "chmod", "chown", "ln", "dd", "install",
     "truncate", "ssh", "scp", "sftp", "curl", "wget", "eval", "exec", ".", "source", "sh", "bash",
     "sudo", "su", "xargs", "env", "nohup", "nc", "socat", "python", "python3", "perl",
+    # spec 7.1: runuser opens a PAM session (log entries, possibly writes); setpriv only switches ids
+    "runuser",
 }
+# spec 7.5: the allowed setpriv forms, compared with the raw (quoted) words, and what they may run
+SETPRIV_ARGS = ['--reuid="$uid"', '--regid="$gid"', "--init-groups", "--no-new-privs", "--"]
+SETPRIV_WRAPPED = {"ls", "stat", "head", "test", "ssh-keygen"}
+SETPRIV_FORM = "setpriv: only '--reuid=\"$uid\" --regid=\"$gid\" --init-groups --no-new-privs -- CMD' is allowed"
+# check-4 finding 4: ssh-keygen on a key its owner made readable for others runs with the real uid of nobody
+# and the effective uid of the account (no root uid, no capability), on the path - never on stdin.
+SETPRIV_KEYGEN_ARGS = ['--ruid="$nbd"', '--euid="$uid"', '--regid="$gid"', "--clear-groups", "--no-new-privs", "--"]
+SETPRIV_KEYGEN_FORM = ("setpriv: '--ruid=\"$nbd\" --euid=\"$uid\" --regid=\"$gid\" --clear-groups --no-new-privs --' "
+                       "only for 'ssh-keygen -y -P \"\" -f FILE'")
+# check-4 finding 1: every read as the account has a time limit; setpriv exists only behind exactly this
+TIMEOUT_ARGS = ["-k", "1", "5"]
+TIMEOUT_FORM = "timeout: only 'timeout -k 1 5 setpriv ...' is allowed"
+SETPRIV_NEEDS_TIMEOUT = "setpriv: only behind 'timeout -k 1 5' (a read as the account must not block the collector)"
 BUILTINS = {"set", "export", "read", "continue", "break", "return", "shift", ":"}
 KEYWORDS_PREFIX = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "fi", "done", "}", "esac"}
 ALLOWED_REDIRECTIONS = {"2>/dev/null", "2>&1", "</dev/null"}
+# ssh-keygen never reads stdin (check-4 finding 4: the collector's own ssh-keygen parsed the account's bytes
+# as root through a pipe; now that read runs as the account, see SETPRIV_KEYGEN_ARGS).
+KEYGEN_STDIN_FILES = {"/dev/stdin", "-", "/dev/fd/0", "/proc/self/fd/0"}
+KEYGEN_STDIN_FORM = "ssh-keygen: reading a key from stdin is not allowed"
 
 
 @dataclass
@@ -336,7 +358,7 @@ class Linter:
         if t.value not in ALLOWED_REDIRECTIONS:
             self.violations.append(Violation(t.line, f"redirection '{t.value}' is not allowed"))
 
-    def _check_command(self, cmd: Tok, args: list[Tok]) -> None:
+    def _check_command(self, cmd: Tok, args: list[Tok], wrapped: bool = False) -> None:
         raw = cmd.literal
         name = raw.rsplit("/", 1)[-1] if raw.startswith("/") else raw
         self.commands_seen.append(name)
@@ -353,12 +375,55 @@ class Linter:
             return
         if raw.startswith("/") and raw not in ("/usr/sbin/sshd",):
             self.violations.append(Violation(cmd.line, f"unexpected command path {raw}"))
+        if name == "timeout":
+            self._check_timeout(cmd, args)
+            return
+        if name == "setpriv":
+            self.violations.append(Violation(cmd.line, SETPRIV_NEEDS_TIMEOUT))
+            return
         a = [w.literal for w in args]
+        if name == "ssh-keygen" and any(x in KEYGEN_STDIN_FILES or x.startswith("/dev/fd/") for x in a):
+            self.violations.append(Violation(cmd.line, KEYGEN_STDIN_FORM))
+            return
         rule = ARG_RULES.get(name)
         if rule:
             msg = rule(a)
             if msg:
                 self.violations.append(Violation(cmd.line, f"{name}: {msg}"))
+
+    def _check_timeout(self, cmd: Tok, args: list[Tok]) -> None:
+        """timeout -k 1 5 setpriv ... (check-4 finding 1): the only use of timeout, and the only way to setpriv."""
+        n = len(TIMEOUT_ARGS)
+        if [w.value for w in args[:n]] != TIMEOUT_ARGS or len(args) <= n or args[n].value != "setpriv":
+            self.violations.append(Violation(cmd.line, TIMEOUT_FORM))
+            return
+        self.commands_seen.append("setpriv")
+        self._check_setpriv(args[n], args[n + 1:])
+
+    def _check_setpriv(self, cmd: Tok, args: list[Tok]) -> None:
+        """setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs -- CMD ARGS (spec 7.5), or
+        setpriv --ruid="$nbd" --euid="$uid" --regid="$gid" --clear-groups --no-new-privs -- ssh-keygen -y ..."""
+        n = len(SETPRIV_ARGS)
+        nk = len(SETPRIV_KEYGEN_ARGS)
+        if [w.value for w in args[:nk]] == SETPRIV_KEYGEN_ARGS:
+            rest = [w.literal for w in args[nk:]]
+            if len(rest) != 6 or rest[0] != "ssh-keygen" or "$" in args[nk].literal or rest[1:5] != ["-y", "-P", "", "-f"]:
+                self.violations.append(Violation(cmd.line, SETPRIV_KEYGEN_FORM))
+                return
+            self._check_command(args[nk], args[nk + 1:], wrapped=True)
+            return
+        if [w.value for w in args[:n]] != SETPRIV_ARGS or len(args) <= n:
+            self.violations.append(Violation(cmd.line, SETPRIV_FORM))
+            return
+        wrapped = args[n]
+        if "$" in wrapped.literal:
+            self.violations.append(Violation(wrapped.line, f"command name built from data: {wrapped.value}"))
+            return
+        name = wrapped.literal.rsplit("/", 1)[-1] if wrapped.literal.startswith("/") else wrapped.literal
+        if name not in SETPRIV_WRAPPED:
+            self.violations.append(Violation(wrapped.line, f"setpriv: command '{name}' may not be wrapped"))
+            return
+        self._check_command(wrapped, args[n + 1:], wrapped=True)
 
 
 def _ssh_keygen(a: list[str]) -> str | None:

@@ -1,0 +1,15 @@
+# SSHBITE test lab host on AlmaLinux 9 (RHEL-compatible; spec 8.2). Same layout as image/Dockerfile.
+FROM almalinux:9
+# + hostname, findutils, diffutils: on every real EL9 server; the collector, lab/snapshot.sh and
+#   lab/installed.sh use them
+RUN dnf install -y openssh-server sudo iproute util-linux shadow-utils procps-ng hostname findutils diffutils \
+ && dnf clean all \
+ && rm -f /etc/ssh/ssh_host_*
+ARG HOST
+# test-only keys (see lab/keys/README.md) and the lab helpers; nothing here is under /etc, /root or /home
+COPY keys/ /lab/keys/
+COPY image/lib.sh image/entrypoint.sh image/ctl_sshd_config /lab/image/
+COPY seed/${HOST}/ /lab/seed/
+RUN sh /lab/image/lib.sh common "${HOST}" && sh /lab/seed/setup.sh && sh /lab/image/lib.sh finish "${HOST}"
+EXPOSE 22 2200
+ENTRYPOINT ["/bin/sh", "/lab/image/entrypoint.sh"]

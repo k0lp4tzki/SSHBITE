@@ -1,0 +1,7 @@
+$ sshbite collector export /tmp/pytest-of-app/pytest-11/installed0/export
+4000a6adde2ddcaed173b7db08fe71da264a58a458c5356c09ef2ee02d6aa91b  authorized_keys.sshbite
+635132805a9f0905786495cfc6b1a1106a0d33b40507a3c67e73dda3558f751b  sshbite-collect
+9168d8ef819703916aae627218026663fbcac4f42ef45d11dc648cdbcc071e29  sshbite-gate
+99b2af5b9f622e5383068105d58734dfc19417efe0416597f4262a36f124be55  sshbite-resolve
+8366ab2a63391d4ca748f6dc480d6d4b40e97342219d4a9269321e63b61ffaac  sudoers.d-sshbite
+written to /tmp/pytest-of-app/pytest-11/installed0/export - verify with: cd /tmp/pytest-of-app/pytest-11/installed0/export && sha256sum -c SHA256SUMS

@@ -1,0 +1,325 @@
+##### J1 install hardened: export, check, install, configure, validate, scan
+$ sshbite collector export ./sshbite-export
+0b5f423b9418c0da3fa7d82742c8e717d7ecea3b920c3d7a135c79373d63b402  authorized_keys.sshbite
+9e1c3d073f262e7a26e5a123eed8ac585fecbf88babc90b95aba473e32ee391f  sshbite-collect
+88f124518c3233e6db4d87dea0655f01a286fcc08dc743188b8ec69ddde30f5f  sshbite-gate
+99b2af5b9f622e5383068105d58734dfc19417efe0416597f4262a36f124be55  sshbite-resolve
+8366ab2a63391d4ca748f6dc480d6d4b40e97342219d4a9269321e63b61ffaac  sudoers.d-sshbite
+written to ./sshbite-export - verify with: cd ./sshbite-export && sha256sum -c SHA256SUMS
+(exit 0)
+
+$ cd sshbite-export && sha256sum -c SHA256SUMS
+authorized_keys.sshbite: OK
+sshbite-collect: OK
+sshbite-gate: OK
+sshbite-resolve: OK
+sudoers.d-sshbite: OK
+(exit 0)
+
+$ cat sshbite-export/sudoers.d-sshbite
+# /etc/sudoers.d/sshbite - SSHBITE 0.1.0, privilege.mode installed
+# install -m 0440 -o root -g root sudoers.d-sshbite /etc/sudoers.d/sshbite
+# check:  visudo -cf /etc/sudoers.d/sshbite  and  sudo -l -U sshbite
+# Exactly one command: the root-owned collector, no arguments ("").
+# Safe only if every directory up to it and the file are root-owned and not writable by others.
+Defaults:sshbite env_reset
+Defaults:sshbite secure_path="/usr/sbin:/usr/bin:/sbin:/bin"
+Defaults:sshbite !lecture, !log_output, !log_input, !requiretty
+sshbite ALL=(root) NOPASSWD: /usr/local/libexec/sshbite/sshbite-collect ""
+(exit 0)
+
+[a1 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.1.5
+/etc/sudoers.d/sshbite: parsed OK
+[a2 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.1.5
+/etc/sudoers.d/sshbite: parsed OK
+[a3 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.1.5
+/etc/sudoers.d/sshbite: parsed OK
+[a4 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.1.5
+passwd: password changed.
+[a5 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.1.5
+/etc/sudoers.d/sshbite: parsed OK
+[b1 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.2.5
+/etc/sudoers.d/sshbite: parsed OK
+[b2 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.2.5
+/etc/sudoers.d/sshbite: parsed OK
+[b3 as root] install the exported files (docs/install.md), authorized_keys variant C from=172.30.2.5
+/etc/sudoers.d/sshbite: parsed OK
+[b4 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.2.5
+/etc/sudoers.d/sshbite: parsed OK
+[b5 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.2.5
+/etc/sudoers.d/sshbite: parsed OK
+[c1 as root] install the exported files (docs/install.md), authorized_keys variant C from=172.30.3.13
+/etc/sudoers.d/sshbite: parsed OK
+[c2 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.3.21
+/etc/sudoers.d/sshbite: parsed OK
+[jump as root] install the exported files (docs/install.md), authorized_keys variant A from=172.30.0.0/16
+/etc/sudoers.d/sshbite: parsed OK
+[a1 as root] the checks of docs/install.md
+/etc/sudoers.d/sshbite: parsed OK
+User sshbite may run the following commands on a1:
+    (root) NOPASSWD: /usr/local/libexec/sshbite/sshbite-collect ""
+root 755 /usr
+root 755 /usr/local
+root 755 /usr/local/libexec
+root 755 /usr/local/libexec/sshbite/sshbite-collect
+root 755 /usr/local/libexec/sshbite/sshbite-gate
+root 755 /usr/local/libexec/sshbite/sshbite-resolve
+
+$ grep -A2 '^privilege' sshbite.yaml
+privilege:
+  mode: installed
+(exit 0)
+
+$ sshbite config validate --connect
+config OK: /tmp/sshbite-walk/sshbite.yaml
+entry OK, pinned key matches, sudo: root (installed /usr/local/libexec/sshbite/sshbite-collect, collector B=01fba7910d9e matches)
+(exit 0)
+
+$ sshbite scan --label 'J1 installed'
+scan: entry jump:22, max depth 10, max hosts 1000, concurrency 20
+depth 0: 1 queued, 0 running, 0 done
+depth 0: 0 queued, 0 running, 1 done
+depth 1: 2 queued, 0 running, 1 done
+depth 1: 0 queued, 0 running, 3 done
+depth 2: 5 queued, 0 running, 3 done
+depth 2: 0 queued, 0 running, 8 done
+depth 3: 4 queued, 0 running, 8 done
+depth 3: 0 queued, 2 running, 10 done
+depth 3: 0 queued, 1 running, 11 done (1 unreachable)
+depth 3: 0 queued, 0 running, 12 done (1 unreachable)
+depth 4: 1 queued, 0 running, 12 done (1 unreachable)
+depth 4: 0 queued, 1 running, 12 done (1 unreachable)
+depth 4: 0 queued, 0 running, 13 done (1 unreachable)
+
+scan 1 completed in 12 s
+hosts:    13 connected; 12 ok, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
+findings: 37 - 4 critical, 16 high, 14 medium, 2 low, 1 info
+edges:    21 access (20 effective, 4 unknown origin); keys: 11
+scan id:  1
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+(exit 0)
+
+$ sshbite scans show latest | head -24
+scan 1  completed  label: J1 installed
+started 2026-11-26T23:25:41Z  finished 2026-11-26T23:25:53Z  entry jump:22
+tool 0.1.0  collector sha256 9e1c3d073f262e7a26e5a123eed8ac585fecbf88babc90b95aba473e32ee391f
+hosts: 1 excluded, 12 ok, 2 out_of_scope, 1 unreachable, 1 unresolvable
+findings: 4 critical, 16 high, 14 medium, 2 low, 1 info
+access edges: 21 (20 effective, 4 unknown origin); unresolved hashed known_hosts entries: 1
+
+host               status            privilege     depth  discovered via                               route
+jump               ok                root              0  entry                                        jump
+203.0.113.10       out_of_scope      -                 1  jump /home/ops/.ssh/config:7                 -
+a1                 ok                root              1  jump /home/ops/.ssh/config:2                 jump -> a1
+b1                 ok                root              1  jump /home/ops/.ssh/config:4                 jump -> b1
+a2                 ok                root              2  a1 /home/deploy/.ssh/known_hosts:1 (hashed)  jump -> a2
+a3                 ok                root              2  a1 /home/deploy/.ssh/config:1                jump -> a3
+b2                 ok                root              2  b1 /home/admin/.ssh/known_hosts:1            jump -> b2
+b3                 ok                root              2  b1 /home/admin/.ssh/known_hosts:2            jump -> b3
+b5                 ok                root              2  b1 /home/admin/.ssh/config:1                 jump -> b5
+10.20.30.40        out_of_scope      -                 3  b3 /home/ops2/.ssh/config:5                  -
+172.30.1.99        unreachable       -                 3  a2 /home/deploy/.ssh/known_hosts:1           -
+                    tried jump -> 172.30.1.99: 172.30.1.99: channel open failed: No route to host
+                    tried jump -> a2 -> 172.30.1.99: 172.30.1.99: channel open failed: open failed
+172.30.2.14        excluded          -                 3  b3 /home/ops2/.ssh/known_hosts:1             -
+a4                 ok                root              3  a2 /home/deploy/.ssh/config:2                jump -> a4
+a5                 ok                root              3  a3 /home/app/.ssh/config:1                   jump -> a5
+(exit 0)
+
+##### J2 errors are visible: a4 without its sudoers file, in a full crawl
+[a4 as root] rm /etc/sudoers.d/sshbite
+
+$ sshbite config validate --connect   # entry is fine
+config OK: /tmp/sshbite-walk/sshbite.yaml
+entry OK, pinned key matches, sudo: root (installed /usr/local/libexec/sshbite/sshbite-collect, collector B=01fba7910d9e matches)
+(exit 0)
+
+$ sshbite scan --label 'J2 a4 not rolled out'
+scan: entry jump:22, max depth 10, max hosts 1000, concurrency 20
+depth 0: 1 queued, 0 running, 0 done
+depth 0: 0 queued, 0 running, 1 done
+depth 1: 2 queued, 0 running, 1 done
+depth 1: 0 queued, 0 running, 3 done
+depth 2: 5 queued, 0 running, 3 done
+depth 2: 0 queued, 0 running, 8 done
+depth 3: 4 queued, 0 running, 8 done
+depth 3: 0 queued, 2 running, 10 done (1 collector error)
+depth 3: 0 queued, 1 running, 11 done (1 unreachable, 1 collector error)
+depth 3: 0 queued, 0 running, 12 done (1 unreachable, 1 collector error)
+depth 4: 1 queued, 0 running, 12 done (1 unreachable, 1 collector error)
+depth 4: 0 queued, 1 running, 12 done (1 unreachable, 1 collector error)
+depth 4: 0 queued, 0 running, 13 done (1 unreachable, 1 collector error)
+
+scan 2 completed in 12 s
+hosts:    13 connected; 11 ok, 1 collector_error, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
+findings: 34 - 3 critical, 14 high, 14 medium, 2 low, 1 info
+edges:    20 access (19 effective, 3 unknown origin); keys: 11
+scan id:  2
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+(exit 0)
+
+$ sshbite scans show latest | grep -A3 '^a4 '
+a4                 collector_error   -                 3  a2 /home/deploy/.ssh/config:2                jump -> a4
+                    tried jump -> a4: ok
+                    error: privilege.mode installed: sudo asks for a password - the sudoers rule for /usr/local/libexec/sshbite/sshbite-collect must be NOPASSWD
+a5                 ok                root              3  a3 /home/app/.ssh/config:1                   jump -> a5
+(exit 0)
+
+[a4 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.1.5
+/etc/sudoers.d/sshbite: parsed OK
+##### J3 after an update: the hosts have another collector version; reinstall only sshbite-collect
+[every host as root] the installed collector is now an older version: sed -i 's/^B=.*/B=0123456789ab/' /usr/local/libexec/sshbite/sshbite-collect
+
+$ sshbite config validate --connect
+config OK: /tmp/sshbite-walk/sshbite.yaml
+entry OK, pinned key matches, sudo: FAILED - privilege.mode installed: installed collector version differs from this SSHBITE (expected B=01fba7910d9e, host has B=0123456789ab) - run 'sshbite collector export' and reinstall sshbite-collect
+(exit 3)
+
+$ sshbite scan --label 'J3 old collector'
+
+scan 3 completed in 12 s
+hosts:    13 connected; 12 collector_error, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
+findings: 37 - 4 critical, 16 high, 14 medium, 2 low, 1 info
+edges:    21 access (20 effective, 4 unknown origin); keys: 11
+scan id:  3
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+(exit 0)
+
+$ sshbite scans show latest | grep -m2 'error:'
+                    error: privilege.mode installed: installed collector version differs from this SSHBITE (expected B=01fba7910d9e, host has B=0123456789ab) - run 'sshbite collector export' and reinstall sshbite-collect
+                    error: privilege.mode installed: installed collector version differs from this SSHBITE (expected B=01fba7910d9e, host has B=0123456789ab) - run 'sshbite collector export' and reinstall sshbite-collect
+(exit 0)
+
+$ sshbite collector export ./sshbite-export-new && cd sshbite-export-new && sha256sum -c SHA256SUMS && diff -s sshbite-gate ../sshbite-export/sshbite-gate
+0b5f423b9418c0da3fa7d82742c8e717d7ecea3b920c3d7a135c79373d63b402  authorized_keys.sshbite
+9e1c3d073f262e7a26e5a123eed8ac585fecbf88babc90b95aba473e32ee391f  sshbite-collect
+88f124518c3233e6db4d87dea0655f01a286fcc08dc743188b8ec69ddde30f5f  sshbite-gate
+99b2af5b9f622e5383068105d58734dfc19417efe0416597f4262a36f124be55  sshbite-resolve
+8366ab2a63391d4ca748f6dc480d6d4b40e97342219d4a9269321e63b61ffaac  sudoers.d-sshbite
+written to ./sshbite-export-new - verify with: cd ./sshbite-export-new && sha256sum -c SHA256SUMS
+authorized_keys.sshbite: OK
+sshbite-collect: OK
+sshbite-gate: OK
+sshbite-resolve: OK
+sudoers.d-sshbite: OK
+Files sshbite-gate and ../sshbite-export/sshbite-gate are identical
+(exit 0)
+
+[every host as root] install -m 0755 -o root -g root sshbite-collect /usr/local/libexec/sshbite/sshbite-collect
+
+$ sshbite scan --label 'J3 collector reinstalled'
+
+scan 4 completed in 12 s
+hosts:    13 connected; 12 ok, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
+findings: 37 - 4 critical, 16 high, 14 medium, 2 low, 1 info
+edges:    21 access (20 effective, 4 unknown origin); keys: 11
+scan id:  4
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+(exit 0)
+
+##### J4 switching from mode sudo: files installed, config still on sudo -> the gate refuses
+$ SSHBITE_SUDO_PASSWORD=*** sshbite scan --no-crawl --label 'J4 still mode sudo'   # privilege.mode: sudo
+scan 5 completed in 0 s
+hosts:    1 connected; 1 collector_error
+findings: 0 - 0 critical, 0 high, 0 medium, 0 low, 0 info
+edges:    0 access (0 effective, 0 unknown origin); keys: 0
+Only the entry point was found; it has no known_hosts/ssh config references. Add seeds to scan more.
+scan id:  5
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+(exit 0)
+
+$ sshbite scans show latest | grep -A3 '^jump '
+jump               collector_error   unprivileged      0  entry                                        jump
+                    tried jump: ok
+                    reason: sshbite-gate: denied (command not allowed)
+                    error: no collector output: sshbite-gate: denied (command not allowed)
+(exit 0)
+
+$ sshbite scan --label 'J4 switched to installed'   # privilege.mode: installed
+
+scan 6 completed in 12 s
+hosts:    13 connected; 12 ok, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
+findings: 37 - 4 critical, 16 high, 14 medium, 2 low, 1 info
+edges:    21 access (20 effective, 4 unknown origin); keys: 11
+scan id:  6
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+(exit 0)
+
+$ sshbite scan --ask-sudo-password
+error: privilege.mode installed never sends a sudo password - remove --ask-sudo-password
+(exit 2)
+
+##### J2 all error texts (entry + seeds a2 a3 a4 a5 b2, --no-crawl), for the UI
+[a2 as root] rm /usr/local/libexec/sshbite/sshbite-collect
+
+[a3 as root] sed -i 's/NOPASSWD: //' /etc/sudoers.d/sshbite
+
+[a4 as root] rm /etc/sudoers.d/sshbite
+
+[a5 as root] sed -i 's/^B=[0-9a-f]*$/B=000000000000/' /usr/local/libexec/sshbite/sshbite-collect
+
+[b2 as root] sed -i 's|NOPASSWD: /usr/local/libexec/sshbite/sshbite-collect ""|NOPASSWD: /bin/true|' /etc/sudoers.d/sshbite
+
+$ sshbite scan --no-crawl --label 'J2 broken installations'   # seeds: a2 a3 a4 a5 b2
+scan: entry jump:22, max depth 0, max hosts 1000, concurrency 20
+depth 0: 6 queued, 0 running, 0 done
+depth 0: 0 queued, 0 running, 6 done (5 collector error)
+
+scan 7 completed in 1 s
+hosts:    6 connected; 1 ok, 5 collector_error, 1 out_of_scope, 2 max_depth
+findings: 5 - 0 critical, 1 high, 4 medium, 0 low, 0 info
+edges:    1 access (1 effective, 0 unknown origin); keys: 3
+scan id:  7
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+(exit 0)
+
+$ sshbite scans show latest
+scan 7  completed  label: J2 broken installations
+started 2026-11-26T23:26:51Z  finished 2026-11-26T23:26:51Z  entry jump:22
+tool 0.1.0  collector sha256 9e1c3d073f262e7a26e5a123eed8ac585fecbf88babc90b95aba473e32ee391f
+hosts: 5 collector_error, 2 max_depth, 1 ok, 1 out_of_scope
+findings: 0 critical, 1 high, 4 medium, 0 low, 0 info
+access edges: 1 (1 effective, 0 unknown origin); unresolved hashed known_hosts entries: 0
+
+host               status            privilege     depth  discovered via                               route
+a2                 collector_error   -                 0  seed:hosts_file                              jump -> a2
+                    tried jump -> a2: ok
+                    error: privilege.mode installed: collector not installed at /usr/local/libexec/sshbite/sshbite-collect
+a3                 collector_error   -                 0  seed:hosts_file                              jump -> a3
+                    tried jump -> a3: ok
+                    error: privilege.mode installed: sudo asks for a password - the sudoers rule for /usr/local/libexec/sshbite/sshbite-collect must be NOPASSWD
+a4                 collector_error   -                 0  seed:hosts_file                              jump -> a4
+                    tried jump -> a4: ok
+                    error: privilege.mode installed: sudo asks for a password - the sudoers rule for /usr/local/libexec/sshbite/sshbite-collect must be NOPASSWD
+a5                 collector_error   root              0  seed:hosts_file                              jump -> a5
+                    tried jump -> a5: ok
+                    error: privilege.mode installed: installed collector version differs from this SSHBITE (expected B=01fba7910d9e, host has B=000000000000) - run 'sshbite collector export' and reinstall sshbite-collect
+b2                 collector_error   -                 0  seed:hosts_file                              jump -> b2
+                    tried jump -> b2: ok
+                    error: privilege.mode installed: sudo does not allow /usr/local/libexec/sshbite/sshbite-collect for this account (sudo -n -l exit 1: )
+jump               ok                root              0  entry                                        jump
+172.30.1.11        max_depth         -                 1  a5 /home/alice/.ssh/config:3                 -
+203.0.113.10       out_of_scope      -                 1  jump /home/ops/.ssh/config:7                 -
+b1                 max_depth         -                 1  jump /home/ops/.ssh/config:4                 -
+(exit 0)
+
+[a2 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.1.5
+/etc/sudoers.d/sshbite: parsed OK
+[a3 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.1.5
+/etc/sudoers.d/sshbite: parsed OK
+[a4 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.1.5
+/etc/sudoers.d/sshbite: parsed OK
+[a5 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.1.5
+/etc/sudoers.d/sshbite: parsed OK
+[b2 as root] install the exported files (docs/install.md), authorized_keys variant B from=172.30.2.5
+/etc/sudoers.d/sshbite: parsed OK
+$ sshbite scan --label 'after repair'
+
+scan 8 completed in 17 s
+hosts:    13 connected; 12 ok, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
+findings: 37 - 4 critical, 16 high, 14 medium, 2 low, 1 info
+edges:    21 access (20 effective, 4 unknown origin); keys: 11
+scan id:  8
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+(exit 0)
+

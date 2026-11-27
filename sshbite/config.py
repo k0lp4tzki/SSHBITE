@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (AfterValidator, BaseModel, ConfigDict, Field, ValidationError, ValidationInfo, field_validator,
+                      model_validator)
 
 from .errors import ConfigError
 
@@ -29,7 +30,8 @@ audit:
   key_file: /etc/sshbite/audit_ed25519      # must be 0600
   key_passphrase_env: null
 privilege:
-  mode: sudo        # sudo: sudo -n /bin/sh -s | sudo-login: sudo -n -i /bin/sh -s | none
+  mode: sudo   # sudo | sudo-login | none | installed (recommended, see docs/install.md)
+  # collector_path: /usr/local/libexec/sshbite/sshbite-collect   # only for mode installed
   password_scope: []  # CIDRs / hostname globs that may receive the sudo password; empty = every host
 crawl:
   max_depth: 10
@@ -129,15 +131,57 @@ class AuditCfg(_Strict):
     key_passphrase_env: str | None = None
 
 
+DEFAULT_COLLECTOR_PATH = "/usr/local/libexec/sshbite/sshbite-collect"
+_COLLECTOR_PATH_RE = re.compile(r"^/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+$")
+COLLECTOR_PATH_RULE = ("must be an absolute path of letters, digits, '.', '_', '-' and '/' "
+                       "(no '.' or '..' segments, at most 200 characters)")
+
+
+def collector_path_ok(value: Any) -> bool:
+    """privilege.collector_path / --collector-path: absolute, plain characters, no '.'/'..' segment, <= 200."""
+    if not isinstance(value, str) or len(value) > 200 or not _COLLECTOR_PATH_RE.match(value):
+        return False
+    return all(seg not in (".", "..") for seg in value.split("/")[1:])
+
+
+def sibling_path(collector_path: str, name: str) -> str:
+    """resolve_path / gate_path: the file NAME in the collector's directory (not configurable)."""
+    return collector_path.rsplit("/", 1)[0] + "/" + name
+
+
 class PrivilegeCfg(_Strict):
-    mode: Literal["sudo", "sudo-login", "none"] = "sudo"
+    mode: Literal["sudo", "sudo-login", "none", "installed"] = "sudo"
     # hosts (CIDRs / name globs) that may receive the sudo password; empty = every host
     password_scope: list[ScopeItem] = Field(default_factory=list)
+    # mode installed: the root-owned collector that `sshbite collector export` wrote and the owner installed
+    collector_path: str = DEFAULT_COLLECTOR_PATH
 
     @field_validator("password_scope", mode="before")
     @classmethod
     def _none_list(cls, v: Any) -> Any:
         return [] if v is None else v
+
+    @field_validator("password_scope")
+    @classmethod
+    def _no_password_when_installed(cls, v: list[str], info: ValidationInfo) -> list[str]:
+        if v and info.data.get("mode") == "installed":
+            raise ValueError("not used with privilege.mode installed (no sudo password is ever sent) - remove it")
+        return v
+
+    @field_validator("collector_path", mode="before")
+    @classmethod
+    def _collector_path(cls, v: Any) -> Any:
+        if isinstance(v, str) and not collector_path_ok(v):
+            raise ValueError(COLLECTOR_PATH_RULE)
+        return v
+
+    @property
+    def resolve_path(self) -> str:
+        return sibling_path(self.collector_path, "sshbite-resolve")
+
+    @property
+    def gate_path(self) -> str:
+        return sibling_path(self.collector_path, "sshbite-gate")
 
 
 class CrawlCfg(_Strict):
@@ -393,6 +437,13 @@ def check_audit_key_file(cfg: Config) -> str | None:
 CRAWL_UNRESTRICTED_WARNING = (
     "crawl.include is empty: crawl targets and ports are taken from target data (known_hosts, ~/.ssh/config, "
     "from=) without restriction; set crawl.include to the networks and host names you mean to scan")
+
+
+def privilege_warnings(cfg: Config) -> list[str]:
+    """Warnings of `config validate` about the privilege block (no error: switching modes stays easy)."""
+    if cfg.privilege.mode != "installed" and "collector_path" in cfg.privilege.model_fields_set:
+        return ["privilege.collector_path: ignored unless privilege.mode is installed"]
+    return []
 
 
 def scope_warnings(cfg: Config) -> list[str]:

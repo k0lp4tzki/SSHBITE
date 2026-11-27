@@ -1,0 +1,9 @@
+$ ruff check sshbite tests evidence/hardening/walk_c4.py
+All checks passed!
+$ (cd frontend && npm run check)
+1795743313690 COMPLETED 143 FILES 0 ERRORS 14 WARNINGS 12 FILES_WITH_PROBLEMS
+$ sshbite collector show | grep lint
+===== collect.sh  sha256 354162117a7832e74caa371a67eb7542dbbf07a5afbc860216e01497cf40a2b1  lint: OK
+===== resolve.sh  sha256 f048726e442a3b417e391d5dc396eafa34813eb19bcca4725587c0d99f44f2ff  lint: OK
+$ pytest tests/unit/test_lint.py -q
+109 passed in 0.14s

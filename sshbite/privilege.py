@@ -11,6 +11,11 @@ called by its absolute path, never through the account's PATH, and /bin/sudo is 
     SUDO -S -k -p '' /bin/sh -s       SUDO -S -k -p '' -i /bin/sh -s  (collector via password)
     /bin/sh -s                                                        (unprivileged collector)
 
+privilege.mode installed sends only these (P = privilege.collector_path, installed with `sshbite collector
+export`): `sudo -n -l P` (probe) and `sudo -n P` (run), both with empty stdin, plus the resolve file next to P.
+No script is sent, no shell is asked for, no password is ever sent and there is no unprivileged fallback.
+`sudo` has no path: the gate (sshbite-gate) resolves it to /usr/bin/sudo or /bin/sudo.
+
 The password is only sent to hosts inside privilege.password_scope (empty = every host).
 
 -k makes sudo ignore (and not write) cached credentials, so the password line on
@@ -24,6 +29,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
+from .config import DEFAULT_COLLECTOR_PATH
 from .transport import ExecResult, run
 
 log = logging.getLogger("sshbite.privilege")
@@ -90,10 +96,11 @@ class RedactingFilter(logging.Filter):
 
 @dataclass
 class CollectOutcome:
-    privilege: str                         # root | sudo_password | unprivileged
+    privilege: str                         # root | sudo_password | unprivileged | none (installed, probe failed)
     result: ExecResult
     partial_reasons: list[str] = field(default_factory=list)
     needs_password: bool = False           # sudo asked for a password and none was given
+    error: str | None = None               # installed: the probe failed; the host becomes collector_error
 
 
 def _first_line(text: str, secret: SudoSecret) -> str:
@@ -115,7 +122,9 @@ def sudo_cmd(args: str) -> str:
     return f"test -x {SUDO_PATH} && exec {SUDO_PATH} {args}; exec {SUDO_FALLBACK} {args}"
 
 
-def commands(mode: str) -> dict[str, str]:
+def commands(mode: str, collector_path: str = DEFAULT_COLLECTOR_PATH) -> dict[str, str]:
+    if mode == "installed":
+        return {"probe": f"sudo -n -l {collector_path}", "run": f"sudo -n {collector_path}"}
     i = " -i" if mode == "sudo-login" else ""
     return {
         "probe": sudo_cmd(f"-n{i} /bin/true"),
@@ -126,9 +135,53 @@ def commands(mode: str) -> dict[str, str]:
     }
 
 
+INSTALLED = "privilege.mode installed: "
+
+
+def installed_stderr_error(collector_path: str, stderr: str, secret: SudoSecret | None = None) -> str | None:
+    """The first three rows of the installed error table: what stderr alone tells (gate, password, missing file)."""
+    secret = secret or SudoSecret()
+    first = _first_line(stderr, secret)
+    if first.startswith("sshbite-gate:"):
+        return f"{INSTALLED}refused by sshbite-gate on this host: {first}"
+    if PASSWORD_REQUIRED.search(stderr or ""):
+        return f"{INSTALLED}sudo asks for a password - the sudoers rule for {collector_path} must be NOPASSWD"
+    if "command not found" in (stderr or ""):
+        return f"{INSTALLED}collector not installed at {collector_path}"
+    return None
+
+
+def installed_probe_error(collector_path: str, rc: int | None, stderr: str, secret: SudoSecret | None = None) -> str:
+    """Text for a failed `sudo -n -l P` (host status collector_error)."""
+    secret = secret or SudoSecret()
+    return installed_stderr_error(collector_path, stderr, secret) or (
+        f"{INSTALLED}sudo does not allow {collector_path} for this account "
+        f"(sudo -n -l exit {rc}: {_first_line(stderr, secret)})")
+
+
+def installed_version_error(expected: str, got: str) -> str:
+    return (f"{INSTALLED}installed collector version differs from this SSHBITE (expected B={expected}, "
+            f"host has B={got}) - run 'sshbite collector export' and reinstall sshbite-collect")
+
+
+async def collect_installed(conn, collector_path: str, max_bytes: int,
+                            secret: SudoSecret | None = None) -> CollectOutcome:
+    """Mode installed: probe, then the installed collector - two exec channels, stdin empty, nothing else."""
+    cmds = commands("installed", collector_path)
+    probe = await run(conn, cmds["probe"], None, max_bytes=65536)
+    if probe.rc != 0:
+        return CollectOutcome("none", probe, [], False,
+                              error=installed_probe_error(collector_path, probe.rc, probe.stderr, secret))
+    res = await run(conn, cmds["run"], None, max_bytes=max_bytes)
+    return CollectOutcome("root", res)
+
+
 async def collect(conn, script: bytes, mode: str, secret: SudoSecret, max_bytes: int,
-                  password_allowed: bool = True) -> CollectOutcome:
-    """password_allowed=False: the host is outside privilege.password_scope - never send it the password."""
+                  password_allowed: bool = True, collector_path: str = DEFAULT_COLLECTOR_PATH) -> CollectOutcome:
+    """password_allowed=False: the host is outside privilege.password_scope - never send it the password.
+    Mode installed ignores script, secret and password_allowed: see collect_installed()."""
+    if mode == "installed":
+        return await collect_installed(conn, collector_path, max_bytes, secret)
     cmds = commands(mode)
     reasons: list[str] = []
     needs_password = False

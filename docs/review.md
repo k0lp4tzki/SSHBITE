@@ -25,6 +25,59 @@ only where the first does not exist. The audit account's `PATH` never decides wh
 
 With `privilege.mode: sudo-login` the sudo commands carry `-i`; with `none` only `/bin/sh -s` is used.
 
+### `privilege.mode: installed`
+
+In this mode (recommended, [install.md](install.md#privileges-installed-collector-recommended)) nothing
+above is sent. These are the only command strings, P = `privilege.collector_path`
+(default `/usr/local/libexec/sshbite/sshbite-collect`):
+
+| Command | Where | stdin |
+|---|---|---|
+| `sudo -n -l P` | every host: the probe | empty (EOF at once) |
+| `sudo -n P` | if the probe succeeded: the installed collector as root | empty (EOF at once) |
+| `<dir of P>/sshbite-resolve` | entry host (and a referencing host for names the entry cannot resolve) | host names, one per line, as data |
+
+No script, no `/bin/sh`, no `-S`, no password and no unprivileged fallback. `sudo` stands without a path
+here; the gate runs `/usr/bin/sudo` (or `/bin/sudo` where that does not exist). The installed
+`sshbite-collect` is `#!/bin/sh` plus `collect.sh` byte for byte; the scan stores the SHA-256 of that file
+(`collector sha256` in `sshbite scans show`), the same value as in the export's `SHA256SUMS`. The
+collector's first output line carries B as before; a host with a different B is `collector_error`
+(*installed collector version differs*).
+
+`sshbite-resolve` is `#!/bin/sh` plus `resolve.sh`: `while IFS= read -r n; do getent hosts -- "$n" | …`.
+Each name is read as one line into a variable and only ever passed, quoted and after `--`, as an argument
+to `getent` and as an awk variable – never evaluated or executed. SSHBITE also sends only names that match
+`[A-Za-z0-9._-]`.
+
+### The gate `sshbite-gate`
+
+The audit key's `authorized_keys` line runs the gate (`command="…/sshbite-gate"`), whatever the client
+asks for. It is a short POSIX sh script, written by `sshbite collector export`; read it there. It
+
+- sets `PATH=/usr/sbin:/usr/bin:/sbin:/bin`, `LC_ALL=C` and `umask 077`;
+- compares `SSH_ORIGINAL_COMMAND` with `[ "$C" = "…" ]` against exactly the three strings of the table –
+  no pattern, no `case`, no `eval`, no `sh -c`;
+- runs `exec "$SUDO" -n -l P </dev/null`, `exec "$TIMEOUT" -k 5 3600 "$SUDO" -n P </dev/null` (plain
+  `exec "$SUDO" -n P </dev/null` where coreutils `timeout` is missing) or `exec …/sshbite-resolve` (stdin
+  passed through for the names) – the sudo calls get `/dev/null` as stdin, so nothing a client sends can
+  reach them. After 3600 s (the largest `limits.host_timeout`) sudo gets TERM and passes it on to the
+  collector, KILL follows 5 s later: no root process outlives a broken scan for long;
+- refuses everything else – an empty or missing command (interactive login), subsystems such as sftp,
+  the commands of the legacy modes, extra arguments, other spacing, appended `; …` – with
+  `sshbite-gate: denied (command not allowed)` on stderr and **exit 126**;
+- logs every request to syslog `authpriv` (`allowed: probe|collect|resolve`, or `denied: <command>`
+  with non-printable characters as `?`, at most 200 characters); `logger` runs under `timeout -k 1 2`, so a
+  hanging syslog delays a request by at most 3 s, and a missing syslog does not change the result;
+- never reads or hashes stdin.
+
+The sudoers file allows the account exactly one command: `sshbite ALL=(root) NOPASSWD: P ""` – P without
+arguments. `restrict` in `authorized_keys` disables pty, agent and X11 forwarding; only the entry host (and
+hops) may forward, and only to port 22 (`permitopen`); they may not open a remote TCP listener
+(`permitlisten="localhost:22"`, see [install.md](install.md#the-authorized_keys-variants)). The lab test `tests/e2e/test_lab_installed.py`
+(i04) tries a shell with and without pty, `/bin/sh -s` with a script, both legacy sudo commands,
+`sudo -n -l P; id`, `sudo -n P x`, `sudo -n /bin/sh`, sftp, a forward to another port, remote forwards
+(`ssh -R`) and a login from another address: all are refused.
+
 On the entry host and on hops of a chained route SSHBITE additionally opens `direct-tcpip` channels (port
 forwarding) to the next host. It does **not** use the hop's ssh client, so no `known_hosts` file on a hop
 is read or written. It never requests a pty, agent forwarding, X11 forwarding, sftp or scp, and it never
@@ -46,7 +99,12 @@ The output has three parts:
 <the complete script>
 ===== literal commands sent on exec channels (privilege.mode: sudo / sudo-login)
 <every command string of the table above>
+===== literal commands sent on exec channels (privilege.mode: installed, collector_path /usr/local/libexec/sshbite/sshbite-collect)
+<the three command strings of mode installed>
 ```
+
+The installed files themselves come from `sshbite collector export DIR`; `sshbite-collect` and
+`sshbite-resolve` there are the two scripts above with a `#!/bin/sh` line in front.
 
 Review against the installed version: the scripts are part of the package and printed from it.
 Every scan stores the SHA-256 of the `collect.sh` it sent – shown by `sshbite scans show ID`
@@ -63,8 +121,9 @@ Read it top to bottom; it is about 300 lines of POSIX sh. Things to confirm:
 2. **Output goes to stdout only.** The only redirections are `2>/dev/null`, `2>&1` and `</dev/null`;
    there is no `>`, `>>` or `tee`, so nothing can be written to a file.
 3. **Only reading commands:** `cat head ls stat awk sed grep getent ip hostname uname id sort printf
-   test [ true`, plus `ssh-keygen` and `sshd` in fixed forms, plus the shell functions defined in the
-   script itself (`sec`, `val`, `fhdr`, …).
+   test [ true`, plus `ssh-keygen` and `sshd` in fixed forms, `setpriv` in exactly one form (see
+   [below](#files-in-user-homes-are-read-as-their-owner)), plus the shell functions defined in the
+   script itself (`sec`, `val`, `fhdr`, `uls`, …).
 4. **Sections and what they read:**
 
    | Section | Reads |
@@ -74,7 +133,7 @@ Read it top to bottom; it is about 300 lines of POSIX sh. Things to confirm:
    | SSHD | `sshd -T` (prints the effective config), `/etc/ssh/sshd_config` and up to 20 files from its `Include` lines |
    | ACCOUNTS | `getent passwd` (max 20,000 lines), else `/etc/passwd` |
    | SHADOW | root only: `awk -F: '{print $1":"substr($2,1,1)":"$8}' /etc/shadow` – the user name, the **first character** of the hash field (`!`, `*`, `$`) and the expiry date. No hash leaves the host. |
-   | USERS | per account with `~/.ssh` or an authorized_keys file (max 2,000): file metadata of every `~/.ssh` entry (max 100); the content of `authorized_keys*` (per `AuthorizedKeysFile`), `known_hosts*`, `config`, `*.pub` (max 5,000 lines, files > 1 MiB skipped) |
+   | USERS | **as the account** (`setpriv`, see below), per account with `~/.ssh` or an authorized_keys file (max 2,000): file metadata of every `~/.ssh` entry (max 100); the content of `authorized_keys*` (per `AuthorizedKeysFile`), `known_hosts*`, `config`, `*.pub` (max 5,000 lines, files > 1 MiB skipped) |
    | private keys | never printed. Only their first line (`-----BEGIN … PRIVATE KEY-----`), `ssh-keygen -y -P '' -f FILE` (prints the **public** key if there is no passphrase; "incorrect passphrase" means encrypted) and `ssh-keygen -l -f FILE` (fingerprint) |
    | SYSTEM | `/etc/ssh/ssh_known_hosts`, `/etc/ssh/ssh_config`, `/etc/ssh/ssh_config.d/*` (max 20) |
 
@@ -95,7 +154,10 @@ function definitions and `$(…)` command substitutions, recursively – and fai
 - any command not on the allowlist above (or not a function defined in the script, or one of the
   builtins `set export read continue break return shift :`);
 - any of `rm mv cp tee touch mkdir mktemp chmod chown ln dd install truncate ssh scp sftp curl wget eval
-  exec . source sh bash sudo su xargs env nohup nc socat python python3 perl`;
+  exec . source sh bash sudo su xargs env nohup nc socat python python3 perl runuser`;
+- `setpriv` in any form other than `setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs --
+  CMD` (compared word for word, quotes included), or wrapping anything but `ls stat head test ssh-keygen`
+  (whose arguments are then checked by their own rules); a variable as the wrapped command;
 - a command name containing `$` (built from data), a command with an unexpected absolute path (only
   `/usr/sbin/sshd` is allowed), background jobs (`&`) and backquotes;
 - any redirection other than `2>/dev/null`, `2>&1`, `</dev/null`, and `>>` anywhere;
@@ -118,28 +180,88 @@ catches them.
 - **The literal sudo/sh command strings** are not part of the scripts; they are fixed in
   `sshbite/privilege.py` and printed by `collector show` for review.
 
-## Residual risk: a symlink race in users' `~/.ssh`
+## Files in user homes are read as their owner
 
-The collector runs as root and reads files in directories that belong to other users (`~/.ssh/*`,
-authorized_keys files). Before it prints a file it checks that the path is not a symbolic link
-(`[ -L "$p" ]`), and for authorized_keys also the directory one level up. POSIX sh offers no way to open a
-file first and check the opened file afterwards, so there is a short window between the check and the
-read. A local user who owns such a directory could, in that window, replace a file with a symlink to a
-file only root may read (e.g. `/etc/shadow`); the collector would then print that content (up to 5,000
-lines) into the scan, where it ends up in the database and the UI. The user does not get to see it.
+The collector runs as root, but it does not read other users' files as root. Everything it reads below a
+user's `~/.ssh` and every `AuthorizedKeysFile` path of that user (also absolute ones such as
+`/etc/ssh/authorized_keys/%u`) is read **as that user** – the way sshd itself reads authorized_keys:
 
-This is accepted as a residual risk and not changed in v1, because:
+- the helpers `uls`, `ustat`, `ulsnd`, `uread`, `utest` and `ukg` at the top of `collect.sh` run `ls -A`,
+  `stat` (and its `ls -lnd` fallback), `head -c`, `test -r/-x/-f` and `ssh-keygen -y/-l` as
+  `timeout -k 1 5 setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs -- CMD …` with the
+  account's uid, gid and groups from passwd. `setpriv` (util-linux) only switches ids; it opens no PAM
+  session and logs nothing. `--no-new-privs` blocks setuid programs. `runuser` and `su` are forbidden by
+  the lint, and the lint allows `setpriv` only behind exactly `timeout -k 1 5`;
+- this applies when the collector runs as root and the account's uid is not 0. Root's own home is read
+  as root; an unprivileged collector reads everything as itself, as before;
+- only the shell tests `[ -L ] [ -d ] [ -f ] [ -e ]` run as root – they look at metadata, never at
+  content. HOSTKEYS, SSHD, SHADOW, SYSTEM and META stay root;
+- a file the user cannot read (e.g. a root-owned 0600 `authorized_keys2` in the home) is reported as
+  `unreadable by account` and shown on the host as the reason `unreadable by account: PATH`; the host
+  stays `ok`. sshd cannot use such a file either;
+- `ssh-keygen` refuses a private key that group or others may read when its *real* uid is the key's owner
+  ("bad permissions", as `ssh` does). Only then it runs once more as
+  `timeout -k 1 5 setpriv --ruid="$nbd" --euid="$uid" --regid="$gid" --clear-groups --no-new-privs --
+  ssh-keygen -y -P '' -f PATH`: real uid `nobody` (from passwd), effective and saved uid the account, no
+  supplementary groups, no capability. It opens the file with the account's rights (the race below gains
+  nothing) and accepts it, because its real uid is not the owner. No `ssh-keygen` parses a user's bytes as
+  root, and none reads stdin (the lint refuses `/dev/stdin`, `-` and `/dev/fd/N` for `ssh-keygen`). The key
+  never leaves the host; only its public half is printed. Such a key is therefore still reported as
+  *unencrypted* and with *bad permissions*; for an *encrypted* key that others may read the passphrase
+  state stays *unknown* (only a success replaces the first answer). Without an account `nobody` (uid ≠ 0)
+  in passwd the second try is skipped and the key is reported as *bad permissions* only. (The earlier
+  pipe into the collector's own `ssh-keygen` cannot be moved to the account: the pipe belongs to root and
+  the account may not reopen `/dev/stdin` – checked on Debian 12 and AlmaLinux 9.);
+- **time limit:** a user can swap a file for a FIFO after the collector's checks (`[ -f ]` as root,
+  `test -f` as the user right before the read); opening it blocks for ever. Every read as the account
+  therefore ends after 5 s (TERM, KILL 1 s later); the file is reported as `read timed out` and the run
+  goes on with the next file. A local file of at most 1 MiB is read in milliseconds; 5 s leaves room for
+  a loaded host or a network home. After two timeouts the rest of that account is skipped
+  (`time budget exceeded`), so one account delays a run by at most about 12 s. `read timed out` is shown
+  on the host as a reason, the host stays `ok`; `time budget exceeded` makes it `partial`. Without
+  `timeout` (coreutils) the collector reads nothing in user homes (`timeout (coreutils) missing: files in
+  user homes not read`, `partial`). In mode installed the gate also limits the whole collector run to
+  3600 s (the largest `limits.host_timeout`), after which sudo passes TERM on to the collector;
+- **output budget:** as before, a file is read up to 1 MiB (else `too large`) and 5000 lines; now this is
+  checked on the bytes read, not only on `stat`. In addition one account may print at most 4 MiB of file
+  content (four files at the file limit – a real account has a few KiB, a large known_hosts about
+  1 MiB). Past that the rest of the account is skipped with `output budget exceeded` for its `~/.ssh`, the
+  host is `partial`, and the next account is read in full: a user cannot push accounts later in
+  `/etc/passwd` out of the transport limit (`limits.max_output_mb`, 32 MiB). The `AuthorizedKeysFile`
+  files of an account are read first, so a flood elsewhere in its `~/.ssh` cannot hide them;
+- **fail closed:** without `/usr/bin/setpriv` (or `/bin/setpriv`) the collector reads nothing in user
+  homes – no fallback to root – and the host becomes `partial` with
+  `setpriv (util-linux) missing: files in user homes not read`. Host keys, sshd and the shadow summary
+  are still collected.
 
-- only **root and the owner of that home directory** can set up the race – it needs write access to the
-  user's own `~/.ssh` at exactly the moment of the scan; root can read the file anyway;
-- the content never reaches the attacker: it goes only into the SSHBITE database, which is created with
-  mode **0600** in a directory with mode 0700 (and lives in the container's `/data` volume as uid 10001),
-  and into the UI, which requires a login;
-- the result would be visible: the file would show up as the content of an authorized_keys, config or
-  known_hosts file of that user, with parse errors.
+So the old race – a local user swaps a file in their `~/.ssh`, or `~/.ssh` itself, for a symlink to a file
+only root may read, between the collector's check and its read – now yields only names, metadata and
+content that this user may read anyway. POSIX sh still cannot open a file and check it afterwards, and
+the window between `[ -L ]` and the read is still there; it no longer matters.
 
-If you find such content in a scan, treat that host and user as hostile, delete the scan
-(`sshbite scans delete ID`) and its backups.
+The lab test `i08_race` (`tests/e2e/test_lab_installed.py`, with `lab/race.sh`) proves it on a Debian 12
+and an AlmaLinux 9 host: a local user flips `~/.ssh/known_hosts` between a file and a symlink to a
+root-only canary, and `~/.ssh` between the directory and a symlink to a root-only directory, in endless
+loops. 200 reads as root (the control) must see the canary at least once; 200 collector runs through the
+installed gate must not see it a single time, and at least one of them must have met the swapped state
+(`symlink not followed` or `unreadable by account`). The counts are in
+`evidence/hardening/race-count.md`.
+
+The FIFO variant (`i09_fifo_race`, `lab/race.sh start fifo`) flips `~/.ssh/known_hosts` between a file, a
+symlink and a FIFO. The control (root, `head` under `timeout 2`) must block at least once; 200 collector runs
+through the gate per host must all end with `#END` within 30 s, at least one must report `read timed out`,
+and afterwards no root process of `sudo` or `sshbite-collect` may be left on the host
+(`evidence/hardening/race-count-fifo.md`). `i10_flood` floods `~/.ssh` of one user with 40 files of 1 MB and
+checks that an account later in passwd is complete and the host is `partial` with `output budget exceeded`.
+
+## Residual risk: the audit key reveals the inventory
+
+Even with `privilege.mode: installed`, whoever holds the audit key and connects from an allowed address
+can run the installed collector and read what it prints: every `authorized_keys` line, `known_hosts`,
+ssh configs, public keys, `sshd -T` and from `/etc/shadow` only `name:first character:expiry`. That is a
+map of who may log in where – valuable to an attacker, but not root: the key gives no shell, no command of
+one's own, no root file outside this inventory and no write access. Protect the key accordingly (mode
+0600, a dedicated machine, `from=` on every host).
 
 ## How read-only behaviour is tested
 

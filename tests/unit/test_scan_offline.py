@@ -325,3 +325,210 @@ def test_nopasswd_only_for_sh_never_sends_the_password(tmp_path, audit):
         assert not [c for c in srv.seen if "-S" in c]
     c = sqlite3.connect(tmp_path / "data" / "sshbite.db")
     assert c.execute("SELECT status, privilege FROM host_scan").fetchone() == ("ok", "root")
+
+
+# ---------------------------------------------------------------- privilege.mode installed (spec 4)
+
+P_INST = "/usr/local/libexec/sshbite/sshbite-collect"
+CMD_INST = commands("installed")
+
+
+def make_installed_handler(header_b: str, seen: list, body: str | None = None):
+    out = body if body is not None else ROOT_OUT.decode().split("\n", 1)[1]
+
+    async def handle(process):
+        cmd = process.command or ""
+        seen.append(cmd)
+        if cmd == CMD_INST["probe"]:
+            process.stdout.write(P_INST + "\n")
+            process.exit(0)
+        elif cmd == CMD_INST["run"]:
+            process.stdout.write(f"#SSHBITE 1 {header_b}\n" + out)
+            process.exit(0)
+        elif cmd == "/usr/local/libexec/sshbite/sshbite-resolve":
+            process.exit(0)
+        else:   # what the gate would do with anything else
+            process.stderr.write("sshbite-gate: denied (command not allowed)\n")
+            process.exit(126)
+    return handle
+
+
+class InstalledServer(ServerThread):
+    def __init__(self, header_b: str, client_pub: bytes, body: str | None = None):
+        super().__init__("installed", client_pub)
+        self.header_b = header_b
+        self.body = body
+
+    def _run(self):
+        asyncio.set_event_loop(self.loop)
+
+        async def start():
+            self.server = await asyncssh.listen("127.0.0.1", 0, server_host_keys=[self.host_key],
+                                                process_factory=make_installed_handler(self.header_b, self.seen, self.body),
+                                                server_factory=lambda: _Srv(self.client_pub))
+            self.port = self.server.sockets[0].getsockname()[1]
+            self.ready.set()
+        self.loop.run_until_complete(start())
+        self.loop.run_forever()
+
+
+def _installed_config(tmp_path, srv, kp) -> str:
+    p = _config(tmp_path, srv, kp)
+    data = yaml.safe_load(open(p))
+    data["privilege"] = {"mode": "installed"}
+    open(p, "w").write(yaml.safe_dump(data))
+    return p
+
+
+def _export_sha() -> str:
+    import hashlib
+
+    return hashlib.sha256(("#!/bin/sh\n" + collector.collect_script()).encode()).hexdigest()
+
+
+def test_installed_scan_ok(tmp_path, audit):
+    key, kp = audit
+    b = collector.declared_sha_short(collector.collect_script())
+    with InstalledServer(b, key.public_data) as srv:
+        cfg = _installed_config(tmp_path, srv, kp)
+        r = CliRunner().invoke(main, ["-c", cfg, "scan", "--no-crawl"], env={"SSHBITE_SUDO_PASSWORD": PASSWORD})
+        assert r.exit_code == 0, r.output
+        assert "warning: SSHBITE_SUDO_PASSWORD is ignored with privilege.mode installed" in r.stderr
+        assert srv.seen[:2] == [CMD_INST["probe"], CMD_INST["run"]]
+        assert all("/bin/sh" not in c and "-S" not in c for c in srv.seen)
+        v = CliRunner().invoke(main, ["-c", cfg, "config", "validate", "--connect"])
+        assert v.exit_code == 0, v.output
+        assert v.stdout.splitlines()[-1] == (f"entry OK, pinned key matches, sudo: root (installed {P_INST}, "
+                                             f"collector B={b} matches)")
+    c = sqlite3.connect(tmp_path / "data" / "sshbite.db")
+    assert c.execute("SELECT status, privilege, error FROM host_scan").fetchone() == ("ok", "root", None)
+    sha, params = c.execute("SELECT collector_sha256, params FROM scan").fetchone()
+    assert sha == _export_sha()
+    import json
+    p = json.loads(params)
+    assert p["privilege_mode"] == "installed" and p["collector_path"] == P_INST and p["sudo_password_given"] is False
+
+
+def test_installed_header_mismatch(tmp_path, audit):
+    key, kp = audit
+    b = collector.declared_sha_short(collector.collect_script())
+    with InstalledServer("000000000000", key.public_data) as srv:
+        cfg = _installed_config(tmp_path, srv, kp)
+        r = CliRunner().invoke(main, ["-c", cfg, "scan", "--no-crawl"])
+        assert r.exit_code == 0, r.output
+        v = CliRunner().invoke(main, ["-c", cfg, "config", "validate", "--connect"])
+    text = (f"privilege.mode installed: installed collector version differs from this SSHBITE (expected B={b}, "
+            "host has B=000000000000) - run 'sshbite collector export' and reinstall sshbite-collect")
+    c = sqlite3.connect(tmp_path / "data" / "sshbite.db")
+    assert c.execute("SELECT status, error FROM host_scan").fetchone() == ("collector_error", text)
+    assert c.execute("SELECT collector_sha256 FROM scan").fetchone()[0] == _export_sha()
+    assert v.exit_code == 3
+    assert v.stdout.splitlines()[-1] == f"entry OK, pinned key matches, sudo: FAILED - {text}"
+
+
+# ---------------------------------------------------------------- spec 7.3 / 7.4: reads as the account
+
+def _body(meta_setpriv: str, users_extra: str = "") -> str:
+    """The a1 fixture as the new collector prints it: #V setpriv in META, extra records at the end of USERS."""
+    body = ROOT_OUT.decode().split("\n", 1)[1]
+    body = body.replace("#V uid\t0\n", f"#V uid\t0\n#V setpriv\t{meta_setpriv}\n", 1)
+    return body.replace("#S SYSTEM\n", users_extra + "#S SYSTEM\n", 1)
+
+
+def _scan_body(tmp_path, audit, body: str):
+    key, kp = audit
+    b = collector.declared_sha_short(collector.collect_script())
+    with InstalledServer(b, key.public_data, body) as srv:
+        cfg = _installed_config(tmp_path, srv, kp)
+        r = CliRunner().invoke(main, ["-c", cfg, "scan", "--no-crawl"])
+        assert r.exit_code == 0, r.output
+    import json
+
+    c = sqlite3.connect(tmp_path / "data" / "sshbite.db")
+    st, priv, reasons = c.execute("SELECT status, privilege, partial_reasons FROM host_scan").fetchone()
+    rules = {x[0] for x in c.execute("SELECT rule FROM finding")}
+    return st, priv, json.loads(reasons), rules
+
+
+def test_unreadable_by_account_is_a_reason_and_the_host_stays_ok(tmp_path, audit):
+    extra = ("#V user\talice\n#V akf\t/home/alice/.ssh/authorized_keys2\n"
+             "#F /home/alice/.ssh/authorized_keys2\t0\troot\t600\t1700000000\t95\talice\n"
+             "#X /home/alice/.ssh/authorized_keys2\tunreadable by account\n"
+             "#X /home/alice/.ssh/notes\tunreadable by account\n")
+    st, priv, reasons, rules = _scan_body(tmp_path, audit, _body("yes", extra))
+    assert (st, priv) == ("ok", "root")
+    assert reasons == ["unreadable by account: /home/alice/.ssh/authorized_keys2",
+                       "unreadable by account: /home/alice/.ssh/notes"]
+    assert "partial_scan" not in rules
+
+
+def test_setpriv_missing_makes_the_host_partial(tmp_path, audit):
+    extra = "#V user\talice\n#X /home/alice/.ssh\tnot read: setpriv missing\n"
+    st, priv, reasons, rules = _scan_body(tmp_path, audit, _body("no", extra))
+    assert (st, priv) == ("partial", "root")
+    assert reasons == ["setpriv (util-linux) missing: files in user homes not read"]
+    assert "partial_scan" in rules
+
+
+def test_setpriv_yes_and_na_change_nothing(tmp_path, audit):
+    for v in ("yes", "n/a"):
+        d = tmp_path / v.replace("/", "")
+        d.mkdir()
+        st, priv, reasons, _rules = _scan_body(d, audit, _body(v))
+        assert (st, priv, reasons) == ("ok", "root", []), v
+
+
+# ---------------------------------------------------------------- check-4 findings 1 and 2, through a scan
+
+def test_flood_account_is_partial_and_the_later_account_is_complete(tmp_path, audit):
+    """The real collector's output for a host with a flooding account (40 x 1 MB .pub) and a later account with a
+    key, through a full scan in mode installed: the host is partial with 'output budget exceeded: <home>/.ssh',
+    not output_limit, and the later account's key is stored."""
+    from pathlib import Path
+
+    from .test_hostile import _need_setpriv_and_timeout, _run_collector_as_root, _write_key_line
+
+    _need_setpriv_and_timeout()
+    home = tmp_path / "flood"
+    (home / ".ssh").mkdir(parents=True)
+    junk = ("ssh-ed25519 " + "A" * 186 + " flood\n") * 5000
+    for i in range(40):
+        (home / ".ssh" / f"f{i:02d}.pub").write_text(junk)
+    victim = tmp_path / "victim"
+    (victim / ".ssh").mkdir(parents=True)
+    _write_key_line(victim / ".ssh" / "authorized_keys", "VICTIMBACKDOOR")
+    out, _ = _run_collector_as_root(tmp_path, home, extra_users=f"echo 'zvictim:x:4244:4244::{victim}:/bin/sh'\n")
+    assert len(out.encode()) < 32 * 1024 * 1024
+    d = Path(tmp_path / "scan")
+    d.mkdir()
+    st, priv, reasons, rules = _scan_body(d, audit, out.split("\n", 1)[1])
+    assert (st, priv) == ("partial", "root")
+    assert f"output budget exceeded: {home}/.ssh" in reasons, reasons
+    assert "partial_scan" in rules
+    c = sqlite3.connect(d / "data" / "sshbite.db")
+    rows = c.execute("SELECT username, file FROM authorized_entry").fetchall()
+    assert ("zvictim", f"{victim}/.ssh/authorized_keys") in rows, rows
+
+
+def test_read_timed_out_is_a_reason_and_the_host_stays_ok(tmp_path, audit):
+    extra = ("#V user\talice\n#F /home/alice/.ssh/known_hosts\t1000\talice\t644\t1700000000\t95\talice\n"
+             "#X /home/alice/.ssh/known_hosts\tread timed out\n")
+    st, priv, reasons, rules = _scan_body(tmp_path, audit, _body("yes", extra))
+    assert (st, priv) == ("ok", "root")
+    assert reasons == ["read timed out: /home/alice/.ssh/known_hosts"]
+    assert "partial_scan" not in rules
+
+
+def test_time_budget_and_timeout_missing_make_the_host_partial(tmp_path, audit):
+    extra = ("#V user\talice\n#X /home/alice/.ssh/a\tread timed out\n#X /home/alice/.ssh/b\tread timed out\n"
+             "#X /home/alice/.ssh\ttime budget exceeded\n")
+    st, _priv, reasons, rules = _scan_body(tmp_path, audit, _body("yes", extra))
+    assert st == "partial" and "partial_scan" in rules
+    assert reasons == ["time budget exceeded: /home/alice/.ssh", "read timed out: /home/alice/.ssh/a",
+                       "read timed out: /home/alice/.ssh/b"]
+    d = tmp_path / "t"
+    d.mkdir()
+    body = _body("yes", "#V user\talice\n#X /home/alice/.ssh\tnot read: timeout missing\n").replace(
+        "#V setpriv\tyes\n", "#V setpriv\tyes\n#V timeout\tno\n", 1)
+    st, _priv, reasons, _rules = _scan_body(d, audit, body)
+    assert (st, reasons) == ("partial", ["timeout (coreutils) missing: files in user homes not read"])
