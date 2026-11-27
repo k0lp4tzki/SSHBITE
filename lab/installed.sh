@@ -63,6 +63,7 @@ apply)
   done
   # --- the steps of docs/install.md ---
   id sshbite >/dev/null || useradd -m -s /bin/sh sshbite
+  usermod -s /bin/sh sshbite                                   # install.md: also for an existing account
   case "$(getent shadow sshbite | cut -d: -f2)" in            # the lab account is locked already
     '!'* | '*'*) ;;
     *) usermod -L sshbite ;;
