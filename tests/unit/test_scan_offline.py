@@ -476,3 +476,59 @@ def test_setpriv_yes_and_na_change_nothing(tmp_path, audit):
         d.mkdir()
         st, priv, reasons, _rules = _scan_body(d, audit, _body(v))
         assert (st, priv, reasons) == ("ok", "root", []), v
+
+
+# ---------------------------------------------------------------- check-4 findings 1 and 2, through a scan
+
+def test_flood_account_is_partial_and_the_later_account_is_complete(tmp_path, audit):
+    """The real collector's output for a host with a flooding account (40 x 1 MB .pub) and a later account with a
+    key, through a full scan in mode installed: the host is partial with 'output budget exceeded: <home>/.ssh',
+    not output_limit, and the later account's key is stored."""
+    from pathlib import Path
+
+    from .test_hostile import _need_setpriv_and_timeout, _run_collector_as_root, _write_key_line
+
+    _need_setpriv_and_timeout()
+    home = tmp_path / "flood"
+    (home / ".ssh").mkdir(parents=True)
+    junk = ("ssh-ed25519 " + "A" * 186 + " flood\n") * 5000
+    for i in range(40):
+        (home / ".ssh" / f"f{i:02d}.pub").write_text(junk)
+    victim = tmp_path / "victim"
+    (victim / ".ssh").mkdir(parents=True)
+    _write_key_line(victim / ".ssh" / "authorized_keys", "VICTIMBACKDOOR")
+    out, _ = _run_collector_as_root(tmp_path, home, extra_users=f"echo 'zvictim:x:4244:4244::{victim}:/bin/sh'\n")
+    assert len(out.encode()) < 32 * 1024 * 1024
+    d = Path(tmp_path / "scan")
+    d.mkdir()
+    st, priv, reasons, rules = _scan_body(d, audit, out.split("\n", 1)[1])
+    assert (st, priv) == ("partial", "root")
+    assert f"output budget exceeded: {home}/.ssh" in reasons, reasons
+    assert "partial_scan" in rules
+    c = sqlite3.connect(d / "data" / "sshbite.db")
+    rows = c.execute("SELECT username, file FROM authorized_entry").fetchall()
+    assert ("zvictim", f"{victim}/.ssh/authorized_keys") in rows, rows
+
+
+def test_read_timed_out_is_a_reason_and_the_host_stays_ok(tmp_path, audit):
+    extra = ("#V user\talice\n#F /home/alice/.ssh/known_hosts\t1000\talice\t644\t1700000000\t95\talice\n"
+             "#X /home/alice/.ssh/known_hosts\tread timed out\n")
+    st, priv, reasons, rules = _scan_body(tmp_path, audit, _body("yes", extra))
+    assert (st, priv) == ("ok", "root")
+    assert reasons == ["read timed out: /home/alice/.ssh/known_hosts"]
+    assert "partial_scan" not in rules
+
+
+def test_time_budget_and_timeout_missing_make_the_host_partial(tmp_path, audit):
+    extra = ("#V user\talice\n#X /home/alice/.ssh/a\tread timed out\n#X /home/alice/.ssh/b\tread timed out\n"
+             "#X /home/alice/.ssh\ttime budget exceeded\n")
+    st, _priv, reasons, rules = _scan_body(tmp_path, audit, _body("yes", extra))
+    assert st == "partial" and "partial_scan" in rules
+    assert reasons == ["time budget exceeded: /home/alice/.ssh", "read timed out: /home/alice/.ssh/a",
+                       "read timed out: /home/alice/.ssh/b"]
+    d = tmp_path / "t"
+    d.mkdir()
+    body = _body("yes", "#V user\talice\n#X /home/alice/.ssh\tnot read: timeout missing\n").replace(
+        "#V setpriv\tyes\n", "#V setpriv\tyes\n#V timeout\tno\n", 1)
+    st, _priv, reasons, _rules = _scan_body(d, audit, body)
+    assert (st, reasons) == ("partial", ["timeout (coreutils) missing: files in user homes not read"])

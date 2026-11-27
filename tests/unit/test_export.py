@@ -70,10 +70,10 @@ def test_export_contents(tmp_path):
     ak = (out / "authorized_keys.sshbite").read_text()
     keys = [x for x in ak.splitlines() if not x.startswith("#")]
     assert keys == [
-        'restrict,port-forwarding,permitopen="*:22",from="<SCANNER-IP>",'
+        'restrict,port-forwarding,permitopen="*:22",permitlisten="localhost:22",from="<SCANNER-IP>",'
         'command="/usr/local/libexec/sshbite/sshbite-gate" <AUDIT-PUBLIC-KEY>',
         'restrict,from="<ENTRY-HOST-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" <AUDIT-PUBLIC-KEY>',
-        'restrict,port-forwarding,permitopen="*:22",from="<PREVIOUS-HOP-IP>",'
+        'restrict,port-forwarding,permitopen="*:22",permitlisten="localhost:22",from="<PREVIOUS-HOP-IP>",'
         'command="/usr/local/libexec/sshbite/sshbite-gate" <AUDIT-PUBLIC-KEY>',
     ]
 
