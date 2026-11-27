@@ -51,7 +51,13 @@ für den empfohlenen Modus `privilege.mode: installed`, alles als root auf dem D
    [Zielhosts vorbereiten](docs/install.md#zielhosts-vorbereiten-installierter-collector). Bei Docker steht in
    `from="<SCANNER-IP>"` des Einstiegshosts die Adresse des Docker-Hosts, wie der Einstiegshost sie sieht.
 4. **Host-Key des Einstiegshosts festlegen und Konfiguration schreiben**
-   ([Anleitung](docs/install.md#host-key-festlegen-und-konfiguration-schreiben)):
+   ([Anleitung](docs/install.md#host-key-festlegen-und-konfiguration-schreiben)).
+   Vergleichen Sie vorher den Fingerabdruck auf dem Scanner-Rechner mit dem an der Konsole des Einstiegshosts:
+   ```sh
+   ssh-keygen -lf <(ssh-keyscan -t ed25519 -p 22 <ENTRY-HOST> 2>/dev/null)   # auf dem Scanner-Rechner
+   ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub                          # an der Konsole des Einstiegshosts
+   ```
+   Nur wenn beide gleich sind, tragen Sie den Schlüssel ein:
    ```sh
    ssh-keyscan -t ed25519 -p 22 <ENTRY-HOST> 2>/dev/null | awk '!/^#/ {print $2" "$3}'
    cat > /etc/sshbite/sshbite.yaml <<'EOF'
@@ -71,7 +77,6 @@ für den empfohlenen Modus `privilege.mode: installed`, alles als root auf dem D
    EOF
    chown -R 10001:10001 /etc/sshbite && chmod 700 /etc/sshbite && chmod 600 /etc/sshbite/*
    ```
-   Vergleichen Sie den Fingerabdruck vorher an der Konsole des Einstiegshosts.
 5. **Starten, prüfen, Benutzer anlegen, scannen** ([Schritte 7 bis 10](docs/install.md#schritt-7-container-starten)):
    ```sh
    docker compose -f docs/compose.example.yaml up -d
