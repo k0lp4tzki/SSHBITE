@@ -1,0 +1,3 @@
+$ sshbite config validate --connect
+config OK: /tmp/pytest-of-app/pytest-11/installed0/installed.yaml
+entry OK, pinned key matches, sudo: root (installed /usr/local/libexec/sshbite/sshbite-collect, collector B=386f9faea780 matches)

@@ -1,0 +1,31 @@
+# C. Collector-Version passt nicht (a5: eine Zeile an die installierte Kopie angehaengt)
+
+$ /state/venv/bin/sshbite scan --label a5 falsche Version
+scan: entry jump:22, max depth 10, max hosts 1000, concurrency 20
+depth 0: 1 queued, 0 running, 0 done
+depth 0: 0 queued, 0 running, 1 done
+depth 1: 2 queued, 0 running, 1 done
+depth 1: 0 queued, 0 running, 3 done
+depth 2: 5 queued, 0 running, 3 done
+depth 2: 0 queued, 0 running, 8 done
+depth 3: 4 queued, 0 running, 8 done
+depth 3: 0 queued, 2 running, 10 done (1 collector error)
+depth 3: 0 queued, 1 running, 11 done (1 unreachable, 1 collector error)
+depth 3: 0 queued, 0 running, 12 done (1 unreachable, 1 collector error)
+depth 4: 1 queued, 0 running, 12 done (1 unreachable, 1 collector error)
+depth 4: 0 queued, 1 running, 12 done (1 unreachable, 1 collector error)
+depth 4: 0 queued, 0 running, 13 done (1 unreachable, 1 collector error)
+
+scan 3 completed in 12 s
+hosts:    13 connected; 11 ok, 1 collector_error, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
+findings: 34 - 4 critical, 16 high, 11 medium, 2 low, 1 info
+edges:    19 access (18 effective, 5 unknown origin); keys: 11
+scan id:  3
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+Host     Status       Privileg      Adresse        Route / Fehler
+a5       collector_error root          172.30.1.15    jump > a5 no collector output: sshbite-gate: Collector-Version passt nicht zu /usr/local/libexec/sshbite/sshbite-collect
+
+# D. Symlink-Race eines lokalen Benutzers (ops auf jump) gegen den Collector (200 Laeufe als root)
+collector runs: 200, runs with a full /etc/shadow line in the output: 36
+without race: 0
+

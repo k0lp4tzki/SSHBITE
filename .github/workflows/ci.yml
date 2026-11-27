@@ -72,7 +72,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 65     # + 20 for test_lab_installed.py (race: 2 x 400 runs)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -82,13 +82,15 @@ jobs:
           python -m venv .venv
           .venv/bin/pip install --require-hashes -r requirements.lock
           SSHBITE_SKIP_FRONTEND=1 .venv/bin/pip install --no-deps -e .
-      - name: start the lab (13 OpenSSH hosts, docker compose)
+      - name: start the lab (13 Debian hosts + AlmaLinux 9 host r1, docker compose)
         run: sh lab/up.sh
       - name: spec 9.3 against the lab, read-only snapshots around every scan
         env:
           SSHBITE_LAB_NO_START: "1"
           SSHBITE_EVIDENCE_DIR: e2e-evidence
-        run: .venv/bin/python -m pytest tests/e2e -v -rs | tee pytest-e2e.txt; test "${PIPESTATUS[0]}" = 0
+        run: >-
+          .venv/bin/python -m pytest -m e2e tests/e2e/test_lab.py tests/e2e/test_lab_installed.py -v -rs
+          | tee pytest-e2e.txt; test "${PIPESTATUS[0]}" = 0
       - name: the e2e test ran (not skipped)
         run: "! grep -q SKIPPED pytest-e2e.txt"
       - uses: actions/upload-artifact@v4

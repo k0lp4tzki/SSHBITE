@@ -1,96 +1,168 @@
 # SSHBITE
-Crawls and Visualizes SSH connections via Key Entries and creates a heatmap
+Durchsucht SSH-Verbindungen anhand der Schlüsseleinträge und zeigt sie als Heatmap
 
-SSHBITE is a **read-only SSH access audit** for Linux/OpenSSH estates – built for cleaning up after a
-security incident. From one verified entry point (a jump host with a pinned host key) it crawls to every
-host it can find and answers:
+SSHBITE ist ein **nur lesendes Audit der SSH-Zugänge** für Linux/OpenSSH-Umgebungen – gebaut für das
+Aufräumen nach einem Sicherheitsvorfall. Von einem geprüften Einstiegspunkt aus (einem Jump-Host mit
+festgelegtem Host-Key) durchsucht es jeden Host, den es finden kann, und beantwortet:
 
-- **Who may connect from where to where** – every `authorized_keys` line, matched with the private keys
-  found on other hosts, becomes an access edge (`jump:ops → a2:root`); keys whose private half was found
-  nowhere are flagged as *unknown origin*.
-- **Which systems hold a key** – where each public key is authorized (host, user, file:line, options),
-  where its private half and `.pub` copies are, and which hosts know which in `known_hosts`.
-- **Whether the cryptography is current** – ed25519 is good, RSA 2048 weak, RSA < 2048 and DSA critical
-  (configurable), plus findings such as root keys, unencrypted or readable private keys, changed host
-  keys and `PermitRootLogin yes`.
+- **Wer darf sich von wo nach wo verbinden?** Jede `authorized_keys`-Zeile wird mit den privaten
+  Schlüsseln abgeglichen, die auf anderen Hosts gefunden wurden, und so zu einer Zugriffskante
+  (`jump:ops → a2:root`). Schlüssel, deren privater Teil nirgends gefunden wurde, werden als
+  *unbekannte Herkunft* markiert.
+- **Welche Systeme halten einen Schlüssel?** Wo jeder öffentliche Schlüssel zugelassen ist (Host, Benutzer,
+  Datei:Zeile, Optionen), wo sein privater Teil und `.pub`-Kopien liegen und welche Hosts welche anderen in
+  `known_hosts` kennen.
+- **Ist die Kryptografie aktuell?** ed25519 ist gut, RSA 2048 schwach, RSA unter 2048 und DSA kritisch
+  (einstellbar), dazu Befunde wie Root-Schlüssel, unverschlüsselte oder lesbare private Schlüssel,
+  geänderte Host-Keys und `PermitRootLogin yes`.
 
-A web UI shows it centrally: a heatmap of inbound and outbound access, a connection graph, views per
-host, key and user, findings with CSV/JSON export, and a diff between scans to confirm the cleanup.
+Eine Web-Oberfläche zeigt alles an einer Stelle: eine Heatmap der eingehenden und ausgehenden Zugriffe,
+einen Verbindungsgraphen, Ansichten je Host, Schlüssel und Benutzer, Befunde mit CSV/JSON-Export und einen
+Vergleich zwischen Scans, mit dem Sie das Aufräumen bestätigen.
 
-SSHBITE changes nothing on the audited systems: it runs one fixed, reviewable shell script that only
-reads (`sshbite collector show`), uses only its own audit key, and never uses keys it finds. It does
-leave log entries and can trigger sudo mails and monitoring alerts – read
-[docs/side-effects.md](docs/side-effects.md) before the first real scan. Everything stays local: one
-SQLite database, a UI on `127.0.0.1` behind a login, no external services or CDNs.
+SSHBITE ändert nichts auf den geprüften Systemen: Es führt ein festes, prüfbares Shell-Skript aus, das nur
+liest (`sshbite collector show`), benutzt nur seinen eigenen Audit-Schlüssel und nie gefundene Schlüssel.
+Es hinterlässt aber Log-Einträge und kann sudo-Mails und Monitoring-Alarme auslösen – lesen Sie
+[docs/side-effects.md](docs/side-effects.md) vor dem ersten echten Scan. Alles bleibt lokal: eine
+SQLite-Datenbank, eine Oberfläche auf `127.0.0.1` hinter einer Anmeldung, keine externen Dienste oder CDNs.
 
-## Quick start (Docker)
+<a id="quick-start-docker"></a>
 
-1. **Build the image** in this repository: `docker build -t sshbite:0.1.0 .`
-2. **Create the audit key and deploy it** for an account `sshbite` with sudo on every host
-   ([install.md](docs/install.md#the-audit-key-and-account)):
-   `install -d -m 700 /etc/sshbite && ssh-keygen -t ed25519 -N '' -f /etc/sshbite/audit_ed25519`
-3. **Write the config** with your entry host and its pinned host key
-   ([install.md](docs/install.md#pin-the-entry-host-key)), then give both files to the container user:
+## Schnellstart (Docker)
+
+Die vollständige Anleitung mit allen Prüfungen steht in [docs/install.md](docs/install.md). Kurzfassung
+für den empfohlenen Modus `privilege.mode: installed`, alles als root auf dem Docker-Host:
+
+1. **Image bauen** ([Schritt 1](docs/install.md#schritt-1-image-bauen)):
    ```sh
-   docker run --rm sshbite:0.1.0 sshbite init-config > /etc/sshbite/sshbite.yaml   # edit entry, set database: /data/sshbite.db
-   chown -R 10001:10001 /etc/sshbite && chmod 600 /etc/sshbite/*
+   git clone https://github.com/k0lp4tzki/SSHBITE.git && cd SSHBITE
+   docker build -t sshbite:0.1.0 .
    ```
-4. **Start it and check the entry**:
+2. **Audit-Schlüssel erzeugen und Collector exportieren** ([Schritte 2 und 3](docs/install.md#schritt-2-audit-schlüssel-erzeugen)):
+   ```sh
+   install -d -m 700 /etc/sshbite
+   ssh-keygen -t ed25519 -N '' -C "sshbite-audit $(date +%F)" -f /etc/sshbite/audit_ed25519
+   mkdir sshbite-export
+   docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/sshbite-export:/out" sshbite:0.1.0 \
+     sshbite collector export /out --collector-path /usr/local/libexec/sshbite/sshbite-collect
+   cd sshbite-export && sha256sum -c SHA256SUMS && cd ..
+   ```
+3. **Jeden Zielhost vorbereiten**: Collector, Gate, sudo-Regel und `authorized_keys`-Zeile installieren –
+   [Zielhosts vorbereiten](docs/install.md#zielhosts-vorbereiten-installierter-collector). Bei Docker steht in
+   `from="<SCANNER-IP>"` des Einstiegshosts die Adresse des Docker-Hosts, wie der Einstiegshost sie sieht.
+4. **Host-Key des Einstiegshosts festlegen und Konfiguration schreiben**
+   ([Anleitung](docs/install.md#host-key-festlegen-und-konfiguration-schreiben)).
+   Vergleichen Sie vorher den Fingerabdruck auf dem Scanner-Rechner mit dem an der Konsole des Einstiegshosts:
+   ```sh
+   ssh-keygen -lf <(ssh-keyscan -t ed25519 -p 22 <ENTRY-HOST> 2>/dev/null)   # auf dem Scanner-Rechner
+   ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub                          # an der Konsole des Einstiegshosts
+   ```
+   Nur wenn beide gleich sind, tragen Sie den Schlüssel ein:
+   ```sh
+   ssh-keyscan -t ed25519 -p 22 <ENTRY-HOST> 2>/dev/null | awk '!/^#/ {print $2" "$3}'
+   cat > /etc/sshbite/sshbite.yaml <<'EOF'
+   database: /data/sshbite.db
+   entry:
+     host: <ENTRY-HOST>
+     port: 22
+     host_keys: ["ssh-ed25519 <BASE64-FROM-KEYSCAN>"]
+   audit:
+     user: sshbite
+     key_file: /etc/sshbite/audit_ed25519
+   privilege:
+     mode: installed
+     collector_path: /usr/local/libexec/sshbite/sshbite-collect
+   crawl:
+     include: [<CIDR-OF-YOUR-ESTATE>]
+   EOF
+   chown -R 10001:10001 /etc/sshbite && chmod 700 /etc/sshbite && chmod 600 /etc/sshbite/*
+   ```
+5. **Starten, prüfen, Benutzer anlegen, scannen** ([Schritte 7 bis 10](docs/install.md#schritt-7-container-starten)):
    ```sh
    docker compose -f docs/compose.example.yaml up -d
-   docker exec -it sshbite sshbite config validate --connect    # entry OK, pinned key matches, sudo: root
+   docker exec -it sshbite sshbite config validate --connect
    docker exec -it sshbite sshbite user add admin
+   docker exec sshbite sshbite scan --label first
    ```
-5. **Scan and look**: `docker exec -it sshbite sshbite scan --ask-sudo-password`, then open
-   http://127.0.0.1:8722/ and log in.
+   `config validate --connect` muss mit
+   `entry OK, pinned key matches, sudo: root (installed /usr/local/libexec/sshbite/sshbite-collect, collector B=… matches)`
+   enden.
+6. **Oberfläche öffnen:** `http://127.0.0.1:8722/` auf dem Scanner-Rechner, von anderswo über
+   `ssh -L 8722:127.0.0.1:8722 <ADMIN>@<SCANNER>`. Für Zugriff über das Netz gehört ein Reverse Proxy mit
+   TLS davor ([operations.md](docs/operations.md#hinter-einem-reverse-proxy-tls-am-proxy)).
 
-Commands that ask for a password need a terminal: use `docker exec -it`, never just `-i` – SSHBITE
-refuses to read a password from a non-terminal stdin. If sudo on your hosts wants a password, give the
-audit account one of its own and rotate it after the scan ([operations.md](docs/operations.md#the-sudo-password)).
-For access from other machines, put a TLS reverse proxy in front
-([operations.md](docs/operations.md#behind-a-reverse-proxy-tls-at-the-proxy)).
+Befehle, die ein Passwort abfragen, brauchen ein Terminal: `docker exec -it`, nie nur `-i`. Ohne Docker:
+[Pfad C mit pip und systemd](docs/install.md#pfad-c-nativ-mit-pip-und-systemd). Aktualisierung,
+Deinstallation und Fehlerbehebung: [install.md](docs/install.md#aktualisierung).
 
-Without Docker: `pip install` (Python 3.12) – see [install.md](docs/install.md#install-with-pip).
+<a id="try-it-on-the-test-lab-test-material-only"></a>
 
-## Try it on the test lab (test material only)
+## Ausprobieren in der Testumgebung (nur Testmaterial)
 
-`docker compose -f compose.lab.yaml up -d --build` starts a test lab of 13 OpenSSH hosts plus SSHBITE
-scanning it, with the UI on http://127.0.0.1:8722/. Log in as `admin` with the password you set in
-`SSHBITE_DEMO_PASSWORD` (e.g. in `.env`), or – if you set none – the random password the container prints
-once: `docker compose -f compose.lab.yaml logs sshbite | grep 'LAB DEMO LOGIN'`.
-`docker compose up` at the top level starts the same lab demo (`compose.yaml` only includes `compose.lab.yaml`).
+```sh
+docker compose -f compose.lab.yaml up -d --build
+docker compose -f compose.lab.yaml logs sshbite | grep 'LAB DEMO LOGIN'
+```
 
-> **Never use the lab outside a test.** `compose.lab.yaml`, `lab/demo/` and especially **`lab/keys/*`** –
-> private host keys of the lab hosts and the lab's **audit key**, committed on purpose – are test material
-> known to everyone who has this repository. Do not authorize any of these keys on a real system, do not
-> reuse the lab config, and do not run the lab demo on a machine others can reach. For real systems use
-> the steps above and [`docs/compose.example.yaml`](docs/compose.example.yaml).
+Das startet eine Testumgebung (Lab) mit 14 SSH-Hosts – 13 Debian-Hosts, die die Lab-Demo durchsucht, und
+`r1` (AlmaLinux 9) für Tests des installierten Collectors – sowie SSHBITE selbst. SSHBITE prüft den
+Einstiegshost, legt den Benutzer `admin` an, führt einen Scan aus und startet die Oberfläche auf
+`http://127.0.0.1:8722/`. Melden Sie sich als `admin` an, mit dem Passwort aus `SSHBITE_DEMO_PASSWORD`
+(z. B. in `.env`) oder – wenn Sie keines gesetzt haben – mit dem zufälligen Passwort aus dem Log.
 
-## Documentation
+Das Passwort steht nur beim ersten Start im Log; das Volume `sshbite-lab-data` behält den Benutzer. Für ein
+neues Passwort entfernen Sie das Lab mit `docker compose -f compose.lab.yaml down -v` und starten es neu.
+`docker compose up` im Wurzelverzeichnis startet dieselbe Lab-Demo (`compose.yaml` bindet nur
+`compose.lab.yaml` ein). Ausführlich: [Pfad A](docs/install.md#pfad-a-ausprobieren-in-der-testumgebung).
+
+> **Verwenden Sie das Lab nie außerhalb eines Tests.** `compose.lab.yaml`, `lab/demo/` und vor allem
+> **`lab/keys/*`** – private Host-Keys der Lab-Hosts und der **Audit-Schlüssel** des Labs, absichtlich
+> eingecheckt – sind Testmaterial, das jeder kennt, der dieses Repository hat. Lassen Sie keinen dieser
+> Schlüssel auf einem echten System zu, verwenden Sie die Lab-Konfiguration nicht weiter und betreiben Sie
+> die Lab-Demo nicht auf einem Rechner, den andere erreichen. Für echte Systeme gelten die Schritte oben
+> und [`docs/compose.example.yaml`](docs/compose.example.yaml).
+
+<a id="documentation"></a>
+
+## Dokumentation
 
 | | |
 |---|---|
-| [Install](docs/install.md) | pip and Docker; audit key, account and sudoers; pinning the entry host key |
-| [Configuration](docs/configuration.md) | every config key with its default and meaning |
-| [Running scans](docs/scanning.md) | crawl, scope, seeds, `--ask-sudo-password`, host statuses, exit codes |
-| [Operations](docs/operations.md) | systemd units for the UI and a nightly scan, backup, update |
-| [Cleanup workflow](docs/cleanup.md) | findings → worklist → remove → rescan → diff |
-| [Read-only review](docs/review.md) | what is sent to targets and what the allowlist lint guarantees |
-| [Side effects](docs/side-effects.md) | logs, sudo "incident" mails, access times, monitoring alerts |
-| [Development](docs/development.md) | test lab, tests, CI |
+| [Installation](docs/install.md) | Docker, pip, Zielhosts vorbereiten (installierter Collector), Host-Key festlegen, erster Scan, Aktualisierung, Deinstallation, Fehlerbehebung |
+| [Konfiguration](docs/configuration.md) | jeder Konfigurationsschlüssel mit Standardwert und Bedeutung |
+| [Scans ausführen](docs/scanning.md) | Crawl, Umfang, Seeds, sudo-Passwörter (Legacy-Modus), Host-Status, Exit-Codes |
+| [Betrieb](docs/operations.md) | systemd-Units für Oberfläche und nächtlichen Scan, Reverse Proxy, Sicherung, Aktualisierung |
+| [Aufräumen](docs/cleanup.md) | Befunde → Arbeitsliste → entfernen → erneut scannen → vergleichen |
+| [Prüfung des Lesezugriffs](docs/review.md) | was an die Zielhosts geht und was die Allowlist-Prüfung garantiert |
+| [Nebenwirkungen](docs/side-effects.md) | Logs, sudo-„Vorfall“-Mails, Zugriffszeiten, Monitoring-Alarme |
+| [Entwicklung](docs/development.md) | Testumgebung, Tests, CI |
+| [compose.example.yaml](docs/compose.example.yaml) | Compose-Datei für den Betrieb (Pfad B) |
+| [systemd/](docs/systemd/) | Units für Oberfläche und nächtlichen Scan (Pfad C und Docker) |
 
-## Commands
+<a id="commands"></a>
 
+## Befehle
+
+```text
+sshbite [-c|--config PATH] [-v|-vv] [--version] BEFEHL ...
+sshbite init-config
+sshbite config validate [--connect]
+sshbite scan [--max-depth 0-100] [--max-hosts 1-100000] [--concurrency 1-500] [--timeout 1-3600]
+             [--no-crawl] [--ask-sudo-password] [--label TEXT] [--dry-run]
+sshbite scans list [--json] | show ID|latest [--json] | delete ID [--json]
+sshbite export --what findings|keys|edges|hosts|authorized [--scan ID|latest] [--format csv|json] [-o FILE]
+               [--min-severity critical|high|medium|low|info] [--rule RULE ...] [--host GLOB] [--kind access|evidence]
+sshbite diff A B [--format text|json]
+sshbite hostkey list [--json] | accept ADDR[:PORT] | forget ADDR
+sshbite user add|passwd NAME [--password-stdin] | remove NAME
+sshbite db backup PATH
+sshbite collector show | export DIR [--collector-path P]
+sshbite serve [--bind ADDR] [--port N] [--tls-cert FILE --tls-key FILE] [--insecure-bind]
+sshbite synth [--hosts 10-100000] [--seed N]
 ```
-sshbite init-config | config validate [--connect]
-sshbite scan [--max-depth N] [--max-hosts N] [--concurrency N] [--timeout S] [--no-crawl]
-             [--ask-sudo-password] [--label TEXT] [--dry-run]
-sshbite scans list|show ID|delete ID       sshbite diff A B
-sshbite export --what findings|keys|edges|hosts|authorized [--format csv|json] [-o FILE] ...
-sshbite hostkey list|accept ADDR[:PORT]|forget ADDR
-sshbite user add|passwd|remove NAME        sshbite serve [--bind --port --tls-cert --tls-key]
-sshbite db backup PATH                     sshbite collector show        sshbite synth
-```
 
-Exit codes: 0 scan done (also with partial or unreachable hosts), 2 config error, 3 entry failure
-(unreachable, pin missing or mismatch, authentication failed), 4 internal error, 5 another scan is running.
+Ohne `-c` liest SSHBITE die Konfiguration aus `$SSHBITE_CONFIG`, sonst aus `/etc/sshbite/sshbite.yaml`.
+
+Exit-Codes: 0 Scan fertig (auch mit `partial` oder nicht erreichbaren Hosts), 2 Konfigurationsfehler,
+3 Fehler am Einstiegshost (nicht erreichbar, Host-Key fehlt oder weicht ab, Anmeldung gescheitert,
+`sudo: FAILED`), 4 interner Fehler oder Abbruch mit Strg+C, 5 ein anderer Scan läuft noch.

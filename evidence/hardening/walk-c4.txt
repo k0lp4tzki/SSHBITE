@@ -1,0 +1,342 @@
+$ sshbite collector export sshbite-export
+4000a6adde2ddcaed173b7db08fe71da264a58a458c5356c09ef2ee02d6aa91b  authorized_keys.sshbite
+635132805a9f0905786495cfc6b1a1106a0d33b40507a3c67e73dda3558f751b  sshbite-collect
+9168d8ef819703916aae627218026663fbcac4f42ef45d11dc648cdbcc071e29  sshbite-gate
+99b2af5b9f622e5383068105d58734dfc19417efe0416597f4262a36f124be55  sshbite-resolve
+8366ab2a63391d4ca748f6dc480d6d4b40e97342219d4a9269321e63b61ffaac  sudoers.d-sshbite
+written to sshbite-export - verify with: cd sshbite-export && sha256sum -c SHA256SUMS
+(exit 0)
+
+$ cd sshbite-export && sha256sum -c SHA256SUMS
+authorized_keys.sshbite: OK
+sshbite-collect: OK
+sshbite-gate: OK
+sshbite-resolve: OK
+sudoers.d-sshbite: OK
+(exit 0)
+
+authorized_keys.sshbite:
+# /home/sshbite/.ssh/authorized_keys (root:root 0644). One line per key, choose the variant for this host.
+# <AUDIT-PUBLIC-KEY> = content of /etc/sshbite/audit_ed25519.pub
+# (A) entry host: login only from the scanner, forwarding only to SSH ports (add permitopen="*:<PORT>" per extra SSH port)
+#     permitlisten="localhost:22": no remote listener (ssh -R). authorized_keys knows no "none" here (sshd then
+#     rejects the whole line); localhost:22 is sshd's own port, so the only listener it allows can never be opened.
+restrict,port-forwarding,permitopen="*:22",permitlisten="localhost:22",from="<SCANNER-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" <AUDIT-PUBLIC-KEY>
+# (B) every other host: login only from the entry host, no forwarding
+restrict,from="<ENTRY-HOST-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" <AUDIT-PUBLIC-KEY>
+# (C) only for crawl.chain_fallback: intermediate hops, from = previous hop; no remote listener as in (A)
+restrict,port-forwarding,permitopen="*:22",permitlisten="localhost:22",from="<PREVIOUS-HOP-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" <AUDIT-PUBLIC-KEY>
+
+[all 14 lab hosts as root] lab/installed.sh apply (docs/install.md)
+
+$ sshbite config validate --connect
+config OK: $WALK_DIR/sshbite.yaml
+entry OK, pinned key matches, sudo: root (installed /usr/local/libexec/sshbite/sshbite-collect, collector B=386f9faea780 matches)
+(exit 0)
+
+$ sshbite scan --label installed
+scan: entry jump:22, max depth 10, max hosts 1000, concurrency 20
+depth 0: 1 queued, 0 running, 0 done
+depth 0: 0 queued, 0 running, 1 done
+depth 1: 2 queued, 0 running, 1 done
+depth 1: 0 queued, 0 running, 3 done
+depth 2: 5 queued, 0 running, 3 done
+depth 2: 0 queued, 0 running, 8 done
+depth 3: 4 queued, 0 running, 8 done
+depth 3: 0 queued, 2 running, 10 done
+depth 3: 0 queued, 1 running, 11 done (1 unreachable)
+depth 3: 0 queued, 0 running, 12 done (1 unreachable)
+depth 4: 1 queued, 0 running, 12 done (1 unreachable)
+depth 4: 0 queued, 1 running, 12 done (1 unreachable)
+depth 4: 0 queued, 0 running, 13 done (1 unreachable)
+
+scan 1 completed in 12 s
+hosts:    13 connected; 12 ok, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
+findings: 37 - 4 critical, 16 high, 14 medium, 2 low, 1 info
+edges:    21 access (20 effective, 4 unknown origin); keys: 11
+scan id:  1
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+(exit 0)
+
+$ sshbite scans show latest
+scan 1  completed  label: installed
+started 2026-11-27T01:30:32Z  finished 2026-11-27T01:30:44Z  entry jump:22
+tool 0.1.0  collector sha256 635132805a9f0905786495cfc6b1a1106a0d33b40507a3c67e73dda3558f751b
+hosts: 1 excluded, 12 ok, 2 out_of_scope, 1 unreachable, 1 unresolvable
+findings: 4 critical, 16 high, 14 medium, 2 low, 1 info
+access edges: 21 (20 effective, 4 unknown origin); unresolved hashed known_hosts entries: 1
+
+host               status            privilege     depth  discovered via                               route
+jump               ok                root              0  entry                                        jump
+203.0.113.10       out_of_scope      -                 1  jump /home/ops/.ssh/config:7                 -
+a1                 ok                root              1  jump /home/ops/.ssh/config:2                 jump -> a1
+b1                 ok                root              1  jump /home/ops/.ssh/config:4                 jump -> b1
+a2                 ok                root              2  a1 /home/deploy/.ssh/known_hosts:1 (hashed)  jump -> a2
+a3                 ok                root              2  a1 /home/deploy/.ssh/config:1                jump -> a3
+b2                 ok                root              2  b1 /home/admin/.ssh/known_hosts:1            jump -> b2
+b3                 ok                root              2  b1 /home/admin/.ssh/known_hosts:2            jump -> b3
+b5                 ok                root              2  b1 /home/admin/.ssh/config:1                 jump -> b5
+10.20.30.40        out_of_scope      -                 3  b3 /home/ops2/.ssh/config:5                  -
+172.30.1.99        unreachable       -                 3  a2 /home/deploy/.ssh/known_hosts:1           -
+                    tried jump -> 172.30.1.99: 172.30.1.99: channel open failed: No route to host
+                    tried jump -> a2 -> 172.30.1.99: 172.30.1.99: channel open failed: open failed
+172.30.2.14        excluded          -                 3  b3 /home/ops2/.ssh/known_hosts:1             -
+a4                 ok                root              3  a2 /home/deploy/.ssh/config:2                jump -> a4
+a5                 ok                root              3  a3 /home/app/.ssh/config:1                   jump -> a5
+c1                 ok                root              3  b3 /home/ops2/.ssh/config:2                  jump -> b3 -> c1
+                    tried jump -> c1: 172.30.3.21: timeout
+git.example.com    unresolvable      -                 3  b2 /home/www/.ssh/known_hosts:1              -
+c2                 ok                root              4  c1 /root/.ssh/known_hosts:1                  jump -> b3 -> c1 -> c2
+                    tried jump -> c2: 172.30.3.22: timeout
+(exit 0)
+
+##### J1 a local user on a5 flips ~/.ssh/known_hosts between file, symlink and FIFO during the scans
+[a5 as root] lab/race.sh start fifo
+race started (fifo): racer, canary RACE-CANARY-..., loops 334313 
+
+[a5 as root] lab/race.sh count 50   # the control: head as root, each under timeout 2
+control 21/50 hung 17/50
+
+$ sshbite scan --no-crawl --label 'a5 FIFO race 1'   # entry jump + seed a5
+  (exit 0) a5: ok/root, reasons []
+$ sshbite scan --no-crawl --label 'a5 FIFO race 2'   # entry jump + seed a5
+  (exit 0) a5: ok/root, reasons []
+$ sshbite scan --no-crawl --label 'a5 FIFO race 3'   # entry jump + seed a5
+  (exit 0) a5: ok/root, reasons []
+$ sshbite scan --no-crawl --label 'a5 FIFO race 4'   # entry jump + seed a5
+  (exit 0) a5: ok/root, reasons ['unreadable by account: /home/racer/.ssh/known_hosts']
+$ sshbite scan --no-crawl --label 'a5 FIFO race 5'   # entry jump + seed a5
+  (exit 0) a5: ok/root, reasons ['unreadable by account: /home/racer/.ssh/known_hosts']
+$ sshbite scan --no-crawl --label 'a5 FIFO race 6'   # entry jump + seed a5
+  (exit 0) a5: ok/root, reasons []
+$ sshbite scan --no-crawl --label 'a5 FIFO race 7'   # entry jump + seed a5
+  (exit 0) a5: ok/root, reasons ['unreadable by account: /home/racer/.ssh/known_hosts']
+$ sshbite scan --no-crawl --label 'a5 FIFO race 8'   # entry jump + seed a5
+  (exit 0) a5: ok/root, reasons ['unreadable by account: /home/racer/.ssh/known_hosts']
+$ sshbite scan --no-crawl --label 'a5 FIFO race 9'   # entry jump + seed a5
+  (exit 0) a5: ok/root, reasons []
+$ sshbite scan --no-crawl --label 'a5 FIFO race 10'   # entry jump + seed a5
+  (exit 0) a5: ok/root, reasons ['read timed out: /home/racer/.ssh/known_hosts']
+scan: entry jump:22, max depth 0, max hosts 1000, concurrency 20
+depth 0: 2 queued, 0 running, 0 done
+depth 0: 0 queued, 1 running, 1 done
+depth 0: 0 queued, 0 running, 2 done
+
+scan 11 completed in 6 s
+hosts:    2 connected; 2 ok, 1 out_of_scope, 3 max_depth
+findings: 5 - 0 critical, 1 high, 4 medium, 0 low, 0 info
+edges:    1 access (1 effective, 0 unknown origin); keys: 3
+scan id:  11
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+
+# the first scan whose a5 run met the FIFO: scan 11
+$ sshbite scans show 11
+scan 11  completed  label: a5 FIFO race 10
+started 2026-11-27T01:31:31Z  finished 2026-11-27T01:31:37Z  entry jump:22
+tool 0.1.0  collector sha256 635132805a9f0905786495cfc6b1a1106a0d33b40507a3c67e73dda3558f751b
+hosts: 3 max_depth, 2 ok, 1 out_of_scope
+findings: 0 critical, 1 high, 4 medium, 0 low, 0 info
+access edges: 1 (1 effective, 0 unknown origin); unresolved hashed known_hosts entries: 0
+
+host               status            privilege     depth  discovered via                               route
+a5                 ok                root              0  seed:hosts_file                              jump -> a5
+                    reason: read timed out: /home/racer/.ssh/known_hosts
+jump               ok                root              0  entry                                        jump
+172.30.1.11        max_depth         -                 1  a5 /home/alice/.ssh/config:3                 -
+172.30.2.12        max_depth         -                 1  a5 /home/alice/.ssh/config:2                 -
+203.0.113.10       out_of_scope      -                 1  jump /home/ops/.ssh/config:7                 -
+b1                 max_depth         -                 1  jump /home/ops/.ssh/config:4                 -
+(exit 0)
+
+[a5 as root] lab/race.sh procs   # root processes of sudo or sshbite-collect left on a5 (empty = none)
+
+[a5 as root] lab/race.sh stop
+race stopped
+
+##### J2 a local user on a5 floods ~/.ssh (40 x 1 MB .pub); zvictim, later in /etc/passwd, has one key
+[a5 as root] lab/race.sh start flood
+flood started: racer with 40 files, 40164 KiB; zvictim AAAAC3NzaC1lZDI1NTE5AAAA...
+
+[a5 as root] the two accounts
+racer:x:1003:1003::/home/racer:/bin/sh
+zvictim:x:1004:1004::/home/zvictim:/bin/sh
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII0P
+
+$ sshbite scan --label 'a5 flood'
+scan: entry jump:22, max depth 10, max hosts 1000, concurrency 20
+depth 0: 1 queued, 0 running, 0 done
+depth 0: 0 queued, 0 running, 1 done
+depth 1: 2 queued, 0 running, 1 done
+depth 1: 0 queued, 0 running, 3 done
+depth 2: 5 queued, 0 running, 3 done
+depth 2: 0 queued, 0 running, 8 done
+depth 3: 4 queued, 0 running, 8 done
+depth 3: 0 queued, 3 running, 9 done
+depth 3: 0 queued, 2 running, 10 done (1 partial)
+depth 3: 0 queued, 1 running, 11 done (1 partial, 1 unreachable)
+depth 3: 0 queued, 0 running, 12 done (1 partial, 1 unreachable)
+depth 4: 1 queued, 0 running, 12 done (1 partial, 1 unreachable)
+depth 4: 0 queued, 1 running, 12 done (1 partial, 1 unreachable)
+depth 4: 0 queued, 0 running, 13 done (1 partial, 1 unreachable)
+
+scan 12 completed in 12 s
+hosts:    13 connected; 11 ok, 1 partial, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
+findings: 39 - 4 critical, 17 high, 15 medium, 2 low, 1 info
+edges:    22 access (21 effective, 5 unknown origin); keys: 12
+scan id:  12
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+(exit 0)
+
+$ sshbite scans show 12
+scan 12  completed  label: a5 flood
+started 2026-11-27T01:31:39Z  finished 2026-11-27T01:31:51Z  entry jump:22
+tool 0.1.0  collector sha256 635132805a9f0905786495cfc6b1a1106a0d33b40507a3c67e73dda3558f751b
+hosts: 1 excluded, 11 ok, 2 out_of_scope, 1 partial, 1 unreachable, 1 unresolvable
+findings: 4 critical, 17 high, 15 medium, 2 low, 1 info
+access edges: 22 (21 effective, 5 unknown origin); unresolved hashed known_hosts entries: 1
+
+host               status            privilege     depth  discovered via                               route
+jump               ok                root              0  entry                                        jump
+203.0.113.10       out_of_scope      -                 1  jump /home/ops/.ssh/config:7                 -
+a1                 ok                root              1  jump /home/ops/.ssh/config:2                 jump -> a1
+b1                 ok                root              1  jump /home/ops/.ssh/config:4                 jump -> b1
+a2                 ok                root              2  a1 /home/deploy/.ssh/known_hosts:1 (hashed)  jump -> a2
+a3                 ok                root              2  a1 /home/deploy/.ssh/config:1                jump -> a3
+b2                 ok                root              2  b1 /home/admin/.ssh/known_hosts:1            jump -> b2
+b3                 ok                root              2  b1 /home/admin/.ssh/known_hosts:2            jump -> b3
+b5                 ok                root              2  b1 /home/admin/.ssh/config:1                 jump -> b5
+10.20.30.40        out_of_scope      -                 3  b3 /home/ops2/.ssh/config:5                  -
+172.30.1.99        unreachable       -                 3  a2 /home/deploy/.ssh/known_hosts:1           -
+                    tried jump -> 172.30.1.99: 172.30.1.99: channel open failed: No route to host
+                    tried jump -> a2 -> 172.30.1.99: 172.30.1.99: channel open failed: open failed
+172.30.2.14        excluded          -                 3  b3 /home/ops2/.ssh/known_hosts:1             -
+a4                 ok                root              3  a2 /home/deploy/.ssh/config:2                jump -> a4
+a5                 partial           root              3  a3 /home/app/.ssh/config:1                   jump -> a5
+                    reason: output budget exceeded: /home/racer/.ssh
+c1                 ok                root              3  b3 /home/ops2/.ssh/config:2                  jump -> b3 -> c1
+                    tried jump -> c1: 172.30.3.21: timeout
+git.example.com    unresolvable      -                 3  b2 /home/www/.ssh/known_hosts:1              -
+c2                 ok                root              4  c1 /root/.ssh/known_hosts:1                  jump -> b3 -> c1 -> c2
+                    tried jump -> c2: 172.30.3.22: timeout
+(exit 0)
+
+# a5 in scan 12: ('partial', 'root', ['output budget exceeded: /home/racer/.ssh'])
+# authorized keys of a5 in the database: [('root', '/root/.ssh/authorized_keys', 'fleet-deploy'), ('zvictim', '/home/zvictim/.ssh/authorized_keys', 'VICTIMBACKDOOR')]
+
+[a5 as root] lab/race.sh stop
+race stopped
+
+##### J3 the holder of the audit key asks for remote forwards on the entry host (jump) and on r1 (variant A)
+authorized_keys line (A): restrict,port-forwarding,permitopen="*:22",permitlisten="localhost:22",from="172.30.0.0/16",command="/usr/local/libexec/sshbite/sshbite-gate" ssh-ed25519 <AUDIT-PUBLIC-KEY>
+
+[jump]
+  ssh -R *:0:127.0.0.1:22 -> refused: Failed to create remote TCP listener
+  ssh -R localhost:22:127.0.0.1:22 -> refused: Failed to create remote TCP listener
+  ssh -R 127.0.0.1:8080:127.0.0.1:22 -> refused: Failed to create remote TCP listener
+  ssh -L x:172.30.1.11:22 (direct-tcpip) -> opened, the far end says: SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u10
+
+[r1]
+  ssh -R *:0:127.0.0.1:22 -> refused: Failed to create remote TCP listener
+  ssh -R localhost:22:127.0.0.1:22 -> refused: Failed to create remote TCP listener
+  ssh -R 127.0.0.1:8080:127.0.0.1:22 -> refused: Failed to create remote TCP listener
+  ssh -L x:172.30.4.11:22 (direct-tcpip) -> opened, the far end says: SSH-2.0-OpenSSH_9.9
+
+[all 14 lab hosts as root] lab/installed.sh remove
+
+##### J4 install.md on r1, where an account sshbite existed before (shell bash, group wheel, authorized_keys2 with a key of a former admin)
+[r1] the old state:
+[r1 as root] before the installation
+sshbite:x:1000:1000::/home/sshbite:/bin/bash
+uid=1000(sshbite) gid=1000(sshbite) groups=1000(sshbite),10(wheel)
+total 20
+drwx------ 1 sshbite sshbite 4096 Nov 27 01:31 .
+drwx------ 1 sshbite sshbite 4096 Nov 26 23:47 ..
+-rw------- 1 sshbite sshbite   95 Nov 26 23:47 authorized_keys
+-rw------- 1 sshbite sshbite   94 Nov 27 01:31 authorized_keys2
+
+# the former admin's key from authorized_keys2, before the installation:
+login accepted, the command ran:
+uid=1000(sshbite) gid=1000(sshbite) groups=1000(sshbite),10(wheel)
+shell=bash
+    (ALL) ALL
+    (root) NOPASSWD: ALL
+
+[r1 as root] the install block of docs/install.md (lab/installed.sh apply, variant A) stops at its own check:
+r1: script failed (1): sudo -l -U sshbite lists more than the collector:
+    (ALL) ALL
+    (root) NOPASSWD: /usr/local/libexec/sshbite/sshbite-collect ""
+
+
+# the same key after the install block - authorized_keys2 is still there:
+login accepted, the command ran:
+uid=1000(sshbite) gid=1000(sshbite) groups=1000(sshbite),10(wheel)
+shell=sh
+    (ALL) ALL
+    (root) NOPASSWD: /usr/local/libexec/sshbite/sshbite-collect ""
+
+[r1 as root] the checks of 'An account sshbite that existed before' (docs/install.md)
+/bin/sh
+uid=1000(sshbite) gid=1000(sshbite) groups=1000(sshbite),10(wheel)
+/home/sshbite:
+total 32
+drwxr-xr-x 1 root    root    4096 Nov 26 23:47 .
+drwxr-xr-x 1 root    root    4096 Nov 26 23:47 ..
+-rw-r--r-- 1 sshbite sshbite   18 Apr 30  2024 .bash_logout
+-rw-r--r-- 1 sshbite sshbite  141 Apr 30  2024 .bash_profile
+-rw-r--r-- 1 sshbite sshbite  492 Apr 30  2024 .bashrc
+drwxr-xr-x 1 root    root    4096 Nov 27 01:31 .ssh
+
+/home/sshbite/.ssh:
+total 20
+drwxr-xr-x 1 root    root    4096 Nov 27 01:31 .
+drwxr-xr-x 1 root    root    4096 Nov 26 23:47 ..
+-rw-r--r-- 1 root    root     237 Nov 27 01:31 authorized_keys
+-rw------- 1 sshbite sshbite   94 Nov 27 01:31 authorized_keys2
+authorized_keys
+authorized_keys2
+sh: line 5: crontab: command not found
+    PID TTY          TIME CMD
+authorizedkeysfile .ssh/authorized_keys .ssh/authorized_keys2
+permituserenvironment no
+User sshbite may run the following commands on r1:
+    (ALL) ALL
+    (root) NOPASSWD: /usr/local/libexec/sshbite/sshbite-collect ""
+
+[r1 as root] remove what the checks found: usermod -s /bin/sh sshbite; gpasswd -d sshbite wheel; rm ~sshbite/.ssh/authorized_keys2
+usermod: no changes
+Removing user sshbite from group wheel
+
+[r1 as root] the install block again
+usermod: no changes
+[r1 as root] the checks again
+/bin/sh
+uid=1000(sshbite) gid=1000(sshbite) groups=1000(sshbite)
+/home/sshbite:
+total 32
+drwxr-xr-x 1 root    root    4096 Nov 26 23:47 .
+drwxr-xr-x 1 root    root    4096 Nov 26 23:47 ..
+-rw-r--r-- 1 sshbite sshbite   18 Apr 30  2024 .bash_logout
+-rw-r--r-- 1 sshbite sshbite  141 Apr 30  2024 .bash_profile
+-rw-r--r-- 1 sshbite sshbite  492 Apr 30  2024 .bashrc
+drwxr-xr-x 1 root    root    4096 Nov 27 01:31 .ssh
+
+/home/sshbite/.ssh:
+total 16
+drwxr-xr-x 1 root root 4096 Nov 27 01:31 .
+drwxr-xr-x 1 root root 4096 Nov 26 23:47 ..
+-rw-r--r-- 1 root root  237 Nov 27 01:31 authorized_keys
+authorized_keys
+sh: line 5: crontab: command not found
+    PID TTY          TIME CMD
+authorizedkeysfile .ssh/authorized_keys .ssh/authorized_keys2
+permituserenvironment no
+User sshbite may run the following commands on r1:
+    (root) NOPASSWD: /usr/local/libexec/sshbite/sshbite-collect ""
+
+# the former admin's key now:
+login refused: Permission denied for user sshbite on host r1
+[r1 as root] lab/installed.sh remove
+restored
+
+[r1 as root] restore passwd/group (lab only)
+restored

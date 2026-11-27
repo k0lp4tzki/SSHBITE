@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import ipaddress
 import logging
 import os
@@ -22,12 +23,16 @@ from .parse.authorized_keys import literal_from_targets
 from .parse.host import HostData, KnownHostsRec, build
 from .parse.keys import parse_public_key_line
 from .parse.ssh_config import has_wildcard, proxyjump_hops
-from .privilege import SudoSecret, collect as priv_collect
+from .privilege import SudoSecret, collect as priv_collect, installed_stderr_error, installed_version_error
 from .seeds import Seed, load_seeds
 from .transport import Hop, HostKeyPolicy, RouteError, Transport, run
 
 log = logging.getLogger("sshbite.crawl")
 
+SETPRIV_MISSING = "setpriv (util-linux) missing: files in user homes not read"
+TIMEOUT_MISSING = "timeout (coreutils) missing: files in user homes not read"
+# collector reasons (#X) after which the rest of an account was skipped (check-4 findings 1 and 2)
+INCOMPLETE_REASONS = ("output budget exceeded", "time budget exceeded")
 CONNECTED_STATUSES = ("ok", "partial", "unreachable", "timeout", "auth_failed", "hostkey_mismatch",
                       "hostkey_unknown", "collector_error", "output_limit")
 DATA_STATUSES = ("ok", "partial", "collector_error", "output_limit")
@@ -151,6 +156,16 @@ class Scanner:
         self.script_text = collector.collect_script()
         self.script = self.script_text.encode("utf-8")
         self.expected_sha_short = collector.declared_sha_short(self.script_text)
+        self.installed = cfg.privilege.mode == "installed"
+        # name resolution: the exported sshbite-resolve file in mode installed, else the fixed `sh -c` command
+        self._resolve_command = cfg.privilege.resolve_path if self.installed else collector.resolve_command()
+        if self.installed:
+            from .collector.bundle import collect_file
+
+            # the file `sshbite collector export` writes (with shebang) - the same hash as in its SHA256SUMS
+            self.collector_sha256 = hashlib.sha256(collect_file()).hexdigest()
+        else:
+            self.collector_sha256 = collector.sha256(self.script_text)
         self.targets: list[Target] = []           # connected or queued, in order
         self.seen: dict[tuple[str, int], Target] = {}  # never-connected hosts (excluded, out_of_scope...)
         self.by_addr: dict[tuple[str, int], Target] = {}
@@ -202,10 +217,12 @@ class Scanner:
             "chain_fallback": self.cfg.crawl.chain_fallback,
             "sudo_password_given": bool(self.secret),
         }
+        if self.installed:
+            params["collector_path"] = self.cfg.privilege.collector_path
         cur = self.db.execute(
             "INSERT INTO scan(label, started_at, status, synthetic, tool_version, collector_sha256, config_sha256,"
             " entry_host, params, progress, pid) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (self.opts.label, utcnow(), "running", 0, __version__, collector.sha256(self.script_text),
+            (self.opts.label, utcnow(), "running", 0, __version__, self.collector_sha256,
              self.cfg.raw_sha256, f"{self.cfg.entry.host}:{self.cfg.entry.port}", j(params),
              j({"phase": "connect", "depth": 0, "queued": 0, "running": 0, "done": 0, "by_status": {}}),
              os.getpid()))
@@ -399,7 +416,7 @@ class Scanner:
             # and names after the script on stdin, dash reads ahead and runs the names as commands.)
             data = ("\n".join(chunk) + "\n").encode()
             try:
-                res = await asyncio.wait_for(run(conn, collector.resolve_command(), data, max_bytes=1 << 20),
+                res = await asyncio.wait_for(run(conn, self._resolve_command, data, max_bytes=1 << 20),
                                              timeout=max(10.0, self.cfg.limits.connect_timeout * 2))
             except BaseException as exc:
                 if isinstance(exc, asyncio.CancelledError):
@@ -541,10 +558,15 @@ class Scanner:
             scope = self.cfg.privilege.password_scope
             allowed = not scope or scope_match(scope, [*t.names, t.addr], [t.addr, t.connect_ip or t.addr])
             outcome = await priv_collect(conn, self.script, self.cfg.privilege.mode, self.secret,
-                                         self.cfg.limits.max_output_mb * 1024 * 1024, password_allowed=allowed)
+                                         self.cfg.limits.max_output_mb * 1024 * 1024, password_allowed=allowed,
+                                         collector_path=self.cfg.privilege.collector_path)
         finally:
             if t.role != "entry":
                 self.transport.release([h.hop() for h in route])
+        if outcome.error:   # mode installed, the probe failed: no fallback, nothing else was sent
+            t.status = "collector_error"
+            t.error = outcome.error
+            return
         t.privilege = outcome.privilege
         t.needs_password = outcome.needs_password
         t.partial_reasons.extend(outcome.partial_reasons)
@@ -557,9 +579,14 @@ class Scanner:
             t.partial_reasons.append(f"output limit of {self.cfg.limits.max_output_mb} MB reached")
         elif c.sha_short != self.expected_sha_short:
             t.status = "collector_error"
-            t.error = "no collector output" if not c.sha_short else "collector header does not match the script"
-            if res.stderr:
-                t.error += ": " + self.secret.redact(res.stderr.strip().splitlines()[0])[:200]
+            if self.installed and c.sha_short:
+                t.error = installed_version_error(self.expected_sha_short, c.sha_short)
+            elif self.installed and installed_stderr_error(self.cfg.privilege.collector_path, res.stderr):
+                t.error = installed_stderr_error(self.cfg.privilege.collector_path, res.stderr, self.secret)
+            else:
+                t.error = "no collector output" if not c.sha_short else "collector header does not match the script"
+                if res.stderr:
+                    t.error += ": " + self.secret.redact(res.stderr.strip().splitlines()[0])[:200]
         elif not c.complete:
             t.status = "collector_error"
             t.error = "collector output ended without #END"
@@ -569,11 +596,30 @@ class Scanner:
             t.status = "partial"
         else:
             t.status = "ok"
+        if t.status in ("ok", "partial", "output_limit"):
+            # spec 7.3: the collector ran as root without setpriv (or timeout) and read nothing in user homes
+            for key, text in (("setpriv", SETPRIV_MISSING), ("timeout", TIMEOUT_MISSING)):
+                if c.value(key) == "no":
+                    if t.status == "ok":
+                        t.status = "partial"
+                    t.partial_reasons.append(text)
+            # check-4: an account whose files exceeded the collector's output or time budget was not read to the
+            # end - the inventory of the host is incomplete (partial, like the transport's output limit)
+            for path, reason in t.data.unreadable:
+                if reason in INCOMPLETE_REASONS:
+                    if t.status == "ok":
+                        t.status = "partial"
+                    t.partial_reasons.append(f"{reason}: {path}")
+            # spec 7.4: files the account itself cannot read (sshd cannot use them either), and single files
+            # whose read as the account timed out (e.g. swapped for a FIFO): reasons, the status stays
+            for path, reason in t.data.unreadable:
+                if reason in ("unreadable by account", "read timed out"):
+                    t.partial_reasons.append(f"{reason}: {path}")
         if outcome.privilege == "unprivileged" or t.status in ("partial", "output_limit"):
             for path, reason in t.data.unreadable:
                 if reason == "unreadable":
                     t.partial_reasons.append(f"unreadable: {path}")
-            t.partial_reasons = t.partial_reasons[:50]
+        t.partial_reasons = t.partial_reasons[:50]
 
     # ---- references -----------------------------------------------------------
     def _new_ref(self, **kw) -> Ref:

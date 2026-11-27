@@ -1,14 +1,16 @@
-# SSHBITE documentation
+<a id="sshbite-documentation"></a>
 
-| Page | Contents |
+# SSHBITE-Dokumentation
+
+| Seite | Inhalt |
 |---|---|
-| [install.md](install.md) | Install with pip or Docker; create and deploy the audit key and account; sudoers; pin the entry host key; first scan and login |
-| [configuration.md](configuration.md) | Every config key with its default and meaning; environment variables |
-| [scanning.md](scanning.md) | What a scan does; crawl scope; seeds; `--ask-sudo-password`; host statuses; exit codes |
-| [operations.md](operations.md) | systemd units for the UI and a nightly scan; Docker operation; UI logins; backup, restore, update |
-| [cleanup.md](cleanup.md) | The cleanup workflow: findings → CSV worklist → remove → rescan → diff |
-| [review.md](review.md) | Read-only review guide: what is sent to targets, `sshbite collector show`, what the allowlist lint guarantees |
-| [side-effects.md](side-effects.md) | Logs, sudo "incident" mails, access times and monitoring alerts a scan causes – read before the first real scan |
-| [compose.example.yaml](compose.example.yaml) | Docker Compose file for running SSHBITE |
+| [install.md](install.md) | Installation mit Docker oder pip; Zielhosts vorbereiten (installierter Collector); Host-Key des Einstiegshosts festlegen; erster Scan; Aktualisierung; Deinstallation; Fehlerbehebung |
+| [configuration.md](configuration.md) | Jeder Konfigurationsschlüssel mit Standardwert und Bedeutung; Umgebungsvariablen |
+| [scanning.md](scanning.md) | Was ein Scan tut; Umfang des Crawls; Seeds; `--ask-sudo-password` (Legacy-Modus); Host-Status; Exit-Codes |
+| [operations.md](operations.md) | systemd-Units für die Oberfläche und einen nächtlichen Scan; Reverse Proxy; Betrieb mit Docker; UI-Anmeldungen; Sicherung, Wiederherstellung, Aktualisierung |
+| [cleanup.md](cleanup.md) | Der Ablauf zum Aufräumen: Befunde → CSV-Arbeitsliste → entfernen → erneut scannen → vergleichen |
+| [review.md](review.md) | Anleitung zur Prüfung des Lesezugriffs: was an die Zielhosts geht, `sshbite collector show`, was die Allowlist-Prüfung garantiert |
+| [side-effects.md](side-effects.md) | Logs, sudo-„Vorfall“-Mails, Zugriffszeiten und Monitoring-Alarme, die ein Scan auslöst – vor dem ersten echten Scan lesen |
+| [compose.example.yaml](compose.example.yaml) | Docker-Compose-Datei für den Betrieb von SSHBITE |
 | [systemd/](systemd/) | `sshbite-serve.service`, `sshbite-scan.service` + `.timer`, `sshbite-scan-docker.service` |
-| [development.md](development.md) | Test lab, tests and CI |
+| [development.md](development.md) | Testumgebung, Tests und CI |

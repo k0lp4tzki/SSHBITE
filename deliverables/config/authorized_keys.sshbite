@@ -1,0 +1,16 @@
+# authorized_keys des Accounts sshbite - Ablage: /home/sshbite/.ssh/authorized_keys (root:root, 0644)
+# Platzhalter in <SPITZEN KLAMMERN> ersetzen; "ssh-ed25519 AAAA..." = Inhalt von /etc/sshbite/audit_ed25519.pub.
+# Jede Zeile ist EINE Zeile (kein Umbruch). Nur die zum Host passende Variante eintragen.
+#
+# (A) Einstiegs-/Jump-Host (entry.host): Login nur vom Scanner; Weiterleitung nur zu SSH-Ports.
+#     Fuer jeden weiteren SSH-Port im Netz (crawl.ssh_port, Port-Angaben in ssh_config) ein weiteres
+#     permitopen="*:<PORT>" anfuegen.
+restrict,port-forwarding,permitopen="*:22",from="<SCANNER-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" ssh-ed25519 <AUDIT-PUBLIC-KEY> sshbite-audit
+#
+# (B) Jeder andere Host: Login nur vom Einstiegs-Host (dessen Adresse im Netz dieses Hosts),
+#     keine Weiterleitung.
+restrict,from="<EINSTIEGS-HOST-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" ssh-ed25519 <AUDIT-PUBLIC-KEY> sshbite-audit
+#
+# (C) Nur falls crawl.chain_fallback benoetigt wird: Hosts, ueber die SSHBITE andere Segmente erreicht
+#     (Zwischen-Hop), brauchen wie (A) port-forwarding; from= ist dann die Adresse des vorherigen Hops.
+restrict,port-forwarding,permitopen="*:22",from="<VORHERIGER-HOP-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" ssh-ed25519 <AUDIT-PUBLIC-KEY> sshbite-audit

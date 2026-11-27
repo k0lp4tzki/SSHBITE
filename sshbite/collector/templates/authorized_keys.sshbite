@@ -1,0 +1,10 @@
+# /home/sshbite/.ssh/authorized_keys (root:root 0644). One line per key, choose the variant for this host.
+# <AUDIT-PUBLIC-KEY> = content of /etc/sshbite/audit_ed25519.pub
+# (A) entry host: login only from the scanner, forwarding only to SSH ports (add permitopen="*:<PORT>" per extra SSH port)
+#     permitlisten="localhost:22": no remote listener (ssh -R). authorized_keys knows no "none" here (sshd then
+#     rejects the whole line); localhost:22 is sshd's own port, so the only listener it allows can never be opened.
+restrict,port-forwarding,permitopen="*:22",permitlisten="localhost:22",from="<SCANNER-IP>",command="{gate_path}" <AUDIT-PUBLIC-KEY>
+# (B) every other host: login only from the entry host, no forwarding
+restrict,from="<ENTRY-HOST-IP>",command="{gate_path}" <AUDIT-PUBLIC-KEY>
+# (C) only for crawl.chain_fallback: intermediate hops, from = previous hop; no remote listener as in (A)
+restrict,port-forwarding,permitopen="*:22",permitlisten="localhost:22",from="<PREVIOUS-HOP-IP>",command="{gate_path}" <AUDIT-PUBLIC-KEY>

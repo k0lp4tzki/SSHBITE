@@ -1,0 +1,148 @@
+
+### 01 Interaktive Shell (mit PTY)
+$ ssh -t sshbite@jump 
+  (stdin: id
+exit
+)
+Linux jump 7.0.0-43-generic #43~24.04.1-Ubuntu SMP PREEMPT_DYNAMIC Sat Oct 31 06:52:47 UTC 2 x86_64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Thu Nov 26 20:26:21 2026 from 172.30.1.2
+id
+exit
+$ uid=1000(sshbite) gid=1000(sshbite) groups=1000(sshbite)
+$ [exit 0]
+
+### 02 Beliebiger Befehl ohne sudo
+$ ssh sshbite@jump id
+uid=1000(sshbite) gid=1000(sshbite) groups=1000(sshbite)
+[exit 0]
+
+### 03 sudo -i
+$ ssh sshbite@jump sudo -i
+[stderr] sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper
+sudo: a password is required
+[exit 1]
+
+### 04 sudo sh
+$ ssh sshbite@jump sudo -n sh -c id
+[stderr] sudo: a password is required
+[exit 1]
+
+### 05 sudo cat /etc/shadow
+$ ssh sshbite@jump sudo -n cat /etc/shadow
+[stderr] sudo: a password is required
+[exit 1]
+
+### 06 sudo -l
+$ ssh sshbite@jump sudo -n -l
+Matching Defaults entries for sshbite on jump:
+    env_reset, mail_badpass, secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin, use_pty, !lecture
+
+User sshbite may run the following commands on jump:
+    (root) NOPASSWD: /bin/true, /bin/sh -s
+[exit 0]
+
+### 07 Eigenes Skript per stdin an sudo /bin/sh -s (exakter SSHBITE-Befehl)
+$ ssh sshbite@jump test -x /usr/bin/sudo && exec /usr/bin/sudo -n /bin/sh -s; exec /bin/sudo -n /bin/sh -s
+  (stdin: id; head -n 2 /etc/shadow)
+uid=0(root) gid=0(root) groups=0(root)
+root:*:20780:0:99999:7:::
+daemon:*:20780:0:99999:7:::
+[exit 0]
+
+### 08 Collector mit Argument
+$ ssh sshbite@jump sudo -n /usr/local/libexec/sshbite/sshbite-collect -x
+[stderr] sudo: a password is required
+[exit 1]
+
+### 09 Collector direkt mit Umgebungsvariable
+$ ssh sshbite@jump LD_PRELOAD=/tmp/x.so sudo -n /usr/local/libexec/sshbite/sshbite-collect
+[stderr] sudo: a password is required
+[exit 1]
+
+### 10 Collector direkt (ohne Gate-Pfad)
+$ ssh sshbite@jump sudo -n /usr/local/libexec/sshbite/sshbite-collect
+[stderr] sudo: a password is required
+[exit 1]
+
+### 11 Gate-Befehl plus angehängter Befehl
+$ ssh sshbite@jump test -x /usr/bin/sudo && exec /usr/bin/sudo -n /bin/sh -s; exec /bin/sudo -n /bin/sh -s; id
+  (stdin: x)
+[stderr] /bin/sh: 1: x: not found
+[exit 127]
+
+### 12 Passwort-Variante mit Skript
+$ ssh sshbite@jump test -x /usr/bin/sudo && exec /usr/bin/sudo -S -k -p '' /bin/sh -s; exec /bin/sudo -S -k -p '' /bin/sh -s
+  (stdin: pw
+id)
+uid=0(root) gid=0(root) groups=0(root)
+[stderr] /bin/sh: 1: pw: not found
+[exit 0]
+
+### 13 Unprivilegierte Shell /bin/sh -s
+$ ssh sshbite@jump /bin/sh -s
+  (stdin: id)
+uid=1000(sshbite) gid=1000(sshbite) groups=1000(sshbite)
+[exit 0]
+
+### 14 sudo-login-Variante -i
+$ ssh sshbite@jump test -x /usr/bin/sudo && exec /usr/bin/sudo -n -i /bin/sh -s; exec /bin/sudo -n -i /bin/sh -s
+  (stdin: id)
+[stderr] sudo: a password is required
+[exit 1]
+
+### 15 Namensauflösung mit eingeschleustem Befehl
+$ ssh sshbite@jump /bin/sh -c 'id'
+uid=1000(sshbite) gid=1000(sshbite) groups=1000(sshbite)
+[exit 0]
+
+### 16 Datei lesen ohne sudo
+$ ssh sshbite@jump cat /etc/passwd
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+sys:x:3:3:sys:/dev:/usr/sbin/nologin
+sync:x:4:65534:sync:/bin:/bin/sync
+games:x:5:60:games:/usr/games:/usr/sbin/nologin
+man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
+lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
+mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
+news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
+uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin
+proxy:x:13:13:proxy:/bin:/usr/sbin/nologin
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+backup:x:34:34:backup:/var/backups:/usr/sbin/nologin
+
+### 17 Weiterleitung von jump zu SSH-Port eines Hosts
+$ ssh -W 172.30.1.11:22 sshbite@jump 
+[Weiterleitung zu 172.30.1.11:22 geoeffnet]
+
+### 18 Weiterleitung von jump zu anderem Port (2200)
+$ ssh -W 172.30.1.11:2200 sshbite@jump 
+[Weiterleitung zu 172.30.1.11:2200 geoeffnet]
+
+### 19 Weiterleitung über Zielhost a1 (kein Hop)
+$ ssh -W 172.30.1.12:22 sshbite@172.30.1.11 
+[Weiterleitung zu 172.30.1.12:22 geoeffnet]
+
+### 20 Login auf a1 direkt vom Scanner statt über jump
+$ ssh sshbite@172.30.1.11 (direkt vom Scanner) id
+uid=1000(sshbite) gid=1000(sshbite) groups=1000(sshbite)
+[exit 0]
+
+### 21 Zielhost a1 über jump: sudo sh
+$ ssh sshbite@172.30.1.11 sudo -n sh -c id
+[stderr] sudo: a password is required
+[exit 1]
+
+### 22 Zielhost a1: Skript per stdin
+$ ssh sshbite@172.30.1.11 test -x /usr/bin/sudo && exec /usr/bin/sudo -n /bin/sh -s; exec /bin/sudo -n /bin/sh -s
+  (stdin: id)
+uid=0(root) gid=0(root) groups=0(root)
+[exit 0]
