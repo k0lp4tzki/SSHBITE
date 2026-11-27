@@ -15,7 +15,7 @@ depth 4: 0 queued, 0 running, 13 done (1 partial, 1 unreachable, 1 hostkey misma
 
 scan 2 completed in 14 s
 hosts:    13 connected; 10 ok, 1 partial, 1 unreachable, 1 hostkey_mismatch, 1 excluded, 2 out_of_scope, 1 unresolvable
-findings: 37 - 5 critical, 15 high, 15 medium, 2 low, 0 info
+findings: 36 - 5 critical, 15 high, 14 medium, 2 low, 0 info
 edges:    19 access (18 effective, 4 unknown origin); keys: 10
 scan id:  2
 UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)

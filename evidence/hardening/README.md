@@ -1,4 +1,8 @@
-# Evidence: privilege.mode installed, collector export and gate (order A-ef5350a11f, package A)
+# Evidence: privilege.mode installed, collector export, gate (package A) and reading user homes as their owner (package B)
+
+Order A-ef5350a11f. The test runs below are package B's and replace package A's: same lab plus the AlmaLinux 9
+host r1 (`lab/image/Dockerfile.el9`: AlmaLinux 9.9, OpenSSH 9.9p1, sudo 1.9.17p2, util-linux 2.37.4), started
+fresh (`stack up --fresh`) from the branch; r1 answered as `r1:22` (`SSHBITE_LAB_R1` not needed).
 
 All runs against the company's compose lab (`compose.yaml` → `lab/compose.yaml`, 13 Debian 12 hosts with
 OpenSSH 9.2 and sudo 1.9.13p3), started fresh (`stack up --fresh`) from this branch; this workspace reaches
@@ -8,8 +12,10 @@ the lab network directly (`SSHBITE_LAB_ENTRY=jump:22`). No Docker in the workspa
 
 | What | File | Result |
 |---|---|---|
-| `pytest tests/unit tests/web -v -rs` (frontend built, nothing skipped) | `pytest-unit-web.txt` | 262 passed |
-| `pytest -m e2e tests/e2e/test_lab.py tests/e2e/test_lab_installed.py -v -rs` | `pytest-e2e.txt` | 23 passed, none skipped |
+| `pytest tests/unit tests/web -v -rs` (frontend built, nothing skipped) | `pytest-unit-web.txt` | 297 passed |
+| `pytest -m e2e tests/e2e/test_lab.py tests/e2e/test_lab_installed.py -v -rs` (13 hosts + r1) | `pytest-e2e.txt` | 26 passed, none skipped |
+| Lint run (ruff, svelte-check, `collector show` → `lint: OK` for both scripts, `test_lint.py`) | `lint.txt` | see file; the 7 ruff findings are in `evidence/p6/` and `tools/rechte-doc/` (pre-existing, untouched) |
+| `pytest tests/browser` (after the HostDetail change) | – (not kept) | 35 passed |
 | Transcripts written by that e2e run (`SSHBITE_EVIDENCE_DIR`) | `e2e/` | see below |
 
 ## The files the CEO asked for
@@ -38,3 +44,22 @@ the lab network directly (`SSHBITE_LAB_ENTRY=jump:22`). No Docker in the workspa
 | `03-hostliste-kaputte-installationen-{desktop,handy}.png` | Scan of the five broken installations: all `Collector error`, none partial |
 | `04-host-a5-collector-error-version-{desktop,handy}.png` | a5 with an old collector: the version message |
 | `05-host-b2-collector-error-keine-regel-{desktop,handy}.png` | b2 with a sudo rule for something else: "sudo does not allow …" |
+
+## Package B: files in user homes read as their owner (R3, R4)
+
+| Item | File |
+|---|---|
+| Race count per host (control n/200 as root, collector 0/200 through the gate, runs in the window) | `e2e/race-count.md` (i08) |
+| Attack matrix incl. r1 (AlmaLinux 9, variant A) | `e2e/attack-matrix.md` |
+| sudo stderr on r1 (EL9) next to Debian; mapping to the spec 4.3 texts identical | `sudo-stderr.md` (made by `sudo_stderr.py`) |
+| r1 installed scan: ok/root, `unreadable by account: /home/alice/.ssh/authorized_keys2` | `e2e/console-scan-r1-installed.txt`, `e2e/scans-show-r1-installed.txt`, `walk-r1.txt` |
+| r1 without setpriv (J5): partial, `setpriv (util-linux) missing: files in user homes not read` | `e2e/console-scan-r1-no-setpriv.txt`, `e2e/scans-show-r1-no-setpriv.txt`, `walk-r1.txt` |
+| CLI walk on r1 and the UI screenshots | `walk-r1.txt`, screens below (made by `walk_r1.py`) |
+
+| Screen | Shows |
+|---|---|
+| `06-hostliste-r1-installed-ok-root-{desktop,handy}.png` | Scan "r1 installed": r1 `OK` / `root` (172.30.1.5 = jump from alice's known_hosts, depth limit of `--no-crawl`) |
+| `07-host-r1-ok-root-unreadable-by-account-{desktop,handy}.png` | r1 OK/root with the info strip `unreadable by account: /home/alice/.ssh/authorized_keys2` |
+| `07b-host-r1-users-alice-schluessel-{desktop,handy}.png` | r1 Users tab: alice's authorized key (k_ops), private key id_ed25519 (fingerprint, not encrypted), known_hosts - nothing from authorized_keys2 |
+| `08-hostliste-r1-ohne-setpriv-partial-{desktop,handy}.png` | Scan "r1 without setpriv": r1 `Partial` / `root` |
+| `09-host-r1-partial-setpriv-fehlt-{desktop,handy}.png` | r1 partial with the setpriv reason and the advice to install util-linux; Users (0) |

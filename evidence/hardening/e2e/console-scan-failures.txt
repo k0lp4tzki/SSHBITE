@@ -3,7 +3,7 @@ scan: entry jump:22, max depth 0, max hosts 1000, concurrency 20
 depth 0: 6 queued, 0 running, 0 done
 depth 0: 0 queued, 0 running, 6 done (5 collector error)
 
-scan 3 completed in 0 s
+scan 3 completed in 1 s
 hosts:    6 connected; 1 ok, 5 collector_error, 1 out_of_scope, 2 max_depth
 findings: 5 - 0 critical, 1 high, 4 medium, 0 low, 0 info
 edges:    1 access (1 effective, 0 unknown origin); keys: 3

@@ -14,7 +14,7 @@ depth 4: 0 queued, 0 running, 13 done (2 partial, 1 unreachable)
 
 scan 3 completed in 13 s
 hosts:    13 connected; 10 ok, 2 partial, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
-findings: 36 - 3 critical, 13 high, 16 medium, 3 low, 1 info
+findings: 35 - 3 critical, 13 high, 15 medium, 3 low, 1 info
 edges:    19 access (18 effective, 3 unknown origin); keys: 11
 2 hosts need a sudo password: rerun with --ask-sudo-password
 scan id:  3

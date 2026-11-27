@@ -1,0 +1,12 @@
+$ sshbite scan --no-crawl --label r1-installed   # entry r1
+scan: entry r1:22, max depth 0, max hosts 1000, concurrency 20
+depth 0: 1 queued, 0 running, 0 done
+depth 0: 0 queued, 0 running, 1 done
+
+scan 4 completed in 1 s
+hosts:    1 connected; 1 ok, 1 max_depth
+findings: 3 - 0 critical, 2 high, 1 medium, 0 low, 0 info
+edges:    1 access (1 effective, 1 unknown origin); keys: 2
+Only the entry point was found; it has no known_hosts/ssh config references. Add seeds to scan more.
+scan id:  4
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)

@@ -1,0 +1,11 @@
+scan 4  completed  label: r1-installed
+started 2026-11-26T23:59:42Z  finished 2026-11-26T23:59:43Z  entry r1:22
+tool 0.1.0  collector sha256 8fd661564a0bbc35fcbb7bd7836ba2926be35e6064c5e0fea044b011add06c1a
+hosts: 1 max_depth, 1 ok
+findings: 0 critical, 2 high, 1 medium, 0 low, 0 info
+access edges: 1 (1 effective, 1 unknown origin); unresolved hashed known_hosts entries: 0
+
+host               status            privilege     depth  discovered via                               route
+r1                 ok                root              0  entry                                        r1
+                    reason: unreadable by account: /home/alice/.ssh/authorized_keys2
+172.30.1.5         max_depth         -                 1  r1 /home/alice/.ssh/known_hosts:1            -
