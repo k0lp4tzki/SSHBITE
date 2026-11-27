@@ -1,0 +1,12 @@
+# sshbite-rollout: die Hosts, die das Audit-Konto und den Collector bekommen (docs/rollout.md).
+# Eine Zeile je Host: ADRESSE [hop] [from=ADRESSE] [port=N] [user=KONTO]
+# Der Einstiegshost aus rollout.conf gehört immer dazu und muss hier nicht stehen.
+#
+#   hop        Zwischenstation für crawl.chain_fallback (Schlüsselzeile C); braucht from=
+#   from=      die Adresse, von der sich SSHBITE an diesem Host anmeldet, wenn die Automatik nicht passt
+#   port=      SSH-Port für das Einrichten (Standard 22)
+#   user=      Admin-Konto für das Einrichten (Standard SSH_USER aus rollout.conf)
+#
+# 10.20.0.11
+# 10.20.0.12 port=2222
+# db1.example.org user=admin

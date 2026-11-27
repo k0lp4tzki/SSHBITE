@@ -1,6 +1,8 @@
 """Check every relative link and anchor in README.md and docs/*.md (GitHub slug rules).
 Reports: BROKEN (file or anchor missing) and LEGACY (anchor only reachable via an <a id> compatibility anchor)."""
-import re, sys, pathlib
+import pathlib
+import re
+import sys
 root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
 files = [root / "README.md", *sorted((root / "docs").glob("*.md"))]
 
@@ -15,7 +17,8 @@ def anchors(p):
     for line in p.read_text(encoding="utf-8").splitlines():
         if line.lstrip().startswith("```"):
             fence = not fence; continue
-        if fence: continue
+        if fence:
+            continue
         m = re.match(r"^(#{1,6})\s+(.*?)\s*#*\s*$", line)
         if m:
             s = slug(m.group(2)); n = seen.get(s, 0); seen[s] = n + 1
@@ -31,21 +34,26 @@ for f in files:
     for no, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
         if line.lstrip().startswith("```"):
             fence = not fence; continue
-        if fence: continue
+        if fence:
+            continue
         line_nocode = re.sub(r"`[^`]*`", "", line)
         for target in re.findall(r"\]\(([^)\s]+)\)", line_nocode):
-            if re.match(r"^[a-z]+:", target): continue
+            if re.match(r"^[a-z]+:", target):
+                continue
             total += 1
             path, _, anc = target.partition("#")
             tp = (f.parent / path).resolve() if path else f
             if not tp.exists():
                 print(f"BROKEN  {f.relative_to(root)}:{no}  {target}  (file missing)"); bad += 1; continue
-            if not anc: continue
+            if not anc:
+                continue
             if tp.suffix != ".md":
                 print(f"BROKEN  {f.relative_to(root)}:{no}  {target}  (anchor on non-md)"); bad += 1; continue
-            if tp not in cache: cache[tp] = anchors(tp)
+            if tp not in cache:
+                cache[tp] = anchors(tp)
             heads, leg = cache[tp]
-            if anc in heads: continue
+            if anc in heads:
+                continue
             if anc in leg:
                 print(f"LEGACY  {f.relative_to(root)}:{no}  {target}"); legacy_used += 1; continue
             print(f"BROKEN  {f.relative_to(root)}:{no}  {target}"); bad += 1

@@ -1,0 +1,36 @@
+# sshbite-rollout: die Einstellungen für diesen Scanner-Rechner (docs/rollout.md).
+# Format: NAME=wert, eine Zeile je Einstellung. Die Datei wird gelesen, nicht ausgeführt.
+
+# Der Name des Audit-Kontos auf allen Hosts. Frei wählbar; das Skript legt das Konto an.
+# Kleinbuchstaben, Ziffern, '_' und '-', höchstens 32 Zeichen, nicht root.
+AUDIT_USER=sshbite
+
+# Wie SSHBITE auf diesem Rechner läuft: docker (empfohlen) oder native (venv + systemd).
+MODE=docker
+
+# Der Einstiegshost, so wie dieser Rechner ihn erreicht. Ist dieser Rechner selbst der
+# Einstiegshost, steht hier seine eigene Adresse im Netz (nicht 127.0.0.1).
+ENTRY_HOST=
+ENTRY_PORT=22
+
+# Die Netze, die SSHBITE durchsuchen darf, durch Komma getrennt. Leer = keine Grenze (mit Warnung).
+CRAWL_INCLUDE=
+
+# Wo der Collector auf den Hosts liegt. Jedes Verzeichnis darüber muss root gehören.
+COLLECTOR_PATH=/usr/local/libexec/sshbite/sshbite-collect
+
+# Mit welchem Konto das Skript die Hosts einrichtet: root per SSH-Schlüssel, oder ein
+# Admin-Konto mit sudo ohne Passwort (SSH_SUDO=yes). Je Host änderbar mit user= in rollout.hosts.
+SSH_USER=root
+SSH_SUDO=no
+# Weitere ssh-Optionen, z. B. -J admin@jump für Hosts, die nur über einen Sprunghost erreichbar sind.
+SSH_OPTS=
+
+# Nur wenn die Automatik nicht passt (NAT, mehrere Netzkarten):
+# SCANNER_FROM = die Adresse, mit der der Einstiegshost diesen Rechner sieht
+# ENTRY_FROM   = die Adresse, mit der die übrigen Hosts den Einstiegshost sehen
+SCANNER_FROM=
+ENTRY_FROM=
+
+# Die Liste der übrigen Hosts. Standard: rollout.hosts neben dieser Datei.
+INVENTORY=

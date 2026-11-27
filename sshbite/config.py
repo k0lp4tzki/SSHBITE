@@ -126,9 +126,20 @@ class EntryCfg(_Strict):
 
 
 class AuditCfg(_Strict):
-    user: str = "sshbite"
+    user: str = "sshbite"      # any account name; `collector export` writes it into the sudoers rule
     key_file: str = "/etc/sshbite/audit_ed25519"
     key_passphrase_env: str | None = None
+
+
+DEFAULT_AUDIT_USER = "sshbite"
+# what `sshbite collector export` writes into the sudoers rule: a plain POSIX account name, never root
+_AUDIT_USER_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
+AUDIT_USER_RULE = ("must be an account name of lower-case letters, digits, '_' and '-', starting with a letter "
+                   "or '_' (at most 32 characters, not root)")
+
+
+def audit_user_ok(value: Any) -> bool:
+    return isinstance(value, str) and bool(_AUDIT_USER_RE.fullmatch(value)) and value != "root"
 
 
 DEFAULT_COLLECTOR_PATH = "/usr/local/libexec/sshbite/sshbite-collect"

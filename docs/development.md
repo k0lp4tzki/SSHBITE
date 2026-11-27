@@ -68,6 +68,10 @@ docker compose -f lab/compose.yaml down        # die Testumgebung entfernen
   Installationsschritt des Betreibers (die Dateien von `sshbite collector export` auf jedem Host einrichten) erledigt
   dabei `lab/installed.sh apply` über das Lab-Control-sshd; `lab/installed.sh remove` stellt den vorherigen Zustand
   wieder her.
+- `tests/e2e/test_rollout.py` prüft `tools/rollout/` ([rollout.md](rollout.md)): den Teil, der auf den Hosts läuft
+  (`host-agent.sh`: planen, einrichten, prüfen, entfernen), in einem eigenen Wegwerf-Container aus dem Image
+  `sshbite-lab-a1` – die laufende Testumgebung bleibt unberührt. `SSHBITE_ROLLOUT_TEST_IMAGE=<image>` wählt ein
+  anderes Image mit sshd und sudo.
 - `lab/race.sh start|count N|stop` (als root auf einem Host der Testumgebung über das Lab-Control ausgeführt) richtet
   den Symlink-Race aus review.md für Test i08 ein.
 - Ohne docker oder podman baut `lab/local/up.sh` (root) dieselben Hosts mit Netzwerk-, Mount- und PID-Namespaces;
@@ -107,7 +111,7 @@ docker compose -f lab/compose.yaml down        # die Testumgebung entfernen
 |---|---|
 | `lint` | `ruff check .` (Konfiguration in `pyproject.toml`), `npm run check` (svelte-check), den Collector-Allowlist-Lint über `sshbite collector show`, `docker compose config` beider Compose-Dateien |
 | `unit` | `pytest tests/unit tests/web`; schlägt fehl, wenn etwas übersprungen wurde |
-| `e2e` | `lab/up.sh` (docker compose, 13 Hosts + r1), `pytest tests/e2e/test_lab.py tests/e2e/test_lab_installed.py`; schlägt fehl, wenn etwas übersprungen wurde; lädt die Mitschnitte hoch |
+| `e2e` | `lab/up.sh` (docker compose, 13 Hosts + r1), `pytest tests/e2e/test_lab.py tests/e2e/test_lab_installed.py`; schlägt fehl, wenn etwas übersprungen wurde; lädt die Mitschnitte hoch; danach `shellcheck` für `tools/rollout/` und `pytest tests/e2e/test_rollout.py` |
 | `browser` | Playwright + Chromium, `pytest tests/browser`; schlägt fehl, wenn etwas übersprungen wurde |
 | `image` | `docker build`; prüft uid 10001, `sshbite --version`, den Lint im Image; `docker compose up` von Testumgebung + Image: Das Image prüft den festgelegten Einstiegshost, scannt die Testumgebung (20 Zugriffskanten) und stellt die UI mit ihrer CSP bereit; ein nicht authentifizierter Schreibzugriff erhält 401 |
 

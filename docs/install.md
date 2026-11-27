@@ -35,6 +35,10 @@ Es gibt drei Wege:
 B und C teilen sich die Schritte [Zielhosts vorbereiten](#zielhosts-vorbereiten-installierter-collector)
 und [Host-Key festlegen und Konfiguration schreiben](#host-key-festlegen-und-konfiguration-schreiben).
 
+**Alles in einem Durchgang:** [`tools/rollout/sshbite-rollout`](rollout.md) prüft die Voraussetzungen,
+zeigt, was es ändern würde, richtet Scanner-Rechner und Hosts ein und prüft das Ergebnis. Die Schritte
+unten beschreiben dasselbe von Hand.
+
 **Lesen Sie vor dem ersten echten Scan [side-effects.md](side-effects.md):** SSHBITE ändert nichts auf den
 Zielhosts, hinterlässt dort aber Log-Einträge und kann sudo-Mails und Monitoring-Alarme auslösen.
 
@@ -446,8 +450,10 @@ install -d -m 0755 -o root -g root /home/sshbite/.ssh
 - Gab es das Konto `sshbite` schon vorher, arbeiten Sie zusätzlich
   [Ein bereits vorhandenes Konto sshbite](#ein-bereits-vorhandenes-konto-sshbite) durch: `useradd` lässt ein
   vorhandenes Konto, wie es ist.
-- Der Kontoname `sshbite` und der Pfad `/home/sshbite` sind in den exportierten Dateien fest eingetragen.
-  Behalten Sie `audit.user: sshbite`.
+- **Anderer Kontoname:** Die Befehle hier verwenden `sshbite`. Für ein anderes Konto exportieren Sie mit
+  `sshbite collector export DIR --audit-user <NAME>` (die sudo-Regel gilt dann für `<NAME>`), setzen in den
+  Befehlen und im `Match`-Block `<NAME>` ein und tragen `audit.user: <NAME>` in die Konfiguration ein.
+  [`sshbite-rollout`](rollout.md) erledigt das mit `AUDIT_USER` in einem Durchgang.
 
 ### Die authorized_keys-Zeile schreiben
 

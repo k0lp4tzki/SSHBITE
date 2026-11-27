@@ -102,7 +102,7 @@ Verwenden Sie im Docker-Image `database: /data/sshbite.db` und Pfade unter `/etc
 
 | Schlüssel | Standard | Bedeutung |
 |---|---|---|
-| `audit.user` | `sshbite` | Konto, das auf jedem Host und jedem Hop verwendet wird. Behalten Sie im Modus `installed` `sshbite` bei: Die von `sshbite collector export` geschriebene sudoers-Datei (`sudoers.d-sshbite`) und die authorized_keys-Vorlage (`authorized_keys.sshbite`) enthalten fest `sshbite` bzw. `/home/sshbite`. Mit einem anderen Namen müssen Sie beide Dateien von Hand anpassen, und ihre Prüfsummen in `SHA256SUMS` stimmen dann nicht mehr. |
+| `audit.user` | `sshbite` | Konto, das auf jedem Host und jedem Hop verwendet wird. Der Name ist frei wählbar. Im Modus `installed` muss die sudo-Regel auf den Hosts zu ihm passen: `sshbite collector export` schreibt sie für `audit.user` (oder `--audit-user NAME`) – ein Name aus Kleinbuchstaben, Ziffern, `_` und `-`, höchstens 32 Zeichen, nicht `root`. Nach einer Änderung des Namens neu exportieren und die Hosts neu einrichten ([rollout.md](rollout.md#der-name-des-audit-kontos)). |
 | `audit.key_file` | `/etc/sshbite/audit_ed25519` | Der private Audit-Schlüssel. Muss eine reguläre Datei mit Modus 0600 sein, lesbar für den Benutzer, unter dem SSHBITE läuft. Es ist der einzige Schlüssel, den SSHBITE je verwendet; Agents und auf Zielhosts gefundene Schlüssel werden nie verwendet. |
 | `audit.key_passphrase_env` | `null` | Name einer Umgebungsvariablen, die die Passphrase des Schlüssels enthält (nicht die Passphrase selbst). Nicht gesetzte Variable = Konfigurationsfehler. |
 
