@@ -30,7 +30,7 @@ def main() -> None:
                            "README.md"], capture_output=True, text=True).stdout.strip()
     out = ["Belegprüfung: jede Datei:Zeile-Angabe aus SSHBITE-Minimale-Rechte.md mit den zitierten Zeilen",
            f"Code-Stand: letzter Commit an sshbite/, docs/, README.md: {head}",
-           f"Erzeugt mit: tools/rechte-doc/belege.py", ""]
+           "Erzeugt mit: tools/rechte-doc/belege.py", ""]
     n = 0
     for no, text in enumerate(SRC.read_text(encoding="utf-8").splitlines(), 1):
         for m in REF.finditer(text):

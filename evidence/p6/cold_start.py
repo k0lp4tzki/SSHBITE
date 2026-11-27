@@ -1,5 +1,11 @@
 """Cold start of the 2,000-host subnet heatmap: fresh synth DB, fresh `sshbite serve` process per measurement."""
-import json, os, subprocess, sys, time, urllib.request, http.cookiejar
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.request
+import http.cookiejar
 sys.path.insert(0, '/workspace')
 VENV = '/workspace/.venv/bin'
 D = sys.argv[1] if len(sys.argv) > 1 and __name__ == '__main__' else '/tmp/cold/run'
@@ -12,7 +18,8 @@ def say(*a):
 
 def fresh_db():
     for f in (db, db + '-wal', db + '-shm'):
-        if os.path.exists(f): os.remove(f)
+        if os.path.exists(f):
+            os.remove(f)
     open(cfg, 'w').write(f'database: {db}\nentry:\n  host: 127.0.0.1\n')
     out = subprocess.run([f'{VENV}/sshbite', '-c', cfg, 'synth', '--hosts', '2000', '--seed', '42'], capture_output=True, text=True)
     say('$ sshbite synth --hosts 2000 --seed 42 ->', out.stdout.strip().replace('\n', ' | '))
@@ -21,9 +28,13 @@ def fresh_db():
 def serve(port):
     p = subprocess.Popen([f'{VENV}/sshbite', '-c', cfg, 'serve', '--port', str(port)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     for _ in range(200):
-        try: urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=1)
-        except urllib.error.HTTPError: break
-        except Exception: time.sleep(0.05); continue
+        try:
+            urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=1)
+        except urllib.error.HTTPError:
+            break
+        except Exception:
+            time.sleep(0.05)
+            continue
         break
     return p
 
@@ -74,7 +85,8 @@ if __name__ == "__main__":
     fresh_db(); say('## Browser, fresh process, fresh DB: login -> Dashboard -> click Heatmap'); browser_run(8813, True)
     say('## Browser: UI started on an empty DB, then synth writes the scan while it runs, then login -> heatmap')
     for f in (db, db + '-wal', db + '-shm'):
-        if os.path.exists(f): os.remove(f)
+        if os.path.exists(f):
+            os.remove(f)
     open(cfg, 'w').write(f'database: {db}\nentry:\n  host: 127.0.0.1\n')
     subprocess.run([f'{VENV}/python', '-c', f'import sys; sys.path.insert(0,"/workspace"); from sshbite import db as d; from sshbite.users import add_user; c=d.connect("{db}"); add_user(c, "admin", "{PW}"); c.commit()'], check=True)
     _serve = serve
