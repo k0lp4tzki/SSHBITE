@@ -1,4 +1,5 @@
 ### a1: lab/installed.sh apply B 172.30.1.5
+usermod: no changes
 /etc/sudoers.d/sshbite: parsed OK
 root 755 /usr
 root 755 /usr/local
@@ -9,6 +10,7 @@ root 755 /usr/local/libexec/sshbite/sshbite-gate
 root 755 /usr/local/libexec/sshbite/sshbite-resolve
 
 ### a2: lab/installed.sh apply B 172.30.1.5
+usermod: no changes
 /etc/sudoers.d/sshbite: parsed OK
 root 755 /usr
 root 755 /usr/local
@@ -19,6 +21,7 @@ root 755 /usr/local/libexec/sshbite/sshbite-gate
 root 755 /usr/local/libexec/sshbite/sshbite-resolve
 
 ### a3: lab/installed.sh apply B 172.30.1.5
+usermod: no changes
 /etc/sudoers.d/sshbite: parsed OK
 root 755 /usr
 root 755 /usr/local
@@ -29,6 +32,7 @@ root 755 /usr/local/libexec/sshbite/sshbite-gate
 root 755 /usr/local/libexec/sshbite/sshbite-resolve
 
 ### a4: lab/installed.sh apply B 172.30.1.5
+usermod: no changes
 /etc/sudoers.d/sshbite: parsed OK
 root 755 /usr
 root 755 /usr/local
@@ -39,6 +43,7 @@ root 755 /usr/local/libexec/sshbite/sshbite-gate
 root 755 /usr/local/libexec/sshbite/sshbite-resolve
 
 ### a5: lab/installed.sh apply B 172.30.1.5
+usermod: no changes
 /etc/sudoers.d/sshbite: parsed OK
 root 755 /usr
 root 755 /usr/local
@@ -49,6 +54,7 @@ root 755 /usr/local/libexec/sshbite/sshbite-gate
 root 755 /usr/local/libexec/sshbite/sshbite-resolve
 
 ### b1: lab/installed.sh apply B 172.30.2.5
+usermod: no changes
 /etc/sudoers.d/sshbite: parsed OK
 root 755 /usr
 root 755 /usr/local
@@ -59,6 +65,7 @@ root 755 /usr/local/libexec/sshbite/sshbite-gate
 root 755 /usr/local/libexec/sshbite/sshbite-resolve
 
 ### b2: lab/installed.sh apply B 172.30.2.5
+usermod: no changes
 /etc/sudoers.d/sshbite: parsed OK
 root 755 /usr
 root 755 /usr/local
@@ -69,6 +76,7 @@ root 755 /usr/local/libexec/sshbite/sshbite-gate
 root 755 /usr/local/libexec/sshbite/sshbite-resolve
 
 ### b3: lab/installed.sh apply C 172.30.2.5
+usermod: no changes
 /etc/sudoers.d/sshbite: parsed OK
 root 755 /usr
 root 755 /usr/local
@@ -79,6 +87,7 @@ root 755 /usr/local/libexec/sshbite/sshbite-gate
 root 755 /usr/local/libexec/sshbite/sshbite-resolve
 
 ### b4: lab/installed.sh apply B 172.30.2.5
+usermod: no changes
 /etc/sudoers.d/sshbite: parsed OK
 root 755 /usr
 root 755 /usr/local
@@ -89,6 +98,7 @@ root 755 /usr/local/libexec/sshbite/sshbite-gate
 root 755 /usr/local/libexec/sshbite/sshbite-resolve
 
 ### b5: lab/installed.sh apply B 172.30.2.5
+usermod: no changes
 /etc/sudoers.d/sshbite: parsed OK
 root 755 /usr
 root 755 /usr/local
@@ -99,6 +109,7 @@ root 755 /usr/local/libexec/sshbite/sshbite-gate
 root 755 /usr/local/libexec/sshbite/sshbite-resolve
 
 ### c1: lab/installed.sh apply C 172.30.3.13
+usermod: no changes
 /etc/sudoers.d/sshbite: parsed OK
 root 755 /usr
 root 755 /usr/local
@@ -109,6 +120,7 @@ root 755 /usr/local/libexec/sshbite/sshbite-gate
 root 755 /usr/local/libexec/sshbite/sshbite-resolve
 
 ### c2: lab/installed.sh apply B 172.30.3.21
+usermod: no changes
 /etc/sudoers.d/sshbite: parsed OK
 root 755 /usr
 root 755 /usr/local
@@ -119,6 +131,7 @@ root 755 /usr/local/libexec/sshbite/sshbite-gate
 root 755 /usr/local/libexec/sshbite/sshbite-resolve
 
 ### jump: lab/installed.sh apply A 172.30.0.0/16
+usermod: no changes
 /etc/sudoers.d/sshbite: parsed OK
 root 755 /usr
 root 755 /usr/local
@@ -129,6 +142,7 @@ root 755 /usr/local/libexec/sshbite/sshbite-gate
 root 755 /usr/local/libexec/sshbite/sshbite-resolve
 
 ### r1: lab/installed.sh apply A 172.30.0.0/16
+usermod: no changes
 /etc/sudoers.d/sshbite: parsed OK
 root 755 /usr
 root 755 /usr/local

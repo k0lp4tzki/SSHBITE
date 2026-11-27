@@ -45,6 +45,15 @@ case "${1:-}" in
 apply)
   D=$2
   LINE=$3
+  # check-4 finding 3: a line that allows forwarding (variants A and C) must forbid remote listeners
+  case "$LINE" in
+    *port-forwarding*)
+      case "$LINE" in
+        *'permitlisten="localhost:22"'*) ;;
+        *) echo 'authorized_keys line with port-forwarding but without permitlisten="localhost:22"' >&2; exit 1 ;;
+      esac
+      ;;
+  esac
   ( cd "$D" && sha256sum -c --quiet SHA256SUMS )
   backup
   # every other sudoers rule for the audit account goes (e.g. NOPASSWD: ALL, /bin/sh -s)
@@ -54,6 +63,7 @@ apply)
   done
   # --- the steps of docs/install.md ---
   id sshbite >/dev/null || useradd -m -s /bin/sh sshbite
+  usermod -s /bin/sh sshbite                                   # install.md: also for an existing account
   case "$(getent shadow sshbite | cut -d: -f2)" in            # the lab account is locked already
     '!'* | '*'*) ;;
     *) usermod -L sshbite ;;

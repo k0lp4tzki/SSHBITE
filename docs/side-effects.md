@@ -55,7 +55,7 @@ this account). With `privilege.mode: none` SSHBITE never calls sudo (all hosts b
 - **With `privilege.mode: installed`** the sudo log gets two entries per host instead: the probe
   `sudo -n -l <collector>` and the collector run `sudo -n <collector>`; `config validate --connect` adds
   the same two on the entry host. The gate `sshbite-gate` logs every request of the audit key to syslog
-  facility `authpriv` with the tag `sshbite-gate`: `allowed: probe`, `allowed: collect` and
+  facility `authpriv` with the tag `sshbite-gate` (each `logger` call gets at most 2 s): `allowed: probe`, `allowed: collect` and
   `allowed: resolve` (info) – three to four lines per host and scan – and `denied: <command>` (warning)
   for anything else. A `denied` line from the SSHBITE machine's address during a scan means a config or
   installation mismatch; at any other time it is worth a look. No sudo password is ever sent, so the

@@ -8,27 +8,41 @@
 #   {resolve_path}   name resolution; the names on stdin are data
 # Everything else - a login shell, any other command, a script on stdin, sftp/scp, extra arguments -
 # is refused with exit 126 and logged to authpriv. This script never reads stdin.
+# Time limits (coreutils timeout, where installed): logger gets 2 s, so that a hanging syslog never holds
+# a request; the collector run gets 3600 s (the largest limits.host_timeout SSHBITE accepts), then sudo
+# gets TERM and passes it on to the collector, KILL 5 s later - no root process outlives a broken scan.
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 LC_ALL=C
 export PATH LC_ALL
 umask 077
 SUDO=/usr/bin/sudo
 [ -x "$SUDO" ] || SUDO=/bin/sudo
+TIMEOUT=/usr/bin/timeout
+[ -x "$TIMEOUT" ] || TIMEOUT=/bin/timeout
 C=${SSH_ORIGINAL_COMMAND-}
 
+log() {
+  if [ -x "$TIMEOUT" ]; then
+    "$TIMEOUT" -k 1 2 logger -p "$1" -t sshbite-gate -- "$2" </dev/null >/dev/null 2>&1 || :
+  else
+    logger -p "$1" -t sshbite-gate -- "$2" </dev/null >/dev/null 2>&1 || :
+  fi
+}
+
 if [ "$C" = "sudo -n -l {collector_path}" ]; then
-  logger -p authpriv.info -t sshbite-gate -- "allowed: probe" 2>/dev/null || :
+  log authpriv.info "allowed: probe"
   exec "$SUDO" -n -l {collector_path} </dev/null
 fi
 if [ "$C" = "sudo -n {collector_path}" ]; then
-  logger -p authpriv.info -t sshbite-gate -- "allowed: collect" 2>/dev/null || :
-  exec "$SUDO" -n {collector_path} </dev/null
+  log authpriv.info "allowed: collect"
+  [ -x "$TIMEOUT" ] || exec "$SUDO" -n {collector_path} </dev/null
+  exec "$TIMEOUT" -k 5 3600 "$SUDO" -n {collector_path} </dev/null
 fi
 if [ "$C" = "{resolve_path}" ]; then
-  logger -p authpriv.info -t sshbite-gate -- "allowed: resolve" 2>/dev/null || :
+  log authpriv.info "allowed: resolve"
   exec {resolve_path}
 fi
 SHOWN=$(printf '%s' "$C" | tr -c '[:print:]' '?' | cut -c1-200)
-logger -p authpriv.warning -t sshbite-gate -- "denied: $SHOWN" 2>/dev/null || :
+log authpriv.warning "denied: $SHOWN"
 echo 'sshbite-gate: denied (command not allowed)' >&2
 exit 126

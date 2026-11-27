@@ -7,6 +7,7 @@ depth 1: 0 queued, 0 running, 3 done
 depth 2: 5 queued, 0 running, 3 done
 depth 2: 0 queued, 0 running, 8 done
 depth 3: 4 queued, 0 running, 8 done
+depth 3: 0 queued, 3 running, 9 done
 depth 3: 0 queued, 2 running, 10 done
 depth 3: 0 queued, 1 running, 11 done (1 unreachable)
 depth 3: 0 queued, 0 running, 12 done (1 unreachable)

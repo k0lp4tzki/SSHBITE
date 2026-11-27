@@ -138,7 +138,7 @@ _EOF_MARK = "SSHBITE_EXPORT_EOF"
 def installed_line(variant: str, source: str) -> str:
     """One authorized_keys line of the exported template (variant A, B or C) with from= and the audit key."""
     pub = " ".join((KEYS / "audit_ed25519.pub").read_text().split()[:2])
-    fwd = 'port-forwarding,permitopen="*:22",' if variant in ("A", "C") else ""
+    fwd = 'port-forwarding,permitopen="*:22",permitlisten="localhost:22",' if variant in ("A", "C") else ""
     return f'restrict,{fwd}from="{source}",{GATE_OPTS} {pub} sshbite-audit'
 
 

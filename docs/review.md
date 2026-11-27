@@ -57,23 +57,26 @@ asks for. It is a short POSIX sh script, written by `sshbite collector export`; 
 - sets `PATH=/usr/sbin:/usr/bin:/sbin:/bin`, `LC_ALL=C` and `umask 077`;
 - compares `SSH_ORIGINAL_COMMAND` with `[ "$C" = "…" ]` against exactly the three strings of the table –
   no pattern, no `case`, no `eval`, no `sh -c`;
-- runs `exec "$SUDO" -n -l P </dev/null`, `exec "$SUDO" -n P </dev/null` or `exec …/sshbite-resolve`
-  (stdin passed through for the names) – the sudo calls get `/dev/null` as stdin, so nothing a client
-  sends can reach them;
+- runs `exec "$SUDO" -n -l P </dev/null`, `exec "$TIMEOUT" -k 5 3600 "$SUDO" -n P </dev/null` (plain
+  `exec "$SUDO" -n P </dev/null` where coreutils `timeout` is missing) or `exec …/sshbite-resolve` (stdin
+  passed through for the names) – the sudo calls get `/dev/null` as stdin, so nothing a client sends can
+  reach them. After 3600 s (the largest `limits.host_timeout`) sudo gets TERM and passes it on to the
+  collector, KILL follows 5 s later: no root process outlives a broken scan for long;
 - refuses everything else – an empty or missing command (interactive login), subsystems such as sftp,
   the commands of the legacy modes, extra arguments, other spacing, appended `; …` – with
   `sshbite-gate: denied (command not allowed)` on stderr and **exit 126**;
 - logs every request to syslog `authpriv` (`allowed: probe|collect|resolve`, or `denied: <command>`
-  with non-printable characters as `?`, at most 200 characters); a missing syslog does not change the
-  result;
+  with non-printable characters as `?`, at most 200 characters); `logger` runs under `timeout -k 1 2`, so a
+  hanging syslog delays a request by at most 3 s, and a missing syslog does not change the result;
 - never reads or hashes stdin.
 
 The sudoers file allows the account exactly one command: `sshbite ALL=(root) NOPASSWD: P ""` – P without
 arguments. `restrict` in `authorized_keys` disables pty, agent and X11 forwarding; only the entry host (and
-hops) may forward, and only to port 22 (`permitopen`). The lab test `tests/e2e/test_lab_installed.py`
+hops) may forward, and only to port 22 (`permitopen`); they may not open a remote TCP listener
+(`permitlisten="localhost:22"`, see [install.md](install.md#the-authorized_keys-variants)). The lab test `tests/e2e/test_lab_installed.py`
 (i04) tries a shell with and without pty, `/bin/sh -s` with a script, both legacy sudo commands,
-`sudo -n -l P; id`, `sudo -n P x`, `sudo -n /bin/sh`, sftp, a forward to another port and a login from
-another address: all are refused.
+`sudo -n -l P; id`, `sudo -n P x`, `sudo -n /bin/sh`, sftp, a forward to another port, remote forwards
+(`ssh -R`) and a login from another address: all are refused.
 
 On the entry host and on hops of a chained route SSHBITE additionally opens `direct-tcpip` channels (port
 forwarding) to the next host. It does **not** use the hop's ssh client, so no `known_hosts` file on a hop
@@ -183,11 +186,12 @@ The collector runs as root, but it does not read other users' files as root. Eve
 user's `~/.ssh` and every `AuthorizedKeysFile` path of that user (also absolute ones such as
 `/etc/ssh/authorized_keys/%u`) is read **as that user** – the way sshd itself reads authorized_keys:
 
-- the helpers `uls`, `ustat`, `ulsnd`, `uhead`, `utest` and `ukg` at the top of `collect.sh` run `ls -A`,
-  `stat` (and its `ls -lnd` fallback), `head`, `test -r` and `ssh-keygen -y/-l` as
-  `setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs -- CMD …` with the account's uid,
-  gid and groups from passwd. `setpriv` (util-linux) only switches ids; it opens no PAM session and logs
-  nothing. `--no-new-privs` blocks setuid programs. `runuser` and `su` are forbidden by the lint;
+- the helpers `uls`, `ustat`, `ulsnd`, `uread`, `utest` and `ukg` at the top of `collect.sh` run `ls -A`,
+  `stat` (and its `ls -lnd` fallback), `head -c`, `test -r/-x/-f` and `ssh-keygen -y/-l` as
+  `timeout -k 1 5 setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs -- CMD …` with the
+  account's uid, gid and groups from passwd. `setpriv` (util-linux) only switches ids; it opens no PAM
+  session and logs nothing. `--no-new-privs` blocks setuid programs. `runuser` and `su` are forbidden by
+  the lint, and the lint allows `setpriv` only behind exactly `timeout -k 1 5`;
 - this applies when the collector runs as root and the account's uid is not 0. Root's own home is read
   as root; an unprivileged collector reads everything as itself, as before;
 - only the shell tests `[ -L ] [ -d ] [ -f ] [ -e ]` run as root – they look at metadata, never at
@@ -195,15 +199,36 @@ user's `~/.ssh` and every `AuthorizedKeysFile` path of that user (also absolute 
 - a file the user cannot read (e.g. a root-owned 0600 `authorized_keys2` in the home) is reported as
   `unreadable by account` and shown on the host as the reason `unreadable by account: PATH`; the host
   stays `ok`. sshd cannot use such a file either;
-- `ssh-keygen` run by a key's owner refuses a private key that group or others may read ("bad
-  permissions", as `ssh` does). Only then the account reads the key once more (`uhead`, at most
-  64 KiB) and pipes it to the collector's own `ssh-keygen -y -P '' -f /dev/stdin`. That `ssh-keygen`
-  opens no path below `~`, only the pipe, so the race below gains nothing; the key never leaves the host
-  and only its public half is printed. Such a key is therefore still reported as *unencrypted* and with
-  *bad permissions*. If the key has a passphrase, `ssh-keygen` cannot use the pipe (it opens the key a
-  second time to try the passphrase), so for an *encrypted* key that others may read the passphrase
-  state is shown as *unknown*; fingerprint and *bad permissions* are still reported. The lint allows `-f /dev/stdin` in exactly this one pipeline
-  (`uhead N PATH 2>/dev/null | head -c 65536 | ssh-keygen -y -P "" -f /dev/stdin`);
+- `ssh-keygen` refuses a private key that group or others may read when its *real* uid is the key's owner
+  ("bad permissions", as `ssh` does). Only then it runs once more as
+  `timeout -k 1 5 setpriv --ruid="$nbd" --euid="$uid" --regid="$gid" --clear-groups --no-new-privs --
+  ssh-keygen -y -P '' -f PATH`: real uid `nobody` (from passwd), effective and saved uid the account, no
+  supplementary groups, no capability. It opens the file with the account's rights (the race below gains
+  nothing) and accepts it, because its real uid is not the owner. No `ssh-keygen` parses a user's bytes as
+  root, and none reads stdin (the lint refuses `/dev/stdin`, `-` and `/dev/fd/N` for `ssh-keygen`). The key
+  never leaves the host; only its public half is printed. Such a key is therefore still reported as
+  *unencrypted* and with *bad permissions*; for an *encrypted* key that others may read the passphrase
+  state stays *unknown* (only a success replaces the first answer). Without an account `nobody` (uid ≠ 0)
+  in passwd the second try is skipped and the key is reported as *bad permissions* only. (The earlier
+  pipe into the collector's own `ssh-keygen` cannot be moved to the account: the pipe belongs to root and
+  the account may not reopen `/dev/stdin` – checked on Debian 12 and AlmaLinux 9.);
+- **time limit:** a user can swap a file for a FIFO after the collector's checks (`[ -f ]` as root,
+  `test -f` as the user right before the read); opening it blocks for ever. Every read as the account
+  therefore ends after 5 s (TERM, KILL 1 s later); the file is reported as `read timed out` and the run
+  goes on with the next file. A local file of at most 1 MiB is read in milliseconds; 5 s leaves room for
+  a loaded host or a network home. After two timeouts the rest of that account is skipped
+  (`time budget exceeded`), so one account delays a run by at most about 12 s. `read timed out` is shown
+  on the host as a reason, the host stays `ok`; `time budget exceeded` makes it `partial`. Without
+  `timeout` (coreutils) the collector reads nothing in user homes (`timeout (coreutils) missing: files in
+  user homes not read`, `partial`). In mode installed the gate also limits the whole collector run to
+  3600 s (the largest `limits.host_timeout`), after which sudo passes TERM on to the collector;
+- **output budget:** as before, a file is read up to 1 MiB (else `too large`) and 5000 lines; now this is
+  checked on the bytes read, not only on `stat`. In addition one account may print at most 4 MiB of file
+  content (four files at the file limit – a real account has a few KiB, a large known_hosts about
+  1 MiB). Past that the rest of the account is skipped with `output budget exceeded` for its `~/.ssh`, the
+  host is `partial`, and the next account is read in full: a user cannot push accounts later in
+  `/etc/passwd` out of the transport limit (`limits.max_output_mb`, 32 MiB). The `AuthorizedKeysFile`
+  files of an account are read first, so a flood elsewhere in its `~/.ssh` cannot hide them;
 - **fail closed:** without `/usr/bin/setpriv` (or `/bin/setpriv`) the collector reads nothing in user
   homes – no fallback to root – and the host becomes `partial` with
   `setpriv (util-linux) missing: files in user homes not read`. Host keys, sshd and the shadow summary
@@ -221,6 +246,13 @@ loops. 200 reads as root (the control) must see the canary at least once; 200 co
 installed gate must not see it a single time, and at least one of them must have met the swapped state
 (`symlink not followed` or `unreadable by account`). The counts are in
 `evidence/hardening/race-count.md`.
+
+The FIFO variant (`i09_fifo_race`, `lab/race.sh start fifo`) flips `~/.ssh/known_hosts` between a file, a
+symlink and a FIFO. The control (root, `head` under `timeout 2`) must block at least once; 200 collector runs
+through the gate per host must all end with `#END` within 30 s, at least one must report `read timed out`,
+and afterwards no root process of `sudo` or `sshbite-collect` may be left on the host
+(`evidence/hardening/race-count-fifo.md`). `i10_flood` floods `~/.ssh` of one user with 40 files of 1 MB and
+checks that an account later in passwd is complete and the host is `partial` with `output budget exceeded`.
 
 ## Residual risk: the audit key reveals the inventory
 

@@ -30,6 +30,9 @@ from .transport import Hop, HostKeyPolicy, RouteError, Transport, run
 log = logging.getLogger("sshbite.crawl")
 
 SETPRIV_MISSING = "setpriv (util-linux) missing: files in user homes not read"
+TIMEOUT_MISSING = "timeout (coreutils) missing: files in user homes not read"
+# collector reasons (#X) after which the rest of an account was skipped (check-4 findings 1 and 2)
+INCOMPLETE_REASONS = ("output budget exceeded", "time budget exceeded")
 CONNECTED_STATUSES = ("ok", "partial", "unreachable", "timeout", "auth_failed", "hostkey_mismatch",
                       "hostkey_unknown", "collector_error", "output_limit")
 DATA_STATUSES = ("ok", "partial", "collector_error", "output_limit")
@@ -594,15 +597,24 @@ class Scanner:
         else:
             t.status = "ok"
         if t.status in ("ok", "partial", "output_limit"):
-            # spec 7.3: the collector ran as root without setpriv and read nothing in user homes
-            if c.value("setpriv") == "no":
-                if t.status == "ok":
-                    t.status = "partial"
-                t.partial_reasons.append(SETPRIV_MISSING)
-            # spec 7.4: files the account itself cannot read (sshd cannot use them either); the status stays
+            # spec 7.3: the collector ran as root without setpriv (or timeout) and read nothing in user homes
+            for key, text in (("setpriv", SETPRIV_MISSING), ("timeout", TIMEOUT_MISSING)):
+                if c.value(key) == "no":
+                    if t.status == "ok":
+                        t.status = "partial"
+                    t.partial_reasons.append(text)
+            # check-4: an account whose files exceeded the collector's output or time budget was not read to the
+            # end - the inventory of the host is incomplete (partial, like the transport's output limit)
             for path, reason in t.data.unreadable:
-                if reason == "unreadable by account":
-                    t.partial_reasons.append(f"unreadable by account: {path}")
+                if reason in INCOMPLETE_REASONS:
+                    if t.status == "ok":
+                        t.status = "partial"
+                    t.partial_reasons.append(f"{reason}: {path}")
+            # spec 7.4: files the account itself cannot read (sshd cannot use them either), and single files
+            # whose read as the account timed out (e.g. swapped for a FIFO): reasons, the status stays
+            for path, reason in t.data.unreadable:
+                if reason in ("unreadable by account", "read timed out"):
+                    t.partial_reasons.append(f"{reason}: {path}")
         if outcome.privilege == "unprivileged" or t.status in ("partial", "output_limit"):
             for path, reason in t.data.unreadable:
                 if reason == "unreadable":

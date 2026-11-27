@@ -19,6 +19,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import time
 from pathlib import Path
 
 import asyncssh
@@ -257,6 +258,8 @@ def test_i03_scan_installed(ctl, cfg, state, evidence):
 # ---- i04: the attack matrix with the audit key
 
 DENIED = "sshbite-gate: denied (command not allowed)"
+RFWD = [("", 0), ("localhost", 22), ("127.0.0.1", 1), ("localhost", 40000)]
+RFWD_SOCK = "/tmp/sshbite-i04-rfwd.sock"
 SUDO_CMDS = commands("sudo")
 ATTACKS = [   # (label, command, stdin); None = no command (login shell with a PTY)
     ("id", "id", None),
@@ -355,6 +358,26 @@ async def _matrix(entry, targets: list[str]) -> list[dict]:
                     ok = variant_a and fport == 22
                     add(target, f"port forward to {fhost}:{fport}", f"(direct-tcpip {fhost}:{fport})", rc, "", err,
                         "allowed" if ok else "denied-forward")
+                # check-4 finding 3: no remote listener (ssh -R) - permitlisten="localhost:22" on A and C, restrict on B
+                for lhost, lport in RFWD:
+                    try:
+                        listener = await conn.forward_remote_port(lhost, lport, "127.0.0.1", 22)
+                        rc, err = 0, f"remote listener opened on port {listener.get_port()}"
+                        listener.close()
+                    except asyncssh.ChannelListenError as exc:
+                        rc, err = None, f"remote listener refused: {exc}"
+                    add(target, f"remote forward {lhost or '*'}:{lport}", f"(tcpip-forward {lhost or '*'}:{lport})",
+                        rc, "", err, "denied-listen")
+                # a remote listener on a Unix socket is not covered by permitlisten (OpenSSH): recorded, see
+                # docs/install.md (sshd_config Match block); the socket is removed again below
+                try:
+                    listener = await conn.forward_remote_path(RFWD_SOCK, "/nonexistent")
+                    rc, err = 0, "unix socket listener opened (sshd's StreamLocalBindMask 0177: only sshbite and root)"
+                    listener.close()
+                except asyncssh.ChannelListenError as exc:
+                    rc, err = None, f"remote listener refused: {exc}"
+                add(target, "remote forward to a Unix socket", f"(streamlocal-forward {RFWD_SOCK})", rc, "", err,
+                    "recorded-streamlocal")
             finally:
                 if conn_cm is not None:
                     await conn_cm.__aexit__(None, None, None)
@@ -370,9 +393,13 @@ async def _matrix(entry, targets: list[str]) -> list[dict]:
     return rows
 
 
-def test_i04_attack_matrix(entry, evidence):
+def test_i04_attack_matrix(entry, ctl, evidence):
     targets = [h for h in ("jump", "a1", "r1") if h in HOSTS]
-    rows = asyncio.run(_matrix(entry, targets))
+    try:
+        rows = asyncio.run(_matrix(entry, targets))
+    finally:
+        for h in targets:
+            ctl.run_text(h, f"rm -f {RFWD_SOCK}\n")
     lines = ["# Attack matrix (i04): the audit key against the installed gate", "",
              "Each row is one SSH request with the audit key `lab/keys/audit_ed25519`; a1 is reached through jump,",
              "r1 (AlmaLinux 9, variant A like jump) directly from the scanner.",
@@ -381,7 +408,10 @@ def test_i04_attack_matrix(entry, evidence):
         rc = "-" if r["rc"] is None else str(r["rc"])
         lines.append(f"| {r['host']} | `{r['command']}` | {rc} | {r['stderr'] or '(empty)'} |")
     lines += ["", "Exit `-`: no process was started - sshd refused the PTY, the forwarding channel or the login itself.",
-              "sftp: sshd does not forward a subsystem's stderr; exit 126 is the gate's refusal."]
+              "sftp: sshd does not forward a subsystem's stderr; exit 126 is the gate's refusal.",
+              "Remote forwards (check-4 finding 3): `permitlisten=\"localhost:22\"` in variants A and C (jump, r1), "
+              "`restrict` without `port-forwarding` in B (a1). A listener on a Unix socket is not covered by "
+              "permitlisten; it is recorded here and closed by the sshd_config block in docs/install.md."]
     _write(evidence, "attack-matrix.md", "\n".join(lines) + "\n")
     for r in rows:
         what = (r["host"], r["label"], r["rc"], r["stderr"])
@@ -395,6 +425,10 @@ def test_i04_attack_matrix(entry, evidence):
             assert r["rc"] is None and r["stderr"].startswith("PTY request refused by sshd"), what
         elif r["expect"] == "denied-forward":
             assert r["rc"] is None and r["stderr"].startswith("channel open refused"), what
+        elif r["expect"] == "denied-listen":
+            assert r["rc"] is None and r["stderr"].startswith("remote listener refused"), what
+        elif r["expect"] == "recorded-streamlocal":
+            pass
         elif r["expect"] == "denied-login":
             assert r["rc"] is None and r["stderr"].startswith("permission denied"), what
         elif r["label"] == "probe":
@@ -644,6 +678,128 @@ def test_i08_race(entry, ctl, state, evidence):
         assert lk == 0, f"{host}: the collector printed the canary in {lk} of {RACE_RUNS} runs"
         assert win >= 1, f"{host}: no collector run met the swapped state"
         assert comp == RACE_RUNS, f"{host}: {RACE_RUNS - comp} incomplete collector outputs"
+
+
+# ---- i09 (check-4 finding 1): the FIFO race, on r1 (EL9) and a5 (Debian 12)
+
+RUN_DEADLINE = 30   # s per collector run: the default limits.host_timeout; a run blocked on a FIFO never ends
+
+
+async def _collector_runs_deadline(entry, target: str, n: int) -> list[str | None]:
+    """N x `sudo -n P` through the gate, each with RUN_DEADLINE; None for a run that did not end in time."""
+    key = asyncssh.read_private_key(str(L.KEYS / "audit_ed25519"))
+    host, port = entry
+    async with asyncssh.connect(host, port, username="sshbite", client_keys=[key], known_hosts=_known("jump"),
+                                config=None, agent_path=None, connect_timeout=15) as jconn:
+        if target == "r1":
+            thost, tport = L.find_r1()
+            cm = asyncssh.connect(thost, tport, username="sshbite", client_keys=[key], known_hosts=_known("r1"),
+                                  config=None, agent_path=None, connect_timeout=15)
+        else:
+            cm = asyncssh.connect(LAB_HOSTS[target][0], 22, tunnel=jconn, username="sshbite", client_keys=[key],
+                                  known_hosts=_known(target), config=None, agent_path=None, connect_timeout=15)
+        async with cm as conn:
+            sem = asyncio.Semaphore(8)
+
+            async def one():
+                async with sem:
+                    try:
+                        r = await asyncio.wait_for(conn.run(f"sudo -n {P}", check=False, stdin=asyncssh.DEVNULL),
+                                                   RUN_DEADLINE)
+                    except asyncio.TimeoutError:
+                        return None
+                    assert r.exit_status == 0, (r.exit_status, r.stderr)
+                    return r.stdout
+
+            return list(await asyncio.gather(*(one() for _ in range(n))))
+
+
+def test_i09_fifo_race(entry, ctl, state, evidence):
+    """racer flips ~/.ssh/known_hosts between a file, a symlink to a root-only canary and a FIFO (mv -T). 200
+    collector runs through the gate per host: none hangs, each ends with #END within RUN_DEADLINE, no canary;
+    afterwards no root process of sudo or sshbite-collect is left on the host."""
+    rows = []
+    for host in ("r1", "a5"):
+        print(ctl.run(host, "race.sh", "start fifo"))
+        try:
+            control = ctl.run(host, "race.sh", f"count {RACE_RUNS}").strip()
+            t0 = time.monotonic()
+            outs = asyncio.run(_collector_runs_deadline(entry, host, RACE_RUNS))
+            took = time.monotonic() - t0
+            left = ctl.run(host, "race.sh", "procs").strip()
+        finally:
+            print(ctl.run(host, "race.sh", "stop"))
+        hits, hung = (int(x.split("/")[0]) for x in control.split()[1::2])
+        done = [o for o in outs if o is not None]
+        hangs = len(outs) - len(done)
+        complete = sum(o.startswith(f"#SSHBITE 1 {B}\n") and "\n#END " in o for o in done)
+        leaked = sum("RACE-CANARY" in o for o in done)
+        timed_out = sum(sum(ln.endswith("\tread timed out") for ln in _racer_lines(o)) for o in done)
+        runs_with_timeout = sum(any(ln.endswith("\tread timed out") for ln in _racer_lines(o)) for o in done)
+        reasons: dict[str, int] = {}
+        for o in done:
+            for ln in _racer_lines(o):
+                if ln.startswith("#X"):
+                    reasons[ln.split("\t", 1)[1]] = reasons.get(ln.split("\t", 1)[1], 0) + 1
+        rows.append((host, hits, hung, hangs, complete, leaked, timed_out, runs_with_timeout, took, left, reasons))
+    lines = ["# FIFO race (i09, check-4 finding 1): control and collector, per host", "",
+             "`lab/race.sh start fifo` on the host: user `racer` flips `~/.ssh/known_hosts` between a regular file, a",
+             "symlink to `/root/race-canary` (0600 root) and a FIFO that nobody writes, each with `mv -T`, in an endless",
+             "loop.", "",
+             f"- **Control**: {RACE_RUNS} x `head -n 5 ~racer/.ssh/known_hosts` as root, each under `timeout 2`: "
+             "how many saw the canary, how many blocked on the FIFO (hung).",
+             f"- **Collector**: {RACE_RUNS} x `sudo -n {P}` with the audit key through the installed gate, 8 at a time, "
+             f"each with a deadline of {RUN_DEADLINE} s; a run that misses it counts as a hang.",
+             "- **Left over**: `lab/race.sh procs` right after the runs - every root process whose command line names "
+             "sudo or sshbite-collect.", "",
+             "| Host | Control: canary | Control: hung | Collector runs | Hangs | Complete (#END) | Canary in output | "
+             "`read timed out` lines (runs) | Wall time | Root processes left | #X reasons for racer |",
+             "|---|---|---|---|---|---|---|---|---|---|---|"]
+    for host, hits, hung, hangs, comp, lk, tmo, tmo_runs, took, left, reasons in rows:
+        rs = ", ".join(f"{k}: {v}" for k, v in sorted(reasons.items())) or "-"
+        lines.append(f"| {host} | {hits}/{RACE_RUNS} | {hung}/{RACE_RUNS} | {RACE_RUNS} | {hangs} | {comp}/{RACE_RUNS} | "
+                     f"{lk} | {tmo} ({tmo_runs} runs) | {took:.0f} s | {left or 'none'} | {rs} |")
+    _write(evidence, "race-count-fifo.md", "\n".join(lines) + "\n")
+    print("\n".join(lines))
+    for host, _hits, hung, hangs, comp, lk, tmo, _tr, _took, left, _r in rows:
+        assert hung >= 1, f"{host}: the control never blocked on the FIFO - the race is not proven"
+        assert hangs == 0, f"{host}: {hangs} collector runs did not end within {RUN_DEADLINE} s"
+        assert comp == RACE_RUNS, f"{host}: {RACE_RUNS - comp} incomplete collector outputs"
+        assert lk == 0, f"{host}: canary in the collector output"
+        assert tmo >= 1, f"{host}: no read met the FIFO - the time limit is not proven"
+        assert left == "", f"{host}: root processes left over:\n{left}"
+
+
+# ---- i10 (check-4 finding 2): the output flood on a5
+
+def test_i10_flood(ctl, cfg, state, evidence):
+    """racer floods ~/.ssh with 40 x 1 MB .pub files; zvictim (later in /etc/passwd) has one key. A full installed
+    scan: a5 is partial (not output_limit) with 'output budget exceeded: /home/racer/.ssh', zvictim's key is there."""
+    print(ctl.run("a5", "race.sh", "start flood"))
+    try:
+        proc, sid, diff = _scan(ctl, cfg, "installed", "installed-flood", evidence)
+    finally:
+        print(ctl.run("a5", "race.sh", "stop"))
+    _write(evidence, "console-scan-installed-flood.txt",
+           "$ sshbite scan --label installed-flood   # a5: racer floods ~/.ssh, zvictim later in passwd\n"
+           + proc.stdout + proc.stderr)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert diff == "", diff
+    state["flood"] = sid
+    conn = _db(cfg)
+    r = _rows(conn, sid)["a5"]
+    reasons = json.loads(r["partial_reasons"])
+    _write(evidence, "scans-show-installed-flood.txt", L.sshbite(cfg["installed"], "scans", "show", str(sid)).stdout)
+    assert (r["status"], r["privilege"]) == ("partial", "root"), (r["status"], r["error"], reasons)
+    assert "output budget exceeded: /home/racer/.ssh" in reasons, reasons
+    ak = conn.execute("SELECT username, file FROM authorized_entry WHERE scan_id=? AND host_id=?",
+                      (sid, r["host_id"])).fetchall()
+    assert ("zvictim", "/home/zvictim/.ssh/authorized_keys") in [tuple(x) for x in ak], ak
+    # the rest of the lab as in the installed scan
+    rows = _rows(conn, sid)
+    for name, (status, *_rest) in S1["hosts"].items():
+        if name != "a5" and status in ("ok", "partial"):
+            assert (rows[name]["status"], rows[name]["privilege"]) == ("ok", "root"), name
 
 
 def test_i99_remove(ctl, state, evidence):

@@ -1,5 +1,5 @@
 host,ips,status,privilege,depth,discovered_via,route,os,in_hosts,in_users,in_keys,in_unknown_keys,out_hosts,out_users,out_keys,findings_critical,findings_high,reasons,route_attempts
-jump,172.30.2.5;172.30.1.5,ok,root,0,entry,jump,Debian GNU/Linux 12 (bookworm),0,0,0,0,6,8,2,0,0,,jump: ok
+jump,172.30.1.5;172.30.2.5,ok,root,0,entry,jump,Debian GNU/Linux 12 (bookworm),0,0,0,0,6,8,2,0,0,,jump: ok
 203.0.113.10,203.0.113.10,out_of_scope,,1,jump /home/ops/.ssh/config:7,,,0,0,0,0,0,0,0,0,0,,
 a1,172.30.1.11,ok,root,1,jump /home/ops/.ssh/config:2,jump -> a1,Debian GNU/Linux 12 (bookworm),1,1,2,0,2,2,1,0,2,,jump -> a1: ok
 b1,172.30.2.11,ok,root,1,jump /home/ops/.ssh/config:4,jump -> b1,Debian GNU/Linux 12 (bookworm),1,1,3,1,0,0,0,1,3,,jump -> b1: ok

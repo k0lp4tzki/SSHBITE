@@ -210,7 +210,7 @@ docker run --rm --user "$(id -u)" -v "$PWD/sshbite-export:/out" sshbite:<version
 |---|---|
 | `sshbite-collect` | the collector: `#!/bin/sh` and `collect.sh` byte for byte (the same text `sshbite collector show` prints) |
 | `sshbite-resolve` | the name resolution: `#!/bin/sh` and `resolve.sh` |
-| `sshbite-gate` | the forced command; read it – it is about 35 lines |
+| `sshbite-gate` | the forced command; read it – it is about 50 lines |
 | `sudoers.d-sshbite` | the one sudo rule |
 | `authorized_keys.sshbite` | the three key-line variants (A, B, C below) |
 | `SHA256SUMS` | the SHA-256 of the five files |
@@ -224,6 +224,7 @@ way; the commands below show what it has to do.
 
 ```sh
 id sshbite || useradd -m -s /bin/sh sshbite; passwd -l sshbite     # no sudo/wheel group
+usermod -s /bin/sh sshbite                  # also for an account that existed before: shell /bin/sh
 install -d -m 0755 -o root -g root /usr/local/libexec/sshbite
 install -m 0755 -o root -g root sshbite-collect sshbite-resolve sshbite-gate /usr/local/libexec/sshbite/
 install -m 0440 -o root -g root sudoers.d-sshbite /etc/sudoers.d/sshbite && visudo -cf /etc/sudoers.d/sshbite
@@ -241,6 +242,49 @@ stat -c '%U %a %n' /usr /usr/local /usr/local/libexec /usr/local/libexec/sshbite
   writable by group or others. The `stat` line checks that.
 - `authorized_keys.sshbite.edited` is your copy of `authorized_keys.sshbite` with the variant for this
   host (next section). Home and `.ssh` belong to root, so the account cannot change its own keys.
+- If the account `sshbite` existed before, work through the next section as well: `useradd` leaves an
+  existing account as it is.
+
+### An account sshbite that existed before
+
+After an incident an old `sshbite` account is exactly where a leftover key or group would hide. The
+install above makes home and `.ssh` root's and replaces `authorized_keys`, but it leaves every other file,
+the groups and the login shell as they were. Check each point and remove what is left (as root):
+
+```sh
+getent passwd sshbite | cut -d: -f7       # must print /bin/sh (usermod -s /bin/sh sshbite above)
+id sshbite                                # only its own group - no sudo, wheel, admin, adm, docker, lxd, ...
+gpasswd -d sshbite wheel                  # for every other group id shows (here: wheel)
+ls -la ~sshbite ~sshbite/.ssh             # what is there
+ls -A ~sshbite/.ssh                       # must print exactly: authorized_keys
+rm -i ~sshbite/.ssh/authorized_keys2      # and every other file in .ssh (old keys, rc, environment, config)
+crontab -l -u sshbite; ps -u sshbite      # no cron jobs, no running processes of the account
+sshd -T | grep -Ei 'authorizedkeysfile|acceptenv|permituserenvironment'
+```
+
+- **`authorized_keys2` and other files in `.ssh`**: sshd reads `.ssh/authorized_keys2` by default (Debian:
+  `AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys2`). A key line there has no `command=` and
+  no `from=` – it logs in to a normal shell as `sshbite`, and that account may run the collector as root.
+  `.ssh` may hold only `authorized_keys`.
+- **Groups**: a group like `sudo` or `wheel` brings back sudo rules for all its members; `sudo -l -U
+  sshbite` must still list only the collector. Other groups (`docker`, `lxd`, `disk`, `adm`) give root or
+  root-readable data without sudo.
+- **Other files in the home** (`.profile`, `.bashrc`, …): they do not run – the forced command runs through
+  `/bin/sh -c`, which reads no start-up file, and `restrict` stops `~/.ssh/rc`. Remove them if you want a
+  clean home; they cannot be changed by the account any more (home is root's).
+- **`sshd -T`**, the expected output:
+
+  ```
+  authorizedkeysfile .ssh/authorized_keys .ssh/authorized_keys2
+  acceptenv LANG
+  acceptenv LC_*
+  permituserenvironment no
+  ```
+
+  `authorizedkeysfile` lists the files sshd reads for every account – each of them must be absent in
+  `~sshbite` except `authorized_keys` (or the path you use instead). `acceptenv` may list only locale
+  variables (`LANG`, `LC_*`, on RHEL also `LANGUAGE` and `XMODIFIERS`), or nothing; never `*`, `PATH`,
+  `LD_*` or `BASH_ENV`. `permituserenvironment` must be `no`, otherwise `~/.ssh/environment` would be read.
 
 ### The authorized_keys variants
 
@@ -249,11 +293,13 @@ One line per host, from `authorized_keys.sshbite`; replace `<AUDIT-PUBLIC-KEY>` 
 
 ```
 # (A) entry host: login only from the scanner, forwarding only to SSH ports (add permitopen="*:<PORT>" per extra SSH port)
-restrict,port-forwarding,permitopen="*:22",from="<SCANNER-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" <AUDIT-PUBLIC-KEY>
+#     permitlisten="localhost:22": no remote listener (ssh -R). authorized_keys knows no "none" here (sshd then
+#     rejects the whole line); localhost:22 is sshd's own port, so the only listener it allows can never be opened.
+restrict,port-forwarding,permitopen="*:22",permitlisten="localhost:22",from="<SCANNER-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" <AUDIT-PUBLIC-KEY>
 # (B) every other host: login only from the entry host, no forwarding
 restrict,from="<ENTRY-HOST-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" <AUDIT-PUBLIC-KEY>
-# (C) only for crawl.chain_fallback: intermediate hops, from = previous hop
-restrict,port-forwarding,permitopen="*:22",from="<PREVIOUS-HOP-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" <AUDIT-PUBLIC-KEY>
+# (C) only for crawl.chain_fallback: intermediate hops, from = previous hop; no remote listener as in (A)
+restrict,port-forwarding,permitopen="*:22",permitlisten="localhost:22",from="<PREVIOUS-HOP-IP>",command="/usr/local/libexec/sshbite/sshbite-gate" <AUDIT-PUBLIC-KEY>
 ```
 
 - **A** is for the entry host. `<SCANNER-IP>` is the address the entry host sees for the SSHBITE machine
@@ -264,6 +310,19 @@ restrict,port-forwarding,permitopen="*:22",from="<PREVIOUS-HOP-IP>",command="/us
   scan shows a host as `auth_failed` with a route over a hop, the `from=` of that host is the place to look.
 - If `sshd_config` has `AllowUsers`/`AllowGroups`, add `sshbite`. The entry host (and C hosts) need
   `AllowTcpForwarding yes` (or `local`) for this account.
+- **Remote forwarding (`ssh -R`)**: A and C allow forwarding only *to* SSH ports (`-L`, that is how SSHBITE
+  crawls). `permitlisten="localhost:22"` refuses every TCP listener the key holder asks for (checked on
+  Debian 12 / OpenSSH 9.2 and AlmaLinux 9 / OpenSSH 9.9). OpenSSH has no `authorized_keys` option for
+  listeners on a Unix socket (`ssh -R /tmp/x.sock:…`): with `port-forwarding` such a socket can be created
+  where `sshbite` may write (mode 0600 with the default `StreamLocalBindMask`, so only `sshbite` and root can
+  connect). To close that too, add to `sshd_config` on A and C hosts (checked in the lab on both systems:
+  Unix and TCP listeners refused, `-L` to port 22 and the collector work):
+
+  ```
+  Match User sshbite
+      AllowTcpForwarding local
+      AllowStreamLocalForwarding no
+  ```
 
 ### Config
 
