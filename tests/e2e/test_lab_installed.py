@@ -483,7 +483,9 @@ def test_i05_failures(ctl, cfg, state, evidence):
             r = by_addr[EXP["hosts"][h][0]]
             assert (r["status"], r["error"]) == ("collector_error", text), (h, r["status"], r["error"])
             assert text in show.stdout, h
-        assert by_addr[EXP["hosts"]["jump"][0]]["status"] == "ok"
+        # the entry by name, not by address: its connect_addr is wherever the scanner reaches it (jump:22 inside
+        # the lab network, 127.0.0.1:2222 through the published port in CI), never necessarily 172.30.1.5
+        assert _rows(conn, sid)["jump"]["status"] == "ok"
         statuses = {r["status"] for r in by_addr.values()}
         privs = {r["privilege"] for r in by_addr.values()}
         assert "partial" not in statuses and "unprivileged" not in privs, (statuses, privs)
