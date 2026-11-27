@@ -2,9 +2,10 @@
 
 # Installation und Einrichtung
 
-Diese Anleitung beschreibt den Stand von SSHBITE 0.1.0. Jeder Befehl wurde in dieser Form ausgeführt; die
-Ausgaben unter **Prüfung:** stammen aus diesen Läufen. Was nicht ausgeführt werden konnte, ist mit
-„nicht getestet“ gekennzeichnet.
+Diese Anleitung beschreibt den Stand von SSHBITE 0.1.0. Die Befehle wurden gegen die mitgelieferte
+Testumgebung ausgeführt, teils in gleichwertiger Form (zum Beispiel mit anderen Pfaden oder ohne
+Root-Rechte auf dem Scanner-Rechner); die Ausgaben unter **Prüfung:** stammen aus diesen Läufen. Was nicht
+ausgeführt wurde, ist mit „nicht getestet“ gekennzeichnet.
 
 Inhalt: [Überblick](#überblick) · [Voraussetzungen](#voraussetzungen) ·
 [Pfad A: Testumgebung](#pfad-a-ausprobieren-in-der-testumgebung) · [Pfad B: Docker](#pfad-b-docker) ·
@@ -43,7 +44,7 @@ Zielhosts, hinterlässt dort aber Log-Einträge und kann sudo-Mails und Monitori
 
 - Linux; Root-Rechte (oder sudo) für `/etc/sshbite`.
 - Pfad B: Docker Engine mit **Docker Compose v2.20 oder neuer** (die Lab-Dateien nutzen `include`).
-  Prüfen Sie mit `docker compose version`.
+  Prüfen Sie mit `docker compose version` (nicht getestet).
 - Pfad C: Python **3.12**, Node **22** mit npm, git. (Getestet mit Python 3.12.16 und Node 22.23.5.
   Python 3.13: siehe [Pfad C](#pfad-c-nativ-mit-pip-und-systemd).)
 - `ssh-keygen`, `ssh-keyscan` (Paket openssh-client) und `sha256sum` – auch bei Docker auf dem Docker-Host,
@@ -111,7 +112,7 @@ Git-Checkout.
 Öffnen Sie `http://127.0.0.1:8722/` und melden Sie sich als `admin` mit dem Passwort aus dem Log an. Sie
 sehen den Scan „lab demo“ mit **Dashboard**, **Heatmap**, **Hosts** und **Findings**.
 
-- **Eigenes Passwort:** Setzen Sie vor dem Start `export SSHBITE_DEMO_PASSWORD='<PASSWORT>'`
+- **Eigenes Passwort** (nicht getestet): Setzen Sie vor dem Start `export SSHBITE_DEMO_PASSWORD='<PASSWORT>'`
   (mindestens 12 Zeichen) oder schreiben Sie die Variable in eine Datei `.env`. Dann steht kein Passwort im
   Log. Das früher veröffentlichte `sshbite-lab-demo` wird abgelehnt.
 - **Keine Zeile `LAB DEMO LOGIN`:** Das Passwort steht nur beim ersten Start im Log, wenn es erzeugt und
@@ -305,7 +306,8 @@ docker exec -it sshbite sshbite user add admin
 
 Das Passwort wird zweimal abgefragt und braucht mindestens 12 Zeichen. Die Abfrage braucht ein Terminal:
 Verwenden Sie `-it`. In Skripten geht stattdessen
-`printf '%s\n' "$PW" | docker exec -i sshbite sshbite user add admin --password-stdin`.
+`printf '%s\n' "$PW" | docker exec -i sshbite sshbite user add admin --password-stdin`. (Ausgeführt wurde
+die Variante mit `--password-stdin`; die Abfrage im Terminal ist nicht getestet.)
 
 **Prüfung:** Die Ausgabe ist `user admin added`.
 
@@ -343,7 +345,7 @@ Ihr Scan zeigt Ihre Hosts. Ein Host mit dem Status `collector_error` ist nicht r
 Schritt 9 an. Von einem Arbeitsplatz aus öffnen Sie einen SSH-Tunnel und dann dieselbe Adresse:
 
 ```sh
-ssh -L 8722:127.0.0.1:8722 <ADMIN>@<SCANNER>
+ssh -L 8722:127.0.0.1:8722 <ADMIN>@<SCANNER>     # nicht getestet
 ```
 
 `<ADMIN>` ist Ihr Konto auf dem Scanner-Rechner, `<SCANNER>` dessen Name oder Adresse. Für den Zugriff
@@ -412,13 +414,14 @@ Kopieren Sie das Export-Verzeichnis und den öffentlichen Audit-Schlüssel auf d
 scp -r sshbite-export /etc/sshbite/audit_ed25519.pub root@<HOST>:/root/
 ```
 
-`<HOST>` ist der Zielhost. Alle weiteren Befehle dieses Abschnitts laufen **auf dem Zielhost als root**.
+`<HOST>` ist der Zielhost. In dieser Form nicht getestet: Im Lab scheiterte `scp` ohne `-O` (siehe
+[Fehlerbehebung](#fehlerbehebung)); kopiert wurde mit `scp -O` über einen Root-Zugang des Lab-Hosts. Alle weiteren Befehle dieses Abschnitts laufen **auf dem Zielhost als root**.
 
 ### Collector, Gate und sudo-Regel installieren
 
 ```sh
 cd /root/sshbite-export && sha256sum -c SHA256SUMS
-id sshbite || useradd -m -s /bin/sh sshbite; passwd -l sshbite     # keine Gruppe sudo/wheel
+id sshbite || useradd -m -s /bin/sh sshbite; passwd -l sshbite     # keine Gruppe sudo/wheel; useradd nicht getestet (Lab-Konto gab es schon)
 usermod -s /bin/sh sshbite                  # auch für ein schon vorhandenes Konto: Shell /bin/sh
 install -d -m 0755 -o root -g root /usr/local/libexec/sshbite
 install -m 0755 -o root -g root sshbite-collect sshbite-resolve sshbite-gate /usr/local/libexec/sshbite/
@@ -483,7 +486,7 @@ Match User sshbite
 Prüfen und laden Sie sshd neu. Der Dienst heißt auf Debian `ssh`, auf RHEL und AlmaLinux `sshd`:
 
 ```sh
-sshd -t && systemctl reload ssh      # RHEL/AlmaLinux: systemctl reload sshd
+sshd -t && systemctl reload ssh      # RHEL/AlmaLinux: systemctl reload sshd – reload nicht getestet (Lab ohne systemd)
 ```
 
 Steht in `sshd_config` eine Zeile `AllowUsers` oder `AllowGroups`, nehmen Sie `sshbite` dort auf.
@@ -564,10 +567,10 @@ Sie jeden Punkt und entfernen Sie, was übrig ist (als root):
 ```sh
 getent passwd sshbite | cut -d: -f7       # muss /bin/sh ausgeben (usermod -s /bin/sh sshbite oben)
 id sshbite                                # nur die eigene Gruppe – kein sudo, wheel, admin, adm, docker, lxd, ...
-gpasswd -d sshbite wheel                  # für jede weitere Gruppe, die id zeigt (hier: wheel)
+gpasswd -d sshbite wheel                  # für jede weitere Gruppe, die id zeigt (hier: wheel) – nicht getestet
 ls -la ~sshbite ~sshbite/.ssh             # was liegt dort
 ls -A ~sshbite/.ssh                       # muss genau authorized_keys ausgeben
-rm -i ~sshbite/.ssh/authorized_keys2      # und jede andere Datei in .ssh (alte Schlüssel, rc, environment, config)
+rm -i ~sshbite/.ssh/authorized_keys2      # und jede andere Datei in .ssh (alte Schlüssel, rc, environment, config) – nicht getestet
 crontab -l -u sshbite; ps -u sshbite      # keine Cron-Jobs, keine laufenden Prozesse des Kontos
 sshd -T | grep -Ei 'authorizedkeysfile|acceptenv|permituserenvironment'
 ```
@@ -733,13 +736,13 @@ bauen (unten) und es ohne Node installieren.
 Als root:
 
 ```sh
-useradd --system --home-dir /var/lib/sshbite --shell /usr/sbin/nologin sshbite-app
-install -d -m 0700 -o sshbite-app -g sshbite-app /var/lib/sshbite
+useradd --system --home-dir /var/lib/sshbite --shell /usr/sbin/nologin sshbite-app   # nicht getestet
+install -d -m 0700 -o sshbite-app -g sshbite-app /var/lib/sshbite                    # nicht getestet
 git clone https://github.com/k0lp4tzki/SSHBITE.git /opt/sshbite-src && cd /opt/sshbite-src
 python3.12 -m venv /opt/sshbite
 /opt/sshbite/bin/pip install --require-hashes -r requirements-runtime.lock
 /opt/sshbite/bin/pip install --no-deps .          # baut die Oberfläche: npm ci + npm run build (Node 22)
-ln -s /opt/sshbite/bin/sshbite /usr/local/bin/sshbite
+ln -s /opt/sshbite/bin/sshbite /usr/local/bin/sshbite                                 # nicht getestet
 sshbite --version
 ```
 
@@ -769,12 +772,12 @@ Weiter wie bei Pfad B, mit diesen Unterschieden:
 5. Dateien dem Konto geben, prüfen, Benutzer anlegen, scannen und die Oberfläche als Dienst starten:
 
    ```sh
-   chown -R sshbite-app:sshbite-app /etc/sshbite && chmod 700 /etc/sshbite && chmod 600 /etc/sshbite/*
-   sudo -u sshbite-app sshbite config validate --connect
-   sudo -u sshbite-app sshbite user add admin
-   sudo -u sshbite-app sshbite scan --label first
-   cp docs/systemd/sshbite-serve.service /etc/systemd/system/
-   systemctl daemon-reload && systemctl enable --now sshbite-serve.service
+   chown -R sshbite-app:sshbite-app /etc/sshbite && chmod 700 /etc/sshbite && chmod 600 /etc/sshbite/*   # nicht getestet
+   sudo -u sshbite-app sshbite config validate --connect     # getestet ohne sudo -u, als normaler Benutzer
+   sudo -u sshbite-app sshbite user add admin                # getestet ohne sudo -u, mit --password-stdin
+   sudo -u sshbite-app sshbite scan --label first            # getestet ohne sudo -u
+   cp docs/systemd/sshbite-serve.service /etc/systemd/system/                  # nicht getestet
+   systemctl daemon-reload && systemctl enable --now sshbite-serve.service     # nicht getestet
    ```
 
    Führen Sie jeden `sshbite`-Befehl als `sshbite-app` aus, damit die Datenbank diesem Konto gehört.
@@ -787,7 +790,7 @@ systemd beobachtet). Die Oberfläche öffnen Sie wie in [Pfad B Schritt 11](#sch
 Den nächtlichen Scan richten Sie nach [operations.md](operations.md#nächtlicher-scan-mit-einem-systemd-timer)
 ein.
 
-Ein Wheel einmal bauen und anderswo ohne Node installieren:
+Ein Wheel einmal bauen und anderswo ohne Node installieren (nicht getestet):
 
 ```sh
 /opt/sshbite/bin/pip wheel --no-deps -w dist .          # dist/sshbite-0.1.0-py3-none-any.whl
@@ -820,7 +823,8 @@ kürzt das zu `sudo`:
 ### Konto und Schlüssel im Legacy-Modus
 
 Legen Sie auf jedem Zielhost, auch dem Einstiegshost, das Konto mit dem öffentlichen Audit-Schlüssel an –
-mit Ihrem Konfigurationsmanagement oder von Hand:
+mit Ihrem Konfigurationsmanagement oder von Hand (nicht getestet; die Lab-Hosts bringen Konto und sudo-Regel
+schon mit):
 
 ```sh
 useradd --create-home --shell /bin/sh sshbite
@@ -843,7 +847,7 @@ Zwischenstationen auf oder setzen Sie `chain_fallback: false`. Steht in `sshd_co
 ### Die sudo-Regel im Legacy-Modus
 
 Schreiben Sie dies nach `/etc/sudoers.d/sshbite` (Modus 0440, prüfen mit
-`visudo -cf /etc/sudoers.d/sshbite`):
+`visudo -cf /etc/sudoers.d/sshbite`; nicht getestet, die Lab-Hosts haben die Regel schon):
 
 ```text
 # SSHBITE audit account: root for the read-only collector, no password, no lecture
@@ -876,7 +880,7 @@ Verlangt Ihre Richtlinie ein sudo-Passwort, lassen Sie `NOPASSWD:` weg und scann
 Docker also `docker exec -it`:
 
 ```sh
-docker exec -it sshbite sshbite scan --ask-sudo-password      # Pfad C: sudo -u sshbite-app sshbite scan --ask-sudo-password
+docker exec -it sshbite sshbite scan --ask-sudo-password      # nicht getestet; Pfad C: sudo -u sshbite-app sshbite scan --ask-sudo-password
 ```
 
 Mit den Debian-Standard-sudoers schickt sudo dann bei jedem Scan pro Host eine Mail
@@ -907,13 +911,13 @@ Scannen Sie nicht zwischen den beiden Schritten: Das neue Gate lehnt die Befehle
 1. **Sichern** Sie die Datenbank (sicher im laufenden Betrieb):
 
    ```sh
-   install -d -m 700 /var/backups/sshbite
+   install -d -m 700 /var/backups/sshbite                                       # nicht getestet
    docker exec sshbite sshbite db backup /data/backup-$(date +%F).db
-   docker cp sshbite:/data/backup-$(date +%F).db /var/backups/sshbite/
-   docker exec sshbite rm /data/backup-$(date +%F).db
+   docker cp sshbite:/data/backup-$(date +%F).db /var/backups/sshbite/           # nicht getestet
+   docker exec sshbite rm /data/backup-$(date +%F).db                           # nicht getestet
    ```
 
-   Pfad C: `sudo -u sshbite-app sshbite db backup /var/lib/sshbite/backup-$(date +%F).db` (das Konto muss
+   Pfad C (nicht getestet): `sudo -u sshbite-app sshbite db backup /var/lib/sshbite/backup-$(date +%F).db` (das Konto muss
    das Ziel schreiben dürfen, daher `/var/lib/sshbite`).
 
    **Prüfung:** `backup written to /data/backup-2026-11-27.db` (mit dem heutigen Datum).
@@ -921,9 +925,12 @@ Scannen Sie nicht zwischen den beiden Schritten: Das neue Gate lehnt die Befehle
 2. **Neue Version bauen und starten.** Im Repository:
 
    ```sh
-   git pull
+   git pull                                   # nicht getestet
    docker build -t sshbite:<NEW-VERSION> .
    ```
+
+   Getestet wurde nur der Neubau desselben Standes 0.1.0 aus einem neueren Commit mit anschließendem
+   Neustart und `config validate --connect`; eine neue Version gab es nicht.
 
    Tragen Sie `<NEW-VERSION>` (die Version aus `pyproject.toml`, z. B. `0.2.0`) in der Zeile `image:` von
    `docs/compose.example.yaml` (oder Ihrer Kopie) ein und starten Sie neu:
@@ -932,12 +939,13 @@ Scannen Sie nicht zwischen den beiden Schritten: Das neue Gate lehnt die Befehle
    docker compose -f docs/compose.example.yaml up -d
    ```
 
-   Pfad C: in `/opt/sshbite-src` `git pull`, dann die beiden `pip install`-Zeilen aus
+   Pfad C (nicht getestet): in `/opt/sshbite-src` `git pull`, dann die beiden `pip install`-Zeilen aus
    [Pfad C](#pfad-c-nativ-mit-pip-und-systemd) und `systemctl restart sshbite-serve.service`.
 
    Der erste Start der neuen Version stellt die Datenbank automatisch um. Vorher schreibt er eine Kopie
    neben die Datenbank, benannt nach der neuen Version, z. B. `/data/sshbite.db.pre-0.2.0`. Ohne anstehende
-   Umstellung wird nichts geschrieben. Zurück zur alten Version: siehe
+   Umstellung wird nichts geschrieben (aus dem Code übernommen; eine Umstellung wurde nicht getestet).
+   Zurück zur alten Version: siehe
    [operations.md](operations.md#aktualisierung).
 
 3. **Collector neu verteilen.** Exportieren Sie in ein neues, leeres Verzeichnis
@@ -945,7 +953,7 @@ Scannen Sie nicht zwischen den beiden Schritten: Das neue Gate lehnt die Befehle
    und vergleichen Sie mit dem alten Export:
 
    ```sh
-   diff sshbite-export/SHA256SUMS sshbite-export-<NEW-VERSION>/SHA256SUMS
+   diff sshbite-export/SHA256SUMS sshbite-export-<NEW-VERSION>/SHA256SUMS      # nicht getestet
    ```
 
    Hat sich `sshbite-collect` geändert, installieren Sie auf jedem Zielhost die neue Datei (und Gate,
@@ -956,14 +964,14 @@ Scannen Sie nicht zwischen den beiden Schritten: Das neue Gate lehnt die Befehle
    install -m 0755 -o root -g root sshbite-collect /usr/local/libexec/sshbite/
    ```
 
-   Bis dahin meldet jeder Host `installed collector version differs from this SSHBITE …` und erscheint als
+   (Diese beiden Befehle liefen bei der Erstinstallation; als Aktualisierung nicht getestet.) Bis dahin meldet jeder Host `installed collector version differs from this SSHBITE …` und erscheint als
    `collector_error`.
 
 4. **Prüfen und scannen:**
 
    ```sh
    docker exec -it sshbite sshbite config validate --connect
-   docker exec sshbite sshbite scan --label after-update
+   docker exec sshbite sshbite scan --label after-update     # nicht getestet (Scans liefen mit anderem Label)
    ```
 
    **Prüfung:** dieselben Zeilen wie in [Pfad B Schritt 8](#schritt-8-verbindung-prüfen), mit der neuen
@@ -980,8 +988,8 @@ Schritt 1).
 
 ```sh
 docker compose -f docs/compose.example.yaml down -v      # Container und Volume sshbite-data mit der Datenbank
-docker image rm sshbite:0.1.0
-rm -r /etc/sshbite
+docker image rm sshbite:0.1.0      # nicht getestet
+rm -r /etc/sshbite                 # nicht getestet (im Lab lag /etc/sshbite in einem Volume, das down -v entfernt)
 ```
 
 Ohne `-v` bleibt das Volume `sshbite-data` mit der Datenbank erhalten.
@@ -1003,13 +1011,13 @@ rm /etc/sudoers.d/sshbite
 rm -r /usr/local/libexec/sshbite
 rm /home/sshbite/.ssh/authorized_keys
 userdel -r sshbite             # nur, wenn das Konto allein für SSHBITE angelegt wurde ...
-rm -r /home/sshbite            # ... dann auch das Home: es gehört root, userdel -r lässt es stehen
-rm -r /root/sshbite-export /root/audit_ed25519.pub
+rm -r /home/sshbite            # ... dann auch das Home: es gehört root, userdel -r lässt es stehen (nicht getestet)
+rm -r /root/sshbite-export /root/audit_ed25519.pub     # nicht getestet
 ```
 
 Entfernen Sie auf dem Einstiegshost und den C-Hosts den Block `Match User sshbite` aus
 `/etc/ssh/sshd_config` und laden Sie sshd neu (`sshd -t && systemctl reload ssh`, auf RHEL/AlmaLinux
-`sshd`). Nehmen Sie `sshbite` aus `AllowUsers`/`AllowGroups`, falls Sie es dort eingetragen haben.
+`sshd`; nicht getestet). Nehmen Sie `sshbite` aus `AllowUsers`/`AllowGroups`, falls Sie es dort eingetragen haben.
 
 **Prüfung** auf dem Zielhost: Direkt nach den drei `rm`-Befehlen meldet `sudo -l -U sshbite`
 
@@ -1022,7 +1030,7 @@ User sshbite is not allowed to run sudo on a1.
 den Host als `auth_failed`.
 
 **Testumgebung:** `docker compose -f compose.lab.yaml down -v`; das Entwickler-Lab aus `lab/up.sh` mit
-`docker compose -f lab/compose.yaml down -v`.
+`docker compose -f lab/compose.yaml down -v` (nicht getestet).
 
 <a id="troubleshooting"></a>
 
@@ -1076,10 +1084,12 @@ Im Lab steht der Einstiegshost `jump` auf `172.30.1.5` im Docker-Netz `lab_a`. D
 Unterschied zur Produktionsdatei. Der Ablauf, mit dem diese Anleitung geprüft wurde:
 
 1. Lab-Hosts starten ohne die Lab-Demo (sonst ist Port 8722 belegt): `sh lab/up.sh` (startet
-   `docker compose -f lab/compose.yaml up -d --build --wait`).
+   `docker compose -f lab/compose.yaml up -d --build --wait`; nicht getestet – die Lab-Hosts wurden über
+   eine Compose-Datei gestartet, die `lab/compose.yaml` einbindet).
 2. Pfad B Schritte 1–3 unverändert.
 3. Den Einstiegshost `jump` nach [Zielhosts vorbereiten](#zielhosts-vorbereiten-installierter-collector)
-   von Hand vorbereiten (Variante A, Root-Shell im Container: `docker exec -u 0 -it sshbite-lab-jump-1 sh`).
+   von Hand vorbereiten (Variante A, Root-Shell im Container: `docker exec -u 0 -it sshbite-lab-jump-1 sh` –
+   nicht getestet; vorbereitet wurde über den Root-Zugang des Lab-Hosts auf Port 2200).
    In `from=` steht die Adresse des SSHBITE-Containers im Netz `lab_a`. Der Lab-Container hat kein systemd:
    statt `systemctl reload ssh` lädt `kill -HUP 1` die sshd-Konfiguration neu. Die übrigen Hosts bringt
    `lab/installed.sh apply` in denselben Zustand; die Varianten und `from=`-Adressen je Host stehen in

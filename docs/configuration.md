@@ -96,7 +96,7 @@ Verwenden Sie im Docker-Image `database: /data/sshbite.db` und Pfade unter `/etc
 |---|---|---|
 | `entry.host` | – (Pflicht) | Name oder Adresse des Einstiegshosts (Jump-Host), so wie er vom SSHBITE-Rechner aus erreicht wird. Wird immer gescannt, in Tiefe 0. |
 | `entry.port` | `22` | Sein SSH-Port. |
-| `entry.host_keys` | `[]` | Festgelegte Host-Keys, jeweils `"<algorithm> <base64> [comment]"`, wie von `ssh-keyscan` ausgegeben. Ein Treffer genügt zur Verifikation des Einstiegshosts. Leer = jeder Scan bricht ab (Exit-Code 3) und `config validate` schlägt fehl. Siehe [install.md](install.md#host-key-festlegen-und-konfiguration-schreiben). |
+| `entry.host_keys` | `[]` | Festgelegte Host-Keys, jeweils `"<algorithm> <base64> [comment]"` **ohne Hostnamen davor**. `ssh-keyscan` gibt den Hostnamen als erstes Feld aus; schneiden Sie ihn ab, sonst lehnt SSHBITE die Zeile ab (`not an OpenSSH public key line`, Exit-Code 2). Ein Treffer genügt zur Verifikation des Einstiegshosts. Leer = jeder Scan bricht ab (Exit-Code 3) und `config validate` schlägt fehl. Befehl dafür: [Host-Key festlegen und Konfiguration schreiben](install.md#host-key-festlegen-und-konfiguration-schreiben). |
 
 ### `audit`
 
