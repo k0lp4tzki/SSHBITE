@@ -1,38 +1,42 @@
-# Running scans
+<a id="running-scans"></a>
+
+# Scans ausführen
 
 ```sh
 sshbite scan [--max-depth N] [--max-hosts N] [--concurrency N] [--timeout S] [--no-crawl]
              [--ask-sudo-password] [--label TEXT] [--dry-run]
 ```
 
-With Docker, prefix every command with `docker exec -it sshbite` (e.g.
+Stellen Sie mit Docker jedem Befehl `docker exec -it sshbite` voran (z. B.
 `docker exec -it sshbite sshbite scan --ask-sudo-password`).
 
-## What a scan does
+<a id="what-a-scan-does"></a>
 
-1. **Connects to the entry host** and checks its host key against `entry.host_keys`. A missing or
-   different key aborts the scan (exit 3) before anything is sent.
-2. **Collects** the entry host: it runs the fixed, read-only collector script (`sshbite collector show`),
-   with sudo if possible, and reads local accounts, `authorized_keys` with their options, the keys in
-   `~/.ssh`, `known_hosts`, ssh client configs and the effective `sshd` settings. Private keys never
-   leave the host – only their fingerprint, type, size and whether they are encrypted.
-3. **Crawls** breadth-first, depth by depth. The next hosts come from what the current depth contains:
-   - `known_hosts` entries (plain, and hashed ones matched against every name and address known in
-     the scan),
-   - `HostName`, `Host` (without wildcards) and `ProxyJump` in ssh configs,
-   - literal names/addresses in `from="…"` of `authorized_keys`.
-   Names are resolved on the entry host. Each reference is classified: `queued` (will be scanned),
-   `alias` / `already` (known host), `excluded`, `out_of_scope`, `max_depth`, `max_hosts`,
-   `unresolvable`. Only `queued` hosts are connected to.
-4. **Reaches every host through the entry host** (an SSH tunnel opened on the entry host, no ssh client
-   runs there). If that fails with a network error and `crawl.chain_fallback` is on, it tries the path
-   the host was discovered on, e.g. entry → b3 → c1, checking the host key on every hop.
-5. **Derives** access edges (who can log in where, with which key), evidence edges (known_hosts, ssh
-   config), findings and the heatmap metrics, and stores the scan.
+## Was ein Scan tut
 
-The console shows progress per depth and a summary:
+1. **Verbindet sich mit dem Einstiegshost** und prüft dessen Host-Key gegen `entry.host_keys`. Ein fehlender
+   oder abweichender Schlüssel bricht den Scan ab (Exit-Code 3), bevor irgendetwas gesendet wird.
+2. **Sammelt** den Einstiegshost ein: Es führt das feste, rein lesende Collector-Skript aus (`sshbite collector show`),
+   wenn möglich mit sudo, und liest lokale Konten, `authorized_keys` mit ihren Optionen, die Schlüssel in
+   `~/.ssh`, `known_hosts`, ssh-Client-Konfigurationen und die wirksamen `sshd`-Einstellungen. Private Schlüssel
+   verlassen den Host nie – nur ihr Fingerprint, Typ, ihre Größe und ob sie verschlüsselt sind.
+3. **Durchsucht** in der Breite, Tiefe für Tiefe. Die nächsten Hosts ergeben sich aus dem Inhalt der aktuellen Tiefe:
+   - Einträge in `known_hosts` (im Klartext, und gehashte, die gegen jeden im Scan bekannten Namen und jede
+     Adresse abgeglichen werden),
+   - `HostName`, `Host` (ohne Wildcards) und `ProxyJump` in ssh-Konfigurationen,
+   - wörtliche Namen/Adressen in `from="…"` von `authorized_keys`.
+   Namen werden auf dem Einstiegshost aufgelöst. Jeder Verweis wird eingestuft: `queued` (wird gescannt),
+   `alias` / `already` (bekannter Host), `excluded`, `out_of_scope`, `max_depth`, `max_hosts`,
+   `unresolvable`. Nur zu `queued`-Hosts wird eine Verbindung aufgebaut.
+4. **Erreicht jeden Host über den Einstiegshost** (ein auf dem Einstiegshost geöffneter SSH-Tunnel; dort läuft
+   kein ssh-Client). Scheitert das mit einem Netzwerkfehler und ist `crawl.chain_fallback` eingeschaltet, versucht
+   es den Weg, auf dem der Host entdeckt wurde, z. B. entry → b3 → c1, und prüft dabei auf jedem Hop den Host-Key.
+5. **Leitet** Zugriffskanten (wer sich wo mit welchem Schlüssel anmelden kann), Indizkanten (known_hosts,
+   ssh-Konfiguration), Befunde und die Heatmap-Kennzahlen **ab** und speichert den Scan.
 
-```
+Die Konsole zeigt den Fortschritt je Tiefe und eine Zusammenfassung:
+
+```text
 scan: entry 172.30.1.5:22, max depth 10, max hosts 1000, concurrency 20
 depth 0: 0 queued, 0 running, 1 done
 ...
@@ -46,144 +50,159 @@ scan id:  1
 UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
 ```
 
-Only one scan runs at a time (a second one exits with code 5). The UI can stay open during a scan; it
-shows the progress and picks up the new scan when it is done.
+Es läuft immer nur ein Scan gleichzeitig (ein zweiter endet mit Exit-Code 5). Die UI kann während eines Scans
+geöffnet bleiben; sie zeigt den Fortschritt und übernimmt den neuen Scan, sobald er fertig ist.
 
-## Before the first real scan
+<a id="before-the-first-real-scan"></a>
 
-- Read [side-effects.md](side-effects.md) and tell the people who receive sudo mails, watch the auth
-  logs, or run IDS/EDR, that an audit crawl is coming and from which address.
-- `sshbite scan --dry-run` prints the entry host, the audit account, the scope and every seed without
-  connecting.
-- `sshbite config validate --connect` checks the pin and sudo on the entry host.
-- Consider `--max-depth 1` first to see what the entry host leads to.
+## Vor dem ersten echten Scan
 
-## Scope: crawl, include, exclude
+- Lesen Sie [side-effects.md](side-effects.md) und informieren Sie die Personen, die sudo-Mails erhalten, die
+  Auth-Logs beobachten oder IDS/EDR betreiben, dass ein Audit-Crawl bevorsteht und von welcher Adresse er kommt.
+- `sshbite scan --dry-run` gibt den Einstiegshost, das Audit-Konto, den Umfang und jeden Seed aus, ohne eine
+  Verbindung aufzubauen.
+- `sshbite config validate --connect` prüft den festgelegten Host-Key und sudo auf dem Einstiegshost.
+- Erwägen Sie zunächst `--max-depth 1`, um zu sehen, wohin der Einstiegshost führt.
 
-The normal case is the crawl from the entry host alone – no host list needed. Limit it with:
+<a id="scope-crawl-include-exclude"></a>
 
-| Setting | CLI | Effect |
+## Umfang des Crawls
+
+Der Normalfall ist der Crawl allein vom Einstiegshost aus – eine Hostliste ist nicht nötig. Begrenzen Sie ihn mit:
+
+| Einstellung | CLI | Wirkung |
 |---|---|---|
-| `crawl.max_depth` (10) | `--max-depth N` | Hosts further away are listed as `max_depth`. |
-| `crawl.max_hosts` (1000) | `--max-hosts N` | More hosts are listed as `max_hosts`. |
-| `crawl.include` | – | If set, only matching hosts (CIDR or name glob) are scanned; others are `out_of_scope`. If empty, `config validate` and `scan` warn (below). |
-| `crawl.exclude` | – | Matching hosts are never connected to, only listed as `excluded`. Exclude wins over include and over seeds. |
-| – | `--no-crawl` | Scan only the entry host and the seeds. |
+| `crawl.max_depth` (10) | `--max-depth N` | Weiter entfernte Hosts werden als `max_depth` aufgeführt. |
+| `crawl.max_hosts` (1000) | `--max-hosts N` | Weitere Hosts werden als `max_hosts` aufgeführt. |
+| `crawl.include` | – | Wenn gesetzt, werden nur passende Hosts (CIDR oder Namens-Glob) gescannt; andere sind `out_of_scope`. Wenn leer, warnen `config validate` und `scan` (siehe unten). |
+| `crawl.exclude` | – | Zu passenden Hosts wird nie eine Verbindung aufgebaut, sie werden nur als `excluded` aufgeführt. Exclude hat Vorrang vor include und vor Seeds. |
+| – | `--no-crawl` | Nur den Einstiegshost und die Seeds scannen. |
 
-Without `crawl.include` the crawl goes wherever the targets' own files point: addresses **and ports** come
-from known_hosts, `~/.ssh/config` and `from=` options of the scanned hosts. That is the default the owner
-asked for, but after an incident those files may have been planted, so `config validate` and every `scan`
-print:
+Ohne `crawl.include` folgt der Crawl allem, worauf die eigenen Dateien der Zielhosts verweisen: Adressen **und Ports**
+stammen aus known_hosts, `~/.ssh/config` und `from=`-Optionen der gescannten Hosts. Das ist die vom Auftraggeber
+gewünschte Voreinstellung, aber nach einem Sicherheitsvorfall können diese Dateien untergeschoben sein. Deshalb geben
+`config validate` und jeder `scan` aus:
 
-```
+```text
 warning: crawl.include is empty: crawl targets and ports are taken from target data (known_hosts, ~/.ssh/config, from=) without restriction; set crawl.include to the networks and host names you mean to scan
 ```
 
-Set `crawl.include` to your networks and host name patterns to limit the crawl to them.
+Setzen Sie `crawl.include` auf Ihre Netze und Hostnamen-Muster, um den Crawl darauf zu begrenzen.
 
-Every reference is kept, whether scanned or not: the crawl tree in the UI (Scans → crawl tree) and
-`sshbite scans show ID` list each host with depth, the file and line it was discovered in, and its route.
+Jeder Verweis bleibt erhalten, ob gescannt oder nicht: Der Crawl-Baum in der UI (Scans → crawl tree) und
+`sshbite scans show ID` führen jeden Host mit Tiefe, der Datei und Zeile, in der er entdeckt wurde, und seiner Route auf.
 
 ## Seeds
 
-Seeds are extra hosts at depth 0, next to the entry host (see
+Seeds sind zusätzliche Hosts in Tiefe 0, neben dem Einstiegshost (siehe
 [configuration.md](configuration.md#seeds)):
 
 ```yaml
 seeds:
-  hosts_file: /etc/sshbite/extra-hosts      # "host", "host:port" or "[host]:port" per line
-  cidrs: [10.20.0.0/24]                     # each address TCP-probed from the entry host first
+  hosts_file: /etc/sshbite/extra-hosts      # "host", "host:port" oder "[host]:port" pro Zeile
+  cidrs: [10.20.0.0/24]                     # jede Adresse wird zuerst vom Einstiegshost per TCP geprüft
   ansible_inventories: [/etc/sshbite/inventory.ini]
 ```
 
-Seeds are crawled from like any other host. CIDR addresses that do not answer on the SSH port within
-2 s get status `no_ssh`. Seed files are inside `/etc/sshbite` in the Docker setup, so the container can
-read them.
+Von Seeds aus wird wie von jedem anderen Host weiter durchsucht. CIDR-Adressen, die nicht innerhalb von 2 s auf dem
+SSH-Port antworten, erhalten den Status `no_ssh`. Seed-Dateien liegen im Docker-Setup unter `/etc/sshbite`, damit
+der Container sie lesen kann.
 
-## Sudo passwords
+<a id="sudo-passwords"></a>
 
-With `NOPASSWD` sudo nothing is needed. With `privilege.mode: installed` a sudo password is never sent:
-`--ask-sudo-password` is refused with exit 2 and `SSHBITE_SUDO_PASSWORD` is ignored with a warning; a host
-whose sudo wants a password becomes `collector_error`
-([install.md](install.md#error-messages)). In the legacy modes, if sudo asks for a password:
+## Sudo-Passwörter
+
+Dieser Abschnitt gilt nur für die Legacy-Modi (`privilege.mode: sudo` und `sudo-login`). Mit `NOPASSWD`-sudo ist
+nichts nötig. Mit `privilege.mode: installed` wird nie ein sudo-Passwort gesendet:
+`--ask-sudo-password` wird mit Exit-Code 2 abgelehnt und `SSHBITE_SUDO_PASSWORD` wird mit einer Warnung ignoriert;
+ein Host, dessen sudo ein Passwort verlangt, wird `collector_error`
+([install.md](install.md#fehlermeldungen-im-modus-installed)). Fragt sudo in den Legacy-Modi nach einem Passwort:
 
 ```sh
-sshbite scan --ask-sudo-password             # prompts once, without echo
+sshbite scan --ask-sudo-password             # fragt einmal nach, ohne Echo
 docker exec -it sshbite sshbite scan --ask-sudo-password
 ```
 
-`--ask-sudo-password` needs a terminal: without one (a pipe, `docker exec -i` without `-t`) it refuses,
-because the password could be echoed. Non-interactively, e.g. from a timer, `SSHBITE_SUDO_PASSWORD=… sshbite
-scan` works but is **not recommended** – the value is visible in `/proc/<pid>/environ` and, if passed to a
-container, in `docker inspect` (see [operations.md](operations.md#the-sudo-password)). The same password is
-tried on every host that asks for one, unless `privilege.password_scope` limits it to some hosts.
-A compromised host can imitate a sudo prompt and capture the password: use one that only the audit account
-has, and rotate it after the scan. It is kept
-in memory for the scan only, removed from the environment, redacted from logs, and never written to the
-database. A host where sudo is refused or the password is wrong is scanned unprivileged and marked
-`partial`, with the reason (e.g. `sudo: a password is required`). If hosts needed a password and none was
-given, the summary says:
+`--ask-sudo-password` braucht ein Terminal: Ohne eines (eine Pipe, `docker exec -i` ohne `-t`) verweigert es den
+Dienst, weil das Passwort sonst angezeigt werden könnte. Nicht interaktiv, z. B. aus einem Timer, funktioniert
+`SSHBITE_SUDO_PASSWORD=… sshbite scan`, ist aber **nicht empfohlen** – der Wert ist in `/proc/<pid>/environ` sichtbar
+und, wenn er an einen Container übergeben wird, in `docker inspect` (siehe
+[operations.md](operations.md#das-sudo-passwort)). Dasselbe Passwort wird auf jedem Host versucht, der danach fragt,
+sofern `privilege.password_scope` es nicht auf bestimmte Hosts begrenzt.
+Ein kompromittierter Host kann eine sudo-Passwortabfrage nachahmen und das Passwort abgreifen: Verwenden Sie eines,
+das nur das Audit-Konto hat, und ändern Sie es nach dem Scan. Es wird nur für die Dauer des Scans im Speicher
+gehalten, aus der Umgebung entfernt, in Logs geschwärzt und nie in die Datenbank geschrieben. Ein Host, auf dem sudo
+verweigert wird oder das Passwort falsch ist, wird ohne Rechte gescannt und als `partial` markiert, mit dem Grund
+(z. B. `sudo: a password is required`). Brauchten Hosts ein Passwort und wurde keines angegeben, meldet die
+Zusammenfassung:
 
-```
+```text
 2 hosts need a sudo password: rerun with --ask-sudo-password
 ```
 
-Note that a wrong password counts as a failed sudo attempt on each host (see
+Beachten Sie, dass ein falsches Passwort auf jedem Host als fehlgeschlagener sudo-Versuch zählt (siehe
 [side-effects.md](side-effects.md)).
 
-## Host statuses
+<a id="host-statuses"></a>
 
-| Status | Meaning |
+## Host-Status
+
+| Status | Bedeutung |
 |---|---|
-| `ok` | Collected completely. |
-| `partial` | Collected without root, or with unreadable parts; the reasons are listed on the host. |
-| `output_limit` | More output than `limits.max_output_mb`; what was read is kept (counts as partial). |
-| `collector_error` | The collector did not finish (no end marker). |
-| `unreachable` | No route worked; every route tried and its error are listed on the host. |
-| `timeout` | `limits.host_timeout` exceeded. |
-| `auth_failed` | The audit key was not accepted (account or key not deployed). |
-| `hostkey_mismatch` | The host key changed since it was first stored – critical finding `host_key_changed`; the host is not logged in to. |
-| `hostkey_unknown` | Strict mode: the key is not in `hostkeys.known_hosts_file`. |
-| `excluded`, `out_of_scope`, `max_depth`, `max_hosts`, `unresolvable`, `alias`, `no_ssh` | Seen but never connected to. |
+| `ok` | Vollständig eingesammelt. |
+| `partial` | Ohne Root oder mit unlesbaren Teilen eingesammelt; die Gründe sind beim Host aufgeführt. |
+| `output_limit` | Mehr Ausgabe als `limits.max_output_mb`; das Gelesene bleibt erhalten (zählt als partial). |
+| `collector_error` | Der Collector ist nicht fertig geworden (keine Endmarke). |
+| `unreachable` | Keine Route hat funktioniert; jede versuchte Route und ihr Fehler sind beim Host aufgeführt. |
+| `timeout` | `limits.host_timeout` überschritten. |
+| `auth_failed` | Der Audit-Schlüssel wurde nicht akzeptiert (Konto oder Schlüssel nicht verteilt). |
+| `hostkey_mismatch` | Der Host-Key hat sich seit der ersten Speicherung geändert – kritischer Befund `host_key_changed`; auf dem Host wird keine Anmeldung durchgeführt. |
+| `hostkey_unknown` | Strikter Modus: Der Schlüssel steht nicht in `hostkeys.known_hosts_file`. |
+| `excluded`, `out_of_scope`, `max_depth`, `max_hosts`, `unresolvable`, `alias`, `no_ssh` | Gesehen, aber nie verbunden. |
 
-**A host key changed.** Check the new key out of band (console), then trust it and rescan:
+**Ein Host-Key hat sich geändert.** Prüfen Sie den neuen Schlüssel auf einem unabhängigen Weg (Konsole), vertrauen
+Sie ihm dann und scannen Sie erneut:
 
 ```sh
 sshbite hostkey list
-sshbite hostkey accept 10.1.2.3          # or ADDR:PORT
-sshbite hostkey forget 10.1.2.3          # drop all stored keys; the next scan trusts what it sees
+sshbite hostkey accept 10.1.2.3          # oder ADDR:PORT
+sshbite hostkey forget 10.1.2.3          # alle gespeicherten Schlüssel verwerfen; der nächste Scan vertraut dem, was er sieht
 ```
 
-**Many hosts `unreachable` with "channel open failed".** The entry host refuses tunnels for the audit
-account: remove `restrict`/`no-port-forwarding` from its `authorized_keys` line there, or allow
-`AllowTcpForwarding` (see [install.md](install.md#the-audit-key-and-account)).
+**Viele Hosts `unreachable` mit „channel open failed“.** Der Einstiegshost verweigert dem Audit-Konto Tunnel:
+Entfernen Sie dort `restrict`/`no-port-forwarding` aus seiner `authorized_keys`-Zeile oder erlauben Sie
+`AllowTcpForwarding` (siehe [install.md](install.md#zielhosts-vorbereiten-installierter-collector)).
 
-## Exit codes
+<a id="exit-codes"></a>
 
-| Code | Meaning |
+## Exit-Codes
+
+| Code | Bedeutung |
 |---|---|
-| 0 | Scan done – also when some hosts were partial or unreachable. |
-| 2 | Config error (schema, file modes, missing files). |
-| 3 | Entry failure: unreachable, pin missing or mismatch, authentication failed. Only a failed/aborted scan row is written. |
-| 4 | Internal error. |
-| 5 | Another scan is running. |
+| 0 | Scan fertig – auch wenn einige Hosts partial oder unreachable waren. |
+| 2 | Konfigurationsfehler (Schema, Dateirechte, fehlende Dateien). |
+| 3 | Fehler am Einstiegshost: nicht erreichbar, Host-Key nicht festgelegt oder abweichend, Authentifizierung fehlgeschlagen. Es wird nur eine Scan-Zeile als fehlgeschlagen/abgebrochen geschrieben. |
+| 4 | Interner Fehler. |
+| 5 | Ein anderer Scan läuft. |
 
-## After the scan
+<a id="after-the-scan"></a>
+
+## Nach dem Scan
 
 ```sh
-sshbite scans list                         # all scans
-sshbite scans show latest                  # hosts, depth, discovered via, route, reasons
+sshbite scans list                         # alle Scans
+sshbite scans show latest                  # Hosts, Tiefe, entdeckt über, Route, Gründe
 sshbite export --what findings --format csv -o findings.csv
-sshbite diff 3 4                           # what is new, gone or changed
+sshbite diff 3 4                           # was neu, weggefallen oder geändert ist
 sshbite scans delete 2
 ```
 
-`export --what` is one of `findings`, `keys`, `edges`, `hosts`, `authorized`; filters are
-`--min-severity`, `--rule` (repeatable), `--host GLOB` and `--kind access|evidence`. Most list commands
-take `--json`.
+`export --what` ist eines von `findings`, `keys`, `edges`, `hosts`, `authorized`; Filter sind
+`--min-severity`, `--rule` (wiederholbar), `--host GLOB` und `--kind access|evidence`. Die meisten Listenbefehle
+akzeptieren `--json`.
 
-The UI (`sshbite serve`) shows the same data: dashboard, heatmap, graph, hosts, keys, findings and diff.
-For testing the UI at scale, `sshbite synth --hosts 2000 --seed 42` creates a synthetic scan; it is
-marked SYNTHETIC DATA everywhere.
+Die UI (`sshbite serve`) zeigt dieselben Daten: Dashboard, Heatmap, Graph, Hosts, Schlüssel, Befunde und Diff.
+Zum Testen der UI mit großen Datenmengen erzeugt `sshbite synth --hosts 2000 --seed 42` einen synthetischen Scan;
+er ist überall als SYNTHETIC DATA gekennzeichnet.
 
-Next: the cleanup workflow in [cleanup.md](cleanup.md).
+Weiter: der Bereinigungsablauf in [cleanup.md](cleanup.md).

@@ -1,74 +1,92 @@
-# Cleanup workflow: remove a key and confirm
+<a id="cleanup-workflow-remove-a-key-and-confirm"></a>
 
-SSHBITE never changes a target. Cleaning up is done by your admins, with SSHBITE's worklist, and confirmed
-by the next scan. Example: remove every authorized key whose private half was found on no scanned host
-(`key_unknown_origin`) – after an incident, the most likely place for a key someone outside left behind.
+# Bereinigungsablauf: einen Schlüssel entfernen und bestätigen
 
-## 1. Decide what to remove
+SSHBITE ändert nie einen Zielhost. Die Bereinigung erledigen Ihre Administratoren mit der Arbeitsliste von SSHBITE,
+und der nächste Scan bestätigt sie. Beispiel: Entfernen Sie jeden autorisierten Schlüssel, dessen privater Teil auf
+keinem gescannten Host gefunden wurde (`key_unknown_origin`) – nach einem Sicherheitsvorfall der wahrscheinlichste Ort
+für einen Schlüssel, den jemand von außen zurückgelassen hat.
 
-In the UI: **Findings** → *Rule* "Key of unknown origin" (`key_unknown_origin`), *Severity* "High and
-above". Each row shows host, user, `file:line`, fingerprint and the recommendation. Open a key to see everywhere it is authorized,
-where copies of its `.pub` lie and which edges it creates; **Show in graph** shows its neighbourhood.
+<a id="1-decide-what-to-remove"></a>
 
-Record decisions on the key: set a label, owner and note (e.g. *"contractor 2019 – remove"*). Labels are
-stored only in SSHBITE's database and appear in the exports (`key_label`).
+## 1. Festlegen, was entfernt wird
 
-## 2. Export the worklist
+In der UI: **Findings** → *Rule* „Key of unknown origin“ (`key_unknown_origin`), *Severity* „High and
+above“. Jede Zeile zeigt Host, Benutzer, `file:line`, Fingerprint und die Empfehlung. Öffnen Sie einen Schlüssel, um
+zu sehen, wo überall er autorisiert ist, wo Kopien seiner `.pub` liegen und welche Kanten er erzeugt; **Show in graph**
+zeigt seine Nachbarschaft.
 
-In the UI, **Export CSV** on the filtered Findings list (it exports exactly the filtered rows), or on the
-command line:
+Halten Sie Entscheidungen am Schlüssel fest: Setzen Sie ein Label, einen Verantwortlichen und eine Notiz
+(z. B. *„Dienstleister 2019 – entfernen“*). Labels werden nur in der Datenbank von SSHBITE gespeichert und erscheinen
+in den Exporten (`key_label`).
+
+<a id="2-export-the-worklist"></a>
+
+## 2. Arbeitsliste exportieren
+
+In der UI mit **Export CSV** auf der gefilterten Findings-Liste (exportiert genau die gefilterten Zeilen), oder auf
+der Kommandozeile:
 
 ```sh
 sshbite export --scan latest --what findings --rule key_unknown_origin --min-severity high \
   --format csv -o worklist.csv
-# Docker: write it into /data and copy it out
+# Docker: nach /data schreiben und herauskopieren
 docker exec sshbite sshbite export --what findings --rule key_unknown_origin --min-severity high -o /data/worklist.csv
 docker cp sshbite:/data/worklist.csv .
 ```
 
-The CSV has a header row and the columns `finding_id, scan_id, severity, rule, host, host_ips, user,
+Die CSV-Datei hat eine Kopfzeile und die Spalten `finding_id, scan_id, severity, rule, host, host_ips, user,
 key_fp, key_alg, key_bits, key_label, file, line_no, detail, recommendation, removal_hint, status`.
-`status` is empty – a column for the admins. Example row:
+`status` ist leer – eine Spalte für die Administratoren. Beispielzeile:
 
-```
+```text
 5,1,high,key_unknown_origin,b1,172.30.2.11,root,SHA256:yIQEm8Cg…,ssh-dss,1024,,/root/.ssh/authorized_keys,2,
 "{""comment"": ""legacy-dsa""}","Identify the owner, else remove",
 delete line 2 of /root/.ssh/authorized_keys on b1 (SHA256:yIQEm8Cg…),
 ```
 
-Cells that start with `=`, `+`, `-`, `@` or a tab are prefixed with `'`, so the file is safe to open in a
-spreadsheet. `--format json` gives the same fields. Other worklists: `--what authorized` (every
-authorized_keys line), `--what keys`, `--what edges`, `--what hosts`; `--host GLOB` limits to hosts.
+Zellen, die mit `=`, `+`, `-`, `@` oder einem Tabulator beginnen, erhalten ein vorangestelltes `'`, damit die Datei
+gefahrlos in einer Tabellenkalkulation geöffnet werden kann. `--format json` liefert dieselben Felder. Weitere
+Arbeitslisten: `--what authorized` (jede authorized_keys-Zeile), `--what keys`, `--what edges`, `--what hosts`;
+`--host GLOB` begrenzt auf bestimmte Hosts.
 
-## 3. Remove the lines on the hosts
+<a id="3-remove-the-lines-on-the-hosts"></a>
 
-The admins remove the lines by hand or with their configuration management. Line numbers are those of the
-scan: once a line is deleted, the lines below it move up. Identify each line by its **fingerprint**, not
-only by its number:
+## 3. Zeilen auf den Hosts entfernen
+
+Die Administratoren entfernen die Zeilen von Hand oder mit ihrem Konfigurationsmanagement. Die Zeilennummern sind die
+des Scans: Sobald eine Zeile gelöscht ist, rücken die Zeilen darunter nach oben. Identifizieren Sie jede Zeile an ihrem
+**Fingerprint**, nicht nur an ihrer Nummer:
 
 ```sh
-ssh-keygen -lf /root/.ssh/authorized_keys      # one fingerprint per key line, in file order
+ssh-keygen -lf /root/.ssh/authorized_keys      # ein Fingerprint pro Schlüsselzeile, in Dateireihenfolge
 ```
 
-Remove several lines of one file from the bottom up, and check the result with the same command. If the
-key is managed by configuration management (Ansible, Puppet, …), remove it there, or it will come back.
+Entfernen Sie mehrere Zeilen einer Datei von unten nach oben und prüfen Sie das Ergebnis mit demselben Befehl. Wird
+der Schlüssel durch Konfigurationsmanagement verwaltet (Ansible, Puppet, …), entfernen Sie ihn dort, sonst kommt er
+wieder.
 
-## 4. Scan again
+<a id="4-scan-again"></a>
+
+## 4. Erneut scannen
 
 ```sh
 sshbite scan --label "after cleanup"
 ```
 
-## 5. Confirm with the diff
+<a id="5-confirm-with-the-diff"></a>
+
+## 5. Mit dem Diff bestätigen
 
 ```sh
-sshbite diff 4 5              # scan before, scan after (or the Diff screen in the UI)
+sshbite diff 4 5              # Scan davor, Scan danach (oder die Diff-Ansicht in der UI)
 ```
 
-The diff lists per category what was added, removed or changed. Removed lines appear as removed
-placements, the edges they created as removed edges, and their findings as removed findings:
+Der Diff listet je Kategorie auf, was hinzugekommen, entfernt oder geändert ist. Entfernte Zeilen erscheinen als
+entfernte Fundstellen (placements), die von ihnen erzeugten Kanten als entfernte Kanten und ihre Befunde als
+entfernte Befunde:
 
-```
+```text
 placements: 1 added, 3 removed, 0 changed
   - authorized a5:root SHA256:udc9qDdY… (/root/.ssh/authorized_keys:1)
 edges: 1 added, 2 removed, 0 changed
@@ -77,9 +95,9 @@ findings: 2 added, 2 removed, 0 changed
   - high root_authorized_key a5:root SHA256:udc9qDdY… /root/.ssh/authorized_keys:1
 ```
 
-A line that was missed does not appear as removed – it is still in the new scan. Export the worklist of
-the new scan (step 2) to see exactly what is left. Watch the **added** entries too: a new key with unknown
-origin after the cleanup deserves attention.
+Eine übersehene Zeile erscheint nicht als entfernt – sie ist im neuen Scan noch vorhanden. Exportieren Sie die
+Arbeitsliste des neuen Scans (Schritt 2), um genau zu sehen, was übrig ist. Achten Sie auch auf die **hinzugekommenen**
+Einträge: Ein neuer Schlüssel mit unbekannter Herkunft nach der Bereinigung verdient Aufmerksamkeit.
 
-`sshbite diff A B --format json` and the JSON export of the Diff screen give the same result for tickets
-or reports.
+`sshbite diff A B --format json` und der JSON-Export der Diff-Ansicht liefern dasselbe Ergebnis für Tickets oder
+Berichte.
