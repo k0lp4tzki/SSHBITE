@@ -194,7 +194,16 @@
     <Strip role="warning">
       <span>Scanned partially:</span>
       <ul class="reasons">{#each hs.partial_reasons as r}<li>{r}</li>{:else}<li>{hs.error ?? hs.status}</li>{/each}</ul>
-      <span class="secondary">Rerun with <span class="mono">--ask-sudo-password</span> or grant sudo to the audit account.</span>
+      {#if hs.partial_reasons?.some((r: string) => r.startsWith('setpriv (util-linux) missing'))}
+        <span class="secondary">Install util-linux (<span class="mono">/usr/bin/setpriv</span>) on this host and scan again: files in user homes are only read as their owner.</span>
+      {:else}
+        <span class="secondary">Rerun with <span class="mono">--ask-sudo-password</span> or grant sudo to the audit account.</span>
+      {/if}
+    </Strip>
+  {:else if hs.status === 'ok' && hs.partial_reasons?.length}
+    <Strip role="info">
+      <span>Not read: the account cannot read these files itself, so sshd cannot use them either.</span>
+      <ul class="reasons" data-testid="ok-reasons">{#each hs.partial_reasons as r}<li class="mono">{r}</li>{/each}</ul>
     </Strip>
   {:else if UNREACHED.includes(hs.status)}
     <Strip role="high">

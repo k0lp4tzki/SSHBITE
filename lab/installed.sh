@@ -9,7 +9,7 @@
 #       docs/install.md says and checks that `sudo -l -U sshbite` lists only the collector.
 #   installed.sh remove
 #       restores the backed-up state: sudoers.d files, ~sshbite/.ssh/authorized_keys, owners, modes and
-#       /etc/shadow (passwd -l), the directory mtimes, so that lab/snapshot.sh shows the host exactly as before `apply`.
+#       /etc/shadow and /etc/passwd (usermod -L), the directory mtimes, so that lab/snapshot.sh shows the host exactly as before `apply`.
 #
 # Nothing here is part of SSHBITE: it is the owner's installation step, done by the test in the lab.
 set -eu
@@ -27,8 +27,10 @@ backup() {
     if [ -e "$f" ]; then cp -p "$f" "$BAK/sudoers.d/"; fi
   done
   cp -p "$H/.ssh/authorized_keys" "$BAK/authorized_keys"
-  cp -p /etc/shadow "$BAK/shadow"                # passwd -l rewrites it where the account was not locked
-  if [ -e /etc/shadow- ]; then cp -p /etc/shadow- "$BAK/shadow-"; fi
+  for f in shadow passwd; do                     # usermod -L rewrites both where the account was not locked
+    cp -p "/etc/$f" "$BAK/$f"
+    if [ -e "/etc/$f-" ]; then cp -p "/etc/$f-" "$BAK/$f-"; fi
+  done
   i=0
   for d in $DIRS; do
     i=$((i + 1))
@@ -52,7 +54,10 @@ apply)
   done
   # --- the steps of docs/install.md ---
   id sshbite >/dev/null || useradd -m -s /bin/sh sshbite
-  passwd -S sshbite | grep -q ' L ' || passwd -l sshbite      # the lab account is locked already
+  case "$(getent shadow sshbite | cut -d: -f2)" in            # the lab account is locked already
+    '!'* | '*'*) ;;
+    *) usermod -L sshbite ;;
+  esac
   install -d -m 0755 -o root -g root "$LIBEXEC"
   install -m 0755 -o root -g root "$D/sshbite-collect" "$D/sshbite-resolve" "$D/sshbite-gate" "$LIBEXEC/"
   install -m 0440 -o root -g root "$D/sudoers.d-sshbite" /etc/sudoers.d/sshbite && visudo -cf /etc/sudoers.d/sshbite
@@ -79,12 +84,14 @@ remove)
     if [ -e "$f" ]; then cp -p "$f" /etc/sudoers.d/; fi
   done
   cp -p "$BAK/authorized_keys" "$H/.ssh/authorized_keys"
-  if ! cmp -s "$BAK/shadow" /etc/shadow; then cp -p "$BAK/shadow" /etc/shadow; fi
-  if [ -e "$BAK/shadow-" ]; then
-    if ! cmp -s "$BAK/shadow-" /etc/shadow-; then cp -p "$BAK/shadow-" /etc/shadow-; fi
-  else
-    rm -f /etc/shadow-
-  fi
+  for f in shadow passwd; do                     # cp -p always: usermod may rewrite a file unchanged (new mtime)
+    cp -p "$BAK/$f" "/etc/$f"
+    if [ -e "$BAK/$f-" ]; then
+      cp -p "$BAK/$f-" "/etc/$f-"
+    else
+      rm -f "/etc/$f-"
+    fi
+  done
   while read -r d uid gid mode i; do
     chown "$uid:$gid" "$d"
     chmod "$mode" "$d"

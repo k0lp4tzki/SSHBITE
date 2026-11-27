@@ -1,11 +1,14 @@
-"""privilege.mode installed against the lab (spec 8.3, package A: i00-i05, i99).
+"""privilege.mode installed against the lab (spec 8.3: i00-i08, i99), with the AlmaLinux 9 host r1.
 
 Runs after test_lab.py. The owner's installation step (`sshbite collector export`, then the files on every
 host as docs/install.md says) is done by lab/installed.sh through the lab-control sshd. Every scan is
 bracketed by the read-only snapshot as in test_lab.py; i99 removes the installation again and proves with
 the same snapshot that every host is byte for byte as before i01.
 
-Set SSHBITE_EVIDENCE_DIR to keep the console transcripts, the attack matrix and the diff.
+i06-i08 (package B) prove that the collector reads files in user homes as their owner: r1 (EL9) with a root-owned
+authorized_keys2 in alice's home, r1 without setpriv (partial, nothing read), and the symlink race on r1 and a5.
+
+Set SSHBITE_EVIDENCE_DIR to keep the console transcripts, the attack matrix, the diff and the race counts.
 """
 
 from __future__ import annotations
@@ -45,9 +48,9 @@ AK = {
     "c1": ("C", "172.30.3.13"),    # c2 is reached through c1: from = b3, forwarding on
     "c2": ("B", "172.30.3.21"),    # from = c1
 }
-if "r1" in EXP["hosts"]:           # the EL host (package B): stand-alone, published like the entry
-    AK["r1"] = ("A", "172.30.0.0/16")
-HOSTS = sorted(h for h in EXP["hosts"] if h in AK)
+AK["r1"] = ("A", "172.30.0.0/16")  # the EL host: stand-alone, reached from the scanner like the entry
+LAB_HOSTS = L.lab_hosts()           # the 13 of expected.yaml + r1
+HOSTS = sorted(LAB_HOSTS)
 
 
 # ---------------------------------------------------------------- fixtures
@@ -62,7 +65,9 @@ def entry():
 
 @pytest.fixture(scope="module")
 def ctl(entry):
-    return L.LabControl(EXP["hosts"])
+    if L.find_r1() is None:   # the lab is there, so r1 must be too: a missing r1 is a failure, not a skip
+        pytest.fail("lab host r1 (AlmaLinux 9) unavailable: set SSHBITE_LAB_R1 or start lab/compose.yaml with r1")
+    return L.LabControl(LAB_HOSTS)
 
 
 @pytest.fixture(scope="module")
@@ -316,7 +321,8 @@ async def _matrix(entry, targets: list[str]) -> list[dict]:
                 conn = jconn
             else:   # through jump (B hosts), or directly for a stand-alone A host (r1)
                 tunnel = {} if AK[target][0] == "A" else {"tunnel": jconn}
-                conn_cm = asyncssh.connect(EXP["hosts"][target][0], 22, username="sshbite", client_keys=[key],
+                thost, tport = L.find_r1() if target == "r1" else (LAB_HOSTS[target][0], 22)
+                conn_cm = asyncssh.connect(thost, tport, username="sshbite", client_keys=[key],
                                            known_hosts=_known(target), config=None, agent_path=None,
                                            connect_timeout=15, **tunnel)
                 conn = await conn_cm.__aenter__()
@@ -332,10 +338,13 @@ async def _matrix(entry, targets: list[str]) -> list[dict]:
                 add(target, "probe", f"sudo -n -l {P}", rc, out, err, "allowed")
                 rc, out, err = await _try(conn, f"sudo -n {P}", "id\n")
                 add(target, "collector (stdin: id)", f"sudo -n {P}   [stdin: id]", rc, out, err, "allowed")
-                rc, out, err = await _try(conn, R, "a1\n")
-                add(target, "resolve a1", f"{R}   [stdin: a1]", rc, out, err, "allowed")
-                # forwarding: jump only to port 22; everything else nowhere
-                fwd = [("172.30.1.11", 2200), ("172.30.1.11", 22)] if target == "jump" else [("172.30.1.12", 22)]
+                name = "r1" if target == "r1" else "a1"     # r1 is alone on lab_r and knows only itself
+                rc, out, err = await _try(conn, R, f"{name}\n")
+                add(target, f"resolve {name}", f"{R}   [stdin: {name}]", rc, out, err, "allowed")
+                # forwarding: an A host (jump, r1) only to port 22 (permitopen); a B host nowhere
+                variant_a = AK[target][0] == "A"
+                own = "172.30.1.11" if target == "jump" else LAB_HOSTS[target][0]
+                fwd = [(own, 2200), (own, 22)] if variant_a else [("172.30.1.12", 22)]
                 for fhost, fport in fwd:
                     try:
                         r, w = await conn.open_connection(fhost, fport)
@@ -343,7 +352,7 @@ async def _matrix(entry, targets: list[str]) -> list[dict]:
                         rc, err = 0, "forward opened"
                     except asyncssh.ChannelOpenError as exc:
                         rc, err = None, f"channel open refused: {exc.reason}"
-                    ok = target == "jump" and fport == 22
+                    ok = variant_a and fport == 22
                     add(target, f"port forward to {fhost}:{fport}", f"(direct-tcpip {fhost}:{fport})", rc, "", err,
                         "allowed" if ok else "denied-forward")
             finally:
@@ -365,7 +374,8 @@ def test_i04_attack_matrix(entry, evidence):
     targets = [h for h in ("jump", "a1", "r1") if h in HOSTS]
     rows = asyncio.run(_matrix(entry, targets))
     lines = ["# Attack matrix (i04): the audit key against the installed gate", "",
-             "Each row is one SSH request with the audit key `lab/keys/audit_ed25519`; a1 is reached through jump.",
+             "Each row is one SSH request with the audit key `lab/keys/audit_ed25519`; a1 is reached through jump,",
+             "r1 (AlmaLinux 9, variant A like jump) directly from the scanner.",
              "", "| Host | Request | Exit | First stderr line / result |", "|---|---|---|---|"]
     for r in rows:
         rc = "-" if r["rc"] is None else str(r["rc"])
@@ -394,6 +404,9 @@ def test_i04_attack_matrix(entry, evidence):
             assert "uid=" not in r["stdout"] and "#END" in r["stdout"], what
         elif r["label"] == "resolve a1":
             assert r["rc"] == 0 and "a1\t172.30.1.11" in r["stdout"].splitlines(), what
+        elif r["label"] == "resolve r1":   # EL's /etc/hosts may answer ::1 for the own name first
+            lines = r["stdout"].splitlines()
+            assert r["rc"] == 0 and lines and all(x.startswith("r1\t") for x in lines), what
         else:
             assert r["rc"] == 0, what
 
@@ -446,6 +459,191 @@ def test_i05_failures(ctl, cfg, state, evidence):
             assert "/etc/sudoers.d/sshbite: parsed OK" in res[h], (h, res[h])
     p = L.sshbite(cfg["installed"], "config", "validate", "--connect")
     assert p.returncode == 0, p.stdout + p.stderr
+
+
+# ---- i06-i08 (package B): files in user homes are read as their owner (spec 7)
+
+ALICE = "/home/alice/.ssh"
+UNREADABLE_AK2 = f"unreadable by account: {ALICE}/authorized_keys2"
+SETPRIV_MISSING = "setpriv (util-linux) missing: files in user homes not read"
+
+
+@pytest.fixture(scope="module")
+def r1cfg(cfg):
+    """The installed config with r1 as the entry (pinned host key), same database; scans use --no-crawl."""
+    host, port = L.find_r1()
+    data = yaml.safe_load(cfg["installed"].read_text())
+    data["entry"] = {"host": host, "port": port,
+                     "host_keys": [" ".join((L.KEYS / "r1_host_ed25519.pub").read_text().split()[:2])]}
+    p = cfg["dir"] / "r1.yaml"
+    p.write_text(yaml.safe_dump(data))
+    p.chmod(0o600)
+    return p
+
+
+def _r1_scan(ctl, cfg, r1cfg, label, evidence):
+    """Scan r1 alone (bracketed by the snapshot); its host_scan row and the scan id."""
+    before = ctl.snapshot_all()
+    proc = L.sshbite(r1cfg, "scan", "--no-crawl", "--label", label)
+    diff = L.snapshot_diff(before, ctl.snapshot_all())
+    _write(evidence, f"snapshot-{label}.diff", diff)
+    _write(evidence, f"console-scan-{label}.txt", f"$ sshbite scan --no-crawl --label {label}   # entry r1\n"
+           + proc.stdout + proc.stderr)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert diff == "", diff
+    conn = _db(cfg)
+    sid = conn.execute("SELECT max(id) FROM scan WHERE status='completed'").fetchone()[0]
+    # alice's known_hosts names jump (172.30.1.5): with --no-crawl it is a row with status max_depth
+    all_rows = _rows(conn, sid)
+    others = {n: r["status"] for n, r in all_rows.items() if n != "r1"}
+    assert set(others.values()) <= {"max_depth"}, others
+    rows = [all_rows["r1"]]
+    _write(evidence, f"scans-show-{label}.txt", L.sshbite(r1cfg, "scans", "show", str(sid)).stdout)
+    return rows[0], sid
+
+
+def _home_rows(conn, sid, host_id, prefix: str) -> dict[str, int]:
+    """How many rows of each per-file table of this scan and host lie under PREFIX."""
+    out = {}
+    for table, col in (("authorized_entry", "file"), ("private_key", "path"), ("pub_file", "path"),
+                       ("known_host_entry", "file"), ("ssh_config_entry", "file")):
+        out[table] = conn.execute(f"SELECT count(*) FROM {table} WHERE scan_id=? AND host_id=? AND {col} LIKE ?",
+                                  (sid, host_id, prefix + "%")).fetchone()[0]
+    return out
+
+
+def test_i06_r1(ctl, cfg, r1cfg, state, evidence):
+    """r1 (AlmaLinux 9) in mode installed: ok/root, alice's keys found, her root-owned authorized_keys2 is
+    'unreadable by account' (a reason, the status stays ok) and nothing of it is in the results."""
+    r, sid = _r1_scan(ctl, cfg, r1cfg, "r1-installed", evidence)
+    state["r1"] = sid
+    assert (r["status"], r["privilege"]) == ("ok", "root"), (r["status"], r["privilege"], r["error"])
+    assert "AlmaLinux" in (r["os"] or ""), r["os"]
+    reasons = json.loads(r["partial_reasons"])
+    assert UNREADABLE_AK2 in reasons, reasons
+    assert all(x.startswith("unreadable by account: ") for x in reasons), reasons
+    conn = _db(cfg)
+    hid = r["host_id"]
+    ak = conn.execute("SELECT username, file, fp FROM authorized_entry WHERE scan_id=? AND host_id=?",
+                      (sid, hid)).fetchall()
+    assert ("alice", f"{ALICE}/authorized_keys", L.key_fp("k_ops")) in [tuple(x) for x in ak], ak
+    assert L.key_fp("k_orphan") not in [x[2] for x in ak], "content of the root-owned authorized_keys2 was read"
+    pk = conn.execute("SELECT username, path, fp, encrypted FROM private_key WHERE scan_id=? AND host_id=?",
+                      (sid, hid)).fetchall()
+    assert [tuple(x) for x in pk] == [("alice", f"{ALICE}/id_ed25519", L.key_fp("k_alice"), "no")], pk
+    kh = conn.execute("SELECT count(*) FROM known_host_entry WHERE scan_id=? AND host_id=? AND file=?",
+                      (sid, hid, f"{ALICE}/known_hosts")).fetchone()[0]
+    assert kh == 1
+    assert "partial_scan" not in {x[0] for x in conn.execute(
+        "SELECT rule FROM finding WHERE scan_id=? AND host_id=?", (sid, hid))}
+
+
+def test_i07_no_setpriv(ctl, cfg, r1cfg, state, evidence):
+    """J5: r1 without setpriv (chmod 000) is partial with the reason of spec 7.3 and nothing from /home/alice;
+    host keys, sshd and the shadow summary are there. Restored afterwards."""
+    mode = ctl.run_text("r1", "stat -c %a /usr/bin/setpriv").strip()
+    ctl.run_text("r1", "chmod 000 /usr/bin/setpriv")
+    try:
+        r, sid = _r1_scan(ctl, cfg, r1cfg, "r1-no-setpriv", evidence)
+    finally:
+        ctl.run_text("r1", f"chmod {mode} /usr/bin/setpriv")
+    state["r1_nosetpriv"] = sid
+    assert (r["status"], r["privilege"]) == ("partial", "root"), (r["status"], r["privilege"], r["error"])
+    reasons = json.loads(r["partial_reasons"])
+    assert reasons[0] == SETPRIV_MISSING, reasons
+    assert not any(x.startswith("unreadable by account") for x in reasons), reasons
+    conn = _db(cfg)
+    hid = r["host_id"]
+    assert set(_home_rows(conn, sid, hid, "/home/").values()) == {0}, _home_rows(conn, sid, hid, "/home/")
+    assert conn.execute("SELECT count(*) FROM host_key WHERE scan_id=? AND host_id=?", (sid, hid)).fetchone()[0] == 2
+    assert conn.execute("SELECT count(*) FROM sshd_setting WHERE scan_id=? AND host_id=?",
+                        (sid, hid)).fetchone()[0] > 10
+    pw = dict(conn.execute("SELECT username, pw_state FROM account WHERE scan_id=? AND host_id=?", (sid, hid)))
+    assert pw.get("alice") in ("locked", "hash", "none") and pw.get("root") != "unknown", pw
+    assert "partial_scan" in {x[0] for x in conn.execute(
+        "SELECT rule FROM finding WHERE scan_id=? AND host_id=?", (sid, hid))}
+    assert ctl.run_text("r1", "stat -c %a /usr/bin/setpriv").strip() == mode
+
+
+# ---- i08: the symlink race (spec 8.3), on r1 (EL9) and a5 (Debian 12)
+
+RACE_RUNS = 200
+RACE_WINDOW = ("symlink not followed", "unreadable by account")
+
+
+async def _collector_runs(entry, target: str, n: int) -> list[str]:
+    """N x `sudo -n P` through the gate with the audit key (a5 through jump, r1 directly); the outputs."""
+    key = asyncssh.read_private_key(str(L.KEYS / "audit_ed25519"))
+    host, port = entry
+    outs: list[str] = []
+    async with asyncssh.connect(host, port, username="sshbite", client_keys=[key], known_hosts=_known("jump"),
+                                config=None, agent_path=None, connect_timeout=15) as jconn:
+        if target == "r1":
+            thost, tport = L.find_r1()
+            cm = asyncssh.connect(thost, tport, username="sshbite", client_keys=[key], known_hosts=_known("r1"),
+                                  config=None, agent_path=None, connect_timeout=15)
+        else:
+            cm = asyncssh.connect(LAB_HOSTS[target][0], 22, tunnel=jconn, username="sshbite", client_keys=[key],
+                                  known_hosts=_known(target), config=None, agent_path=None, connect_timeout=15)
+        async with cm as conn:
+            sem = asyncio.Semaphore(4)
+
+            async def one():
+                async with sem:
+                    r = await conn.run(f"sudo -n {P}", check=False, stdin=asyncssh.DEVNULL)
+                    assert r.exit_status == 0, (r.exit_status, r.stderr)
+                    return r.stdout
+
+            outs = await asyncio.gather(*(one() for _ in range(n)))
+    return list(outs)
+
+
+def _racer_lines(out: str) -> list[str]:
+    return [ln for ln in out.splitlines() if ln.startswith(("#X /home/racer", "#F /home/racer"))]
+
+
+def test_i08_race(entry, ctl, state, evidence):
+    rows = []
+    for host in ("r1", "a5"):
+        print(ctl.run(host, "race.sh", "start"))
+        try:
+            control = ctl.run(host, "race.sh", f"count {RACE_RUNS}").strip()
+            outs = asyncio.run(_collector_runs(entry, host, RACE_RUNS))
+        finally:
+            print(ctl.run(host, "race.sh", "stop"))
+        n_control = int(control.split()[1].split("/")[0])
+        leaked = sum("RACE-CANARY" in o for o in outs)
+        complete = sum(o.startswith(f"#SSHBITE 1 {B}\n") and "\n#END " in o for o in outs)
+        window = sum(any(w in ln for ln in _racer_lines(o) if ln.startswith("#X") for w in RACE_WINDOW) for o in outs)
+        reasons: dict[str, int] = {}
+        for o in outs:
+            for ln in _racer_lines(o):
+                if ln.startswith("#X"):
+                    reasons[ln.split("\t", 1)[1]] = reasons.get(ln.split("\t", 1)[1], 0) + 1
+        rows.append((host, n_control, leaked, window, complete, reasons))
+    lines = ["# Symlink race (i08): control and collector, per host", "",
+             "`lab/race.sh start` on the host: user `racer` flips `~/.ssh/known_hosts` between a file and a symlink to",
+             "`/root/race-canary` (0600 root) and `~/.ssh` between the directory and a symlink to `/root/race-dir`",
+             "(0700 root, holding `known_hosts` with the same canary), both with `mv -T`, in endless loops.", "",
+             f"- **Control**: {RACE_RUNS} x `head -n 5 ~racer/.ssh/known_hosts` as root (lab control) - "
+             "a reader with root's rights; hits = output contains `RACE-CANARY`.",
+             f"- **Collector**: {RACE_RUNS} x `sudo -n {P}` with the audit key through the installed gate; "
+             "hits = output contains `RACE-CANARY`.",
+             "- **Window hit**: the run printed `symlink not followed` or `unreadable by account` for a path of racer, "
+             "i.e. it met the swapped state.", "",
+             "| Host | Control (root) | Collector | Collector runs in the window | Complete outputs (#END) | "
+             "#X reasons for racer (count over all runs) |",
+             "|---|---|---|---|---|---|"]
+    for host, nc, lk, win, comp, reasons in rows:
+        rs = ", ".join(f"{k}: {v}" for k, v in sorted(reasons.items())) or "-"
+        lines.append(f"| {host} | {nc}/{RACE_RUNS} | {lk}/{RACE_RUNS} | {win}/{RACE_RUNS} | {comp}/{RACE_RUNS} | {rs} |")
+    _write(evidence, "race-count.md", "\n".join(lines) + "\n")
+    print("\n".join(lines))
+    for host, nc, lk, win, comp, _reasons in rows:
+        assert nc >= 1, f"{host}: the control saw no canary - the race is not proven, sharpen it"
+        assert lk == 0, f"{host}: the collector printed the canary in {lk} of {RACE_RUNS} runs"
+        assert win >= 1, f"{host}: no collector run met the swapped state"
+        assert comp == RACE_RUNS, f"{host}: {RACE_RUNS - comp} incomplete collector outputs"
 
 
 def test_i99_remove(ctl, state, evidence):

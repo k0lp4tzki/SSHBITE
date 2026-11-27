@@ -47,3 +47,112 @@ def test_violations_are_found(bad):
 ])
 def test_allowed_forms(ok):
     assert lint(f"for f in a; do {ok}; done") == [] or lint(ok) == []
+
+
+# ---------------------------------------------------------------- spec 7.5: setpriv
+
+SP = 'setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs --'
+SP_FORM = "setpriv: only '--reuid=\"$uid\" --regid=\"$gid\" --init-groups --no-new-privs -- CMD' is allowed"
+
+
+def _msgs(text: str) -> list[str]:
+    return [v.message for v in lint(text)]
+
+
+@pytest.mark.parametrize("ok", [
+    f'{SP} ls -A -- "$1"', f"{SP} stat -c '%u %U %a %Y %s' -- \"$1\"", f'{SP} ls -lnd -- "$1"',
+    f'{SP} head -n "$1" -- "$2"', f'{SP} test "$1" "$2"',
+    f"{SP} ssh-keygen -y -P '' -f \"$2\" </dev/null 2>&1", f'{SP} ssh-keygen -l -f "$2" </dev/null 2>&1',
+])
+def test_setpriv_allowed_form(ok):
+    assert lint(ok) == [], ok
+
+
+@pytest.mark.parametrize("bad", [
+    'setpriv --reuid="$uid" --regid="$gid" --init-groups -- head x',               # no --no-new-privs
+    'setpriv --reuid="$uid" --regid="$gid" --no-new-privs -- head x',              # no --init-groups
+    'setpriv --reuid=$uid --regid="$gid" --init-groups --no-new-privs -- head x',  # unquoted
+    'setpriv --reuid="$u" --regid="$gid" --init-groups --no-new-privs -- head x',  # other variable
+    'setpriv --reuid=0 --regid=0 --init-groups --no-new-privs -- head x',
+    'setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs --inh-caps=+all -- head x',
+    'setpriv --reuid="$uid" --regid="$gid" --clear-groups --no-new-privs -- head x',
+    'setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs head x',   # no --
+    f"{SP}",                                                                       # nothing wrapped
+    "setpriv head x",
+])
+def test_setpriv_other_flags_fail(bad):
+    assert _msgs(bad) == [SP_FORM], bad
+
+
+@pytest.mark.parametrize("cmd,name", [
+    ("sh -c id", "sh"), ("cat /etc/shadow", "cat"), ("/bin/sh -s", "sh"), ("bash", "bash"),
+    ("awk 1 f", "awk"), ("setpriv --reuid=0 id", "setpriv"), ("runuser -u root id", "runuser"),
+])
+def test_setpriv_wrapped_command_fails(cmd, name):
+    assert _msgs(f"{SP} {cmd}") == [f"setpriv: command '{name}' may not be wrapped"]
+
+
+@pytest.mark.parametrize("data", ['"$@"', '"$1"', "$cmd", '"$(printf ls)"'])
+def test_setpriv_wrapped_variable_fails(data):
+    assert _msgs(f"{SP} {data} x") == [f"command name built from data: {data}"]
+
+
+def test_setpriv_wrapped_arguments_are_checked():
+    assert _msgs(f"{SP} ssh-keygen -t ed25519 -f k") == [
+        "ssh-keygen: only '-y -P \"\" -f FILE' and '-l -f FILE' are allowed, got ['-t', 'ed25519', '-f', 'k']"]
+    assert _msgs(f"{SP} /bin/ls x") == ["unexpected command path /bin/ls"]
+
+
+def test_setpriv_runuser_is_forbidden():
+    assert _msgs("runuser -u alice -- cat /home/alice/.ssh/id_rsa") == ["forbidden command 'runuser'"]
+    assert _msgs("x=$(runuser -u alice -- ls)") == ["forbidden command 'runuser'"]
+
+
+def test_setpriv_collect_sh_lints_clean_and_uses_it():
+    text = collector.collect_script()
+    assert lint(text, "collect.sh") == []
+    used = commands_used(text)
+    assert "setpriv" in used and "runuser" not in used
+    # every setpriv line of the collector is the one allowed form
+    lines = [ln.strip() for ln in text.splitlines() if "setpriv" in ln and not ln.strip().startswith("#")]
+    sp = [ln for ln in lines if ln.startswith("setpriv ")]
+    assert len(sp) == 7 and all(ln.startswith(SP + " ") for ln in sp), sp
+
+
+KG_STDIN = "uhead 5000 \"$1\" 2>/dev/null | head -c 65536 | ssh-keygen -y -P '' -f /dev/stdin 2>&1"
+KG_STDIN_FORM = ("ssh-keygen: stdin only as 'uhead N PATH 2>/dev/null | head -c 65536 | "
+                 "ssh-keygen -y -P \"\" -f /dev/stdin'")
+UHEAD = 'uhead() {\n  head -n "$1" -- "$2"\n}\n'
+
+
+def test_setpriv_keygen_stdin_allowed_form():
+    """CEO correction 1: the owner's 0644 key - the account reads it, the collector's ssh-keygen gets the pipe."""
+    assert lint(UHEAD + KG_STDIN) == []
+    assert lint(UHEAD + f"o=$({KG_STDIN})") == []
+
+
+@pytest.mark.parametrize("bad", [
+    "cat /root/.ssh/id_rsa | ssh-keygen -y -P '' -f /dev/stdin",                     # not read by the account
+    "head -n 5 /home/a/.ssh/id_rsa | head -c 65536 | ssh-keygen -y -P '' -f /dev/stdin",  # head as root
+    "uhead 5 \"$1\" | ssh-keygen -y -P '' -f /dev/stdin",                           # no size cap
+    "uhead 5 \"$1\" | head -c 999999 | ssh-keygen -y -P '' -f /dev/stdin",          # other cap
+    "uhead 5 \"$1\" | head -c 65536 | ssh-keygen -l -f /dev/stdin",                  # only -y
+    "uhead 5 \"$1\" | head -c 65536 | ssh-keygen -y -P '' -f -",                     # only /dev/stdin
+    "uhead 5 \"$1\" | head -c 65536 | ssh-keygen -y -P '' -f /proc/self/fd/0",
+    "uhead 5 \"$1\"; head -c 65536 | ssh-keygen -y -P '' -f /dev/stdin",            # not one pipeline
+    "ssh-keygen -y -P '' -f /dev/stdin",                                             # stdin from anywhere
+    "x | uhead 5 \"$1\" | head -c 65536 | ssh-keygen -y -P '' -f /dev/stdin",       # something before uhead
+])
+def test_setpriv_keygen_stdin_other_forms_fail(bad):
+    assert KG_STDIN_FORM in _msgs(UHEAD + bad), bad
+
+
+def test_setpriv_keygen_stdin_not_as_account():
+    # wrapped in setpriv it would read the pipe as the owner and fail again: not allowed
+    assert KG_STDIN_FORM in _msgs(UHEAD + f"uhead 5 x | head -c 65536 | {SP} ssh-keygen -y -P '' -f /dev/stdin")
+
+
+def test_setpriv_collect_sh_has_the_keygen_stdin_form_once():
+    text = collector.collect_script()
+    assert lint(text, "collect.sh") == []
+    assert sum(1 for ln in text.splitlines() if "-f /dev/stdin" in ln and not ln.strip().startswith("#")) == 1

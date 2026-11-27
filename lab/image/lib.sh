@@ -1,5 +1,6 @@
 #!/bin/sh
-# Build-time helpers for the lab image. Usage from seed/<host>/setup.sh:  . /lab/image/lib.sh
+# Build-time helpers for the lab images (Debian 12 and AlmaLinux 9). Usage from seed/<host>/setup.sh:
+#   . /lab/image/lib.sh
 set -eu
 K=/lab/keys
 F=/lab/seed/files
@@ -46,7 +47,11 @@ common() {
   install -m 600 -o sshbite -g sshbite "$K/audit_ed25519.pub" /home/sshbite/.ssh/authorized_keys
   printf 'sshbite ALL=(root) NOPASSWD: ALL\n' > /etc/sudoers.d/sshbite
   chmod 440 /etc/sudoers.d/sshbite
-  # lab control (test harness only, outside /etc, /root, /home)
+  # lab control (test harness only, outside /etc, /root, /home). Its sshd runs without PAM and so refuses
+  # a root whose password field starts with "!" (AlmaLinux images: "!locked"); "*" = no password, as on Debian
+  case "$(getent shadow root | cut -d: -f2)" in
+    '!'*) usermod -p '*' root ;;
+  esac
   install -d -m 700 /lab/ctl
   install -m 600 "$K/labctl_host_ed25519" /lab/ctl/host_ed25519
   install -m 600 "$K/labctl_ed25519.pub" /lab/ctl/authorized_keys

@@ -118,8 +118,9 @@ Read it top to bottom; it is about 300 lines of POSIX sh. Things to confirm:
 2. **Output goes to stdout only.** The only redirections are `2>/dev/null`, `2>&1` and `</dev/null`;
    there is no `>`, `>>` or `tee`, so nothing can be written to a file.
 3. **Only reading commands:** `cat head ls stat awk sed grep getent ip hostname uname id sort printf
-   test [ true`, plus `ssh-keygen` and `sshd` in fixed forms, plus the shell functions defined in the
-   script itself (`sec`, `val`, `fhdr`, …).
+   test [ true`, plus `ssh-keygen` and `sshd` in fixed forms, `setpriv` in exactly one form (see
+   [below](#files-in-user-homes-are-read-as-their-owner)), plus the shell functions defined in the
+   script itself (`sec`, `val`, `fhdr`, `uls`, …).
 4. **Sections and what they read:**
 
    | Section | Reads |
@@ -129,7 +130,7 @@ Read it top to bottom; it is about 300 lines of POSIX sh. Things to confirm:
    | SSHD | `sshd -T` (prints the effective config), `/etc/ssh/sshd_config` and up to 20 files from its `Include` lines |
    | ACCOUNTS | `getent passwd` (max 20,000 lines), else `/etc/passwd` |
    | SHADOW | root only: `awk -F: '{print $1":"substr($2,1,1)":"$8}' /etc/shadow` – the user name, the **first character** of the hash field (`!`, `*`, `$`) and the expiry date. No hash leaves the host. |
-   | USERS | per account with `~/.ssh` or an authorized_keys file (max 2,000): file metadata of every `~/.ssh` entry (max 100); the content of `authorized_keys*` (per `AuthorizedKeysFile`), `known_hosts*`, `config`, `*.pub` (max 5,000 lines, files > 1 MiB skipped) |
+   | USERS | **as the account** (`setpriv`, see below), per account with `~/.ssh` or an authorized_keys file (max 2,000): file metadata of every `~/.ssh` entry (max 100); the content of `authorized_keys*` (per `AuthorizedKeysFile`), `known_hosts*`, `config`, `*.pub` (max 5,000 lines, files > 1 MiB skipped) |
    | private keys | never printed. Only their first line (`-----BEGIN … PRIVATE KEY-----`), `ssh-keygen -y -P '' -f FILE` (prints the **public** key if there is no passphrase; "incorrect passphrase" means encrypted) and `ssh-keygen -l -f FILE` (fingerprint) |
    | SYSTEM | `/etc/ssh/ssh_known_hosts`, `/etc/ssh/ssh_config`, `/etc/ssh/ssh_config.d/*` (max 20) |
 
@@ -150,7 +151,10 @@ function definitions and `$(…)` command substitutions, recursively – and fai
 - any command not on the allowlist above (or not a function defined in the script, or one of the
   builtins `set export read continue break return shift :`);
 - any of `rm mv cp tee touch mkdir mktemp chmod chown ln dd install truncate ssh scp sftp curl wget eval
-  exec . source sh bash sudo su xargs env nohup nc socat python python3 perl`;
+  exec . source sh bash sudo su xargs env nohup nc socat python python3 perl runuser`;
+- `setpriv` in any form other than `setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs --
+  CMD` (compared word for word, quotes included), or wrapping anything but `ls stat head test ssh-keygen`
+  (whose arguments are then checked by their own rules); a variable as the wrapped command;
 - a command name containing `$` (built from data), a command with an unexpected absolute path (only
   `/usr/sbin/sshd` is allowed), background jobs (`&`) and backquotes;
 - any redirection other than `2>/dev/null`, `2>&1`, `</dev/null`, and `>>` anywhere;
@@ -173,28 +177,50 @@ catches them.
 - **The literal sudo/sh command strings** are not part of the scripts; they are fixed in
   `sshbite/privilege.py` and printed by `collector show` for review.
 
-## Residual risk: a symlink race in users' `~/.ssh`
+## Files in user homes are read as their owner
 
-The collector runs as root and reads files in directories that belong to other users (`~/.ssh/*`,
-authorized_keys files). Before it prints a file it checks that the path is not a symbolic link
-(`[ -L "$p" ]`), and for authorized_keys also the directory one level up. POSIX sh offers no way to open a
-file first and check the opened file afterwards, so there is a short window between the check and the
-read. A local user who owns such a directory could, in that window, replace a file with a symlink to a
-file only root may read (e.g. `/etc/shadow`); the collector would then print that content (up to 5,000
-lines) into the scan, where it ends up in the database and the UI. The user does not get to see it.
+The collector runs as root, but it does not read other users' files as root. Everything it reads below a
+user's `~/.ssh` and every `AuthorizedKeysFile` path of that user (also absolute ones such as
+`/etc/ssh/authorized_keys/%u`) is read **as that user** – the way sshd itself reads authorized_keys:
 
-This is accepted as a residual risk and not changed in v1, because:
+- the helpers `uls`, `ustat`, `ulsnd`, `uhead`, `utest` and `ukg` at the top of `collect.sh` run `ls -A`,
+  `stat` (and its `ls -lnd` fallback), `head`, `test -r` and `ssh-keygen -y/-l` as
+  `setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs -- CMD …` with the account's uid,
+  gid and groups from passwd. `setpriv` (util-linux) only switches ids; it opens no PAM session and logs
+  nothing. `--no-new-privs` blocks setuid programs. `runuser` and `su` are forbidden by the lint;
+- this applies when the collector runs as root and the account's uid is not 0. Root's own home is read
+  as root; an unprivileged collector reads everything as itself, as before;
+- only the shell tests `[ -L ] [ -d ] [ -f ] [ -e ]` run as root – they look at metadata, never at
+  content. HOSTKEYS, SSHD, SHADOW, SYSTEM and META stay root;
+- a file the user cannot read (e.g. a root-owned 0600 `authorized_keys2` in the home) is reported as
+  `unreadable by account` and shown on the host as the reason `unreadable by account: PATH`; the host
+  stays `ok`. sshd cannot use such a file either;
+- `ssh-keygen` run by a key's owner refuses a private key that group or others may read ("bad
+  permissions", as `ssh` does). Only then the account reads the key once more (`uhead`, at most
+  64 KiB) and pipes it to the collector's own `ssh-keygen -y -P '' -f /dev/stdin`. That `ssh-keygen`
+  opens no path below `~`, only the pipe, so the race below gains nothing; the key never leaves the host
+  and only its public half is printed. Such a key is therefore still reported as *unencrypted* and with
+  *bad permissions*. If the key has a passphrase, `ssh-keygen` cannot use the pipe (it opens the key a
+  second time to try the passphrase), so for an *encrypted* key that others may read the passphrase
+  state is shown as *unknown*; fingerprint and *bad permissions* are still reported. The lint allows `-f /dev/stdin` in exactly this one pipeline
+  (`uhead N PATH 2>/dev/null | head -c 65536 | ssh-keygen -y -P "" -f /dev/stdin`);
+- **fail closed:** without `/usr/bin/setpriv` (or `/bin/setpriv`) the collector reads nothing in user
+  homes – no fallback to root – and the host becomes `partial` with
+  `setpriv (util-linux) missing: files in user homes not read`. Host keys, sshd and the shadow summary
+  are still collected.
 
-- only **root and the owner of that home directory** can set up the race – it needs write access to the
-  user's own `~/.ssh` at exactly the moment of the scan; root can read the file anyway;
-- the content never reaches the attacker: it goes only into the SSHBITE database, which is created with
-  mode **0600** in a directory with mode 0700 (and lives in the container's `/data` volume as uid 10001),
-  and into the UI, which requires a login;
-- the result would be visible: the file would show up as the content of an authorized_keys, config or
-  known_hosts file of that user, with parse errors.
+So the old race – a local user swaps a file in their `~/.ssh`, or `~/.ssh` itself, for a symlink to a file
+only root may read, between the collector's check and its read – now yields only names, metadata and
+content that this user may read anyway. POSIX sh still cannot open a file and check it afterwards, and
+the window between `[ -L ]` and the read is still there; it no longer matters.
 
-If you find such content in a scan, treat that host and user as hostile, delete the scan
-(`sshbite scans delete ID`) and its backups.
+The lab test `i08_race` (`tests/e2e/test_lab_installed.py`, with `lab/race.sh`) proves it on a Debian 12
+and an AlmaLinux 9 host: a local user flips `~/.ssh/known_hosts` between a file and a symlink to a
+root-only canary, and `~/.ssh` between the directory and a symlink to a root-only directory, in endless
+loops. 200 reads as root (the control) must see the canary at least once; 200 collector runs through the
+installed gate must not see it a single time, and at least one of them must have met the swapped state
+(`symlink not followed` or `unreadable by account`). The counts are in
+`evidence/hardening/race-count.md`.
 
 ## Residual risk: the audit key reveals the inventory
 

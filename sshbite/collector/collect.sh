@@ -1,5 +1,5 @@
 LC_ALL=C; export LC_ALL; PATH=/usr/sbin:/usr/bin:/sbin:/bin; set -u
-B=01fba7910d9e
+B=6a16430f3910
 # SSHBITE collector. Fixed, read-only POSIX sh script, sent verbatim on stdin.
 # It reads files and prints records to stdout. It writes no file, starts no
 # network connection and builds no command from target data. B above is the
@@ -9,6 +9,10 @@ NL='
 '
 NSEC=0
 FSIZE=0
+ROOT=0
+ASU=0
+uid=''
+gid=''
 printf '#SSHBITE 1 %s\n' "$B"
 
 sec() {
@@ -20,9 +24,81 @@ val() {
   printf '#V %s\t%s\n' "$1" "$2"
 }
 
+# ---- reads in user homes run as the account (setpriv, util-linux), never as root
+# ASU=1 while USERS handles an account with uid != 0 and the collector runs as root: every
+# read below (ls, stat, head, test -r, ssh-keygen) then runs with that account's uid, gid and
+# groups, like sshd reads authorized_keys. A file or ~/.ssh swapped for a symlink therefore
+# yields only what the account may read itself. ASU=0: as the collector (system files; or
+# the collector is not root; or the account is uid 0).
+uls() {
+  if [ "$ASU" = 1 ]; then
+    setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs -- ls -A -- "$1"
+  else
+    ls -A -- "$1"
+  fi
+}
+
+ustat() {
+  if [ "$ASU" = 1 ]; then
+    setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs -- stat -c '%u %U %a %Y %s' -- "$1"
+  else
+    stat -c '%u %U %a %Y %s' -- "$1"
+  fi
+}
+
+ulsnd() {
+  if [ "$ASU" = 1 ]; then
+    setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs -- ls -lnd -- "$1"
+  else
+    ls -lnd -- "$1"
+  fi
+}
+
+# uhead N PATH
+uhead() {
+  if [ "$ASU" = 1 ]; then
+    setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs -- head -n "$1" -- "$2"
+  else
+    head -n "$1" -- "$2"
+  fi
+}
+
+# utest -r|-x PATH - the external test(1), so that it runs as the account
+utest() {
+  if [ "$ASU" = 1 ]; then
+    setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs -- test "$1" "$2"
+  else
+    test "$1" "$2"
+  fi
+}
+
+# ukg y|l PATH - ssh-keygen -y (public half) or -l (fingerprint), output and exit status
+ukg() {
+  if [ "$1" = y ]; then
+    if [ "$ASU" = 1 ]; then
+      setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs -- ssh-keygen -y -P '' -f "$2" </dev/null 2>&1
+    else
+      ssh-keygen -y -P '' -f "$2" </dev/null 2>&1
+    fi
+  elif [ "$ASU" = 1 ]; then
+    setpriv --reuid="$uid" --regid="$gid" --init-groups --no-new-privs -- ssh-keygen -l -f "$2" </dev/null 2>&1
+  else
+    ssh-keygen -l -f "$2" </dev/null 2>&1
+  fi
+}
+
+# unr - the reason for a file that cannot be read: as the account, or as the collector
+unr() {
+  if [ "$ASU" = 1 ]; then
+    printf 'unreadable by account'
+  else
+    printf 'unreadable'
+  fi
+}
+
 # fhdr PATH ACCOUNT - file header record; sets FSIZE
 fhdr() {
-  st=$(stat -c '%u %U %a %Y %s' -- "$1" 2>/dev/null) || st=$(ls -lnd -- "$1" 2>/dev/null | awk '{print $3 " ? " $1 " 0 " $5}')
+  st=$(ustat "$1" 2>/dev/null) || st=$(ulsnd "$1" 2>/dev/null | awk '{print $3 " ? " $1 " 0 " $5}')
   set -f
   set -- "$1" "$2" $st
   set +f
@@ -36,17 +112,18 @@ content() {
     printf '#X %s\ttoo large\n' "$1"
     return
   fi
-  if [ ! -r "$1" ]; then
-    printf '#X %s\tunreadable\n' "$1"
+  if ! utest -r "$1"; then
+    printf '#X %s\t%s\n' "$1" "$(unr)"
     return
   fi
-  head -n 5000 -- "$1" 2>/dev/null | sed 's/^/|/'
+  uhead 5000 "$1" 2>/dev/null | sed 's/^/|/'
   printf '\n'
 }
 
-# kg PATH MODE RC OUTPUT - ssh-keygen result records (at most 2 lines)
+# kg PATH MODE RC OUTPUT - ssh-keygen result records (at most 2 lines: the last two, so that a
+# warning banner - e.g. "UNPROTECTED PRIVATE KEY FILE" when run as the owner - does not hide the result)
 kg() {
-  printf '%s\n' "$4" | head -n 2 | while IFS= read -r l; do
+  printf '%s\n' "$4" | awk 'NF {a = b; b = $0; n++} END {if (n > 1) print a; if (n > 0) print b}' | while IFS= read -r l; do
     printf '#K %s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$l"
   done
 }
@@ -56,19 +133,36 @@ privkey() {
   if [ "$FSIZE" -gt 65536 ] 2>/dev/null; then
     return
   fi
-  if [ ! -r "$1" ]; then
-    printf '#X %s\tunreadable\n' "$1"
+  if ! utest -r "$1"; then
+    printf '#X %s\t%s\n' "$1" "$(unr)"
     return
   fi
-  h=$(head -n 1 -- "$1" 2>/dev/null | head -c 200)
+  h=$(uhead 1 "$1" 2>/dev/null | head -c 200)
   case "$h" in
     *'PRIVATE KEY-----'* | *PuTTY-User-Key-File*) ;;
     *) return ;;
   esac
   printf '#H %s\t%s\n' "$1" "$h"
-  o=$(ssh-keygen -y -P '' -f "$1" </dev/null 2>&1)
-  kg "$1" y "$?" "$o"
-  o=$(ssh-keygen -l -f "$1" </dev/null 2>&1)
+  o=$(ukg y "$1")
+  r=$?
+  case "$o" in
+    *'bad permissions'* | *'UNPROTECTED PRIVATE KEY FILE'*)
+      # ssh-keygen refuses a key that group/other may read when it runs as the key's owner
+      # (st_uid == getuid()). Then the account reads it (uhead, as above) and the collector's
+      # ssh-keygen gets it through a pipe: no path below ~ is opened with root's rights.
+      # Only a success replaces the result: an encrypted key fails on a pipe (ssh-keygen opens
+      # it twice), and then the account's "bad permissions" is the more honest answer.
+      if [ "$ASU" = 1 ]; then
+        p2=$(uhead 5000 "$1" 2>/dev/null | head -c 65536 | ssh-keygen -y -P '' -f /dev/stdin 2>&1)
+        if [ "$?" = 0 ]; then
+          o="$p2"
+          r=0
+        fi
+      fi
+      ;;
+  esac
+  kg "$1" y "$r" "$o"
+  o=$(ukg l "$1")
   kg "$1" l "$?" "$o"
 }
 
@@ -96,6 +190,19 @@ sec META
 val hostname "$(hostname 2>/dev/null)"
 val uname "$(uname -srm 2>/dev/null)"
 val uid "$(id -u 2>/dev/null)"
+if [ "$(id -u 2>/dev/null)" = 0 ]; then
+  ROOT=1
+fi
+# setpriv: yes/no as root, n/a otherwise (the collector then reads everything as itself anyway)
+SETPRIV=n/a
+if [ "$ROOT" = 1 ]; then
+  if [ -x /usr/bin/setpriv ] || [ -x /bin/setpriv ]; then
+    SETPRIV=yes
+  else
+    SETPRIV=no
+  fi
+fi
+val setpriv "$SETPRIV"
 val cmd os-release
 head -n 20 /etc/os-release 2>/dev/null | sed 's/^/|/'
 printf '\n'
@@ -208,14 +315,37 @@ printf '%s\n' "$PW" | {
     fi
     val user "$u"
     d="$home/.ssh"
+    ASU=0
+    if [ "$ROOT" = 1 ]; then
+      num=1
+      case "$uid" in
+        '' | *[!0-9]*) num=0 ;;
+      esac
+      case "$gid" in
+        '' | *[!0-9]*) num=0 ;;
+      esac
+      if [ "$num" = 0 ]; then
+        printf '#X %s\tuid or gid not numeric\n' "$d"
+        continue
+      fi
+      if [ "$uid" != 0 ]; then
+        # fail closed: without setpriv nothing in this home is read (reading as root would
+        # bring back the symlink race)
+        if [ "$SETPRIV" != yes ]; then
+          printf '#X %s\tnot read: setpriv missing\n' "$d"
+          continue
+        fi
+        ASU=1
+      fi
+    fi
     if [ -L "$d" ]; then
       # a user controls ~/.ssh: never follow a link (it could point at /root/.ssh or /etc)
       fhdr "$d" "$u"
       printf '#X %s\tsymlink not followed\n' "$d"
     elif [ -d "$d" ]; then
       fhdr "$d" "$u"
-      if [ -r "$d" ] && [ -x "$d" ]; then
-        ls -A -- "$d" 2>/dev/null | head -n 101 | {
+      if utest -r "$d" && utest -x "$d"; then
+        uls "$d" 2>/dev/null | head -n 101 | {
           n=0
           while IFS= read -r e; do
             [ -n "$e" ] || continue
@@ -232,7 +362,9 @@ printf '%s\n' "$PW" | {
                 ;;
             esac
             if [ ! -e "$p" ] && [ ! -L "$p" ]; then
-              printf '#X %s\tname with tab or newline skipped\n' "$d"
+              # listed, but gone now: removed or renamed between ls and here (a name with a
+              # newline arrives in pieces that do not exist either, so it lands here as well)
+              printf '#X %s\tvanished while reading\n' "$p"
               continue
             fi
             case "$NL$akfs" in
@@ -251,7 +383,7 @@ printf '%s\n' "$PW" | {
           done
         }
       else
-        printf '#X %s\tunreadable\n' "$d"
+        printf '#X %s\t%s\n' "$d" "$(unr)"
       fi
     fi
     printf '%s' "$akfs" | while IFS= read -r p; do
@@ -272,6 +404,7 @@ printf '%s\n' "$PW" | {
 
 # ---------------------------------------------------------------- SYSTEM
 sec SYSTEM
+ASU=0
 for f in /etc/ssh/ssh_known_hosts /etc/ssh/ssh_config; do
   [ -f "$f" ] || continue
   fhdr "$f" ""

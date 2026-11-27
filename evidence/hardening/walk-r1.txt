@@ -1,0 +1,89 @@
+$ sshbite collector export export
+0b5f423b9418c0da3fa7d82742c8e717d7ecea3b920c3d7a135c79373d63b402  authorized_keys.sshbite
+8fd661564a0bbc35fcbb7bd7836ba2926be35e6064c5e0fea044b011add06c1a  sshbite-collect
+88f124518c3233e6db4d87dea0655f01a286fcc08dc743188b8ec69ddde30f5f  sshbite-gate
+99b2af5b9f622e5383068105d58734dfc19417efe0416597f4262a36f124be55  sshbite-resolve
+8366ab2a63391d4ca748f6dc480d6d4b40e97342219d4a9269321e63b61ffaac  sudoers.d-sshbite
+written to export - verify with: cd export && sha256sum -c SHA256SUMS
+(exit 0)
+
+# r1: install the export as docs/install.md says (lab/installed.sh apply, variant A)
+
+/etc/sudoers.d/sshbite: parsed OK
+root 755 /usr
+root 755 /usr/local
+root 755 /usr/local/libexec
+root 755 /usr/local/libexec/sshbite
+root 755 /usr/local/libexec/sshbite/sshbite-collect
+root 755 /usr/local/libexec/sshbite/sshbite-gate
+root 755 /usr/local/libexec/sshbite/sshbite-resolve
+
+$ sshbite config validate --connect
+config OK: $WALK_DIR/sshbite.yaml
+entry OK, pinned key matches, sudo: root (installed /usr/local/libexec/sshbite/sshbite-collect, collector B=2d534dece3d8 matches)
+warning: crawl.include is empty: crawl targets and ports are taken from target data (known_hosts, ~/.ssh/config, from=) without restriction; set crawl.include to the networks and host names you mean to scan
+(exit 0)
+
+$ sshbite scan --no-crawl --label 'r1 installed'
+scan: entry r1:22, max depth 0, max hosts 1000, concurrency 20
+depth 0: 1 queued, 0 running, 0 done
+depth 0: 0 queued, 0 running, 1 done
+
+scan 1 completed in 1 s
+hosts:    1 connected; 1 ok, 1 max_depth
+findings: 3 - 0 critical, 2 high, 1 medium, 0 low, 0 info
+edges:    1 access (1 effective, 1 unknown origin); keys: 2
+Only the entry point was found; it has no known_hosts/ssh config references. Add seeds to scan more.
+scan id:  1
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+warning: crawl.include is empty: crawl targets and ports are taken from target data (known_hosts, ~/.ssh/config, from=) without restriction; set crawl.include to the networks and host names you mean to scan
+(exit 0)
+
+$ sshbite scans show latest
+scan 1  completed  label: r1 installed
+started 2026-11-27T00:02:36Z  finished 2026-11-27T00:02:36Z  entry r1:22
+tool 0.1.0  collector sha256 8fd661564a0bbc35fcbb7bd7836ba2926be35e6064c5e0fea044b011add06c1a
+hosts: 1 max_depth, 1 ok
+findings: 0 critical, 2 high, 1 medium, 0 low, 0 info
+access edges: 1 (1 effective, 1 unknown origin); unresolved hashed known_hosts entries: 0
+
+host               status            privilege     depth  discovered via                               route
+r1                 ok                root              0  entry                                        r1
+                    reason: unreadable by account: /home/alice/.ssh/authorized_keys2
+172.30.1.5         max_depth         -                 1  r1 /home/alice/.ssh/known_hosts:1            -
+(exit 0)
+
+# r1: chmod 000 /usr/bin/setpriv (was 755)
+
+$ sshbite scan --no-crawl --label 'r1 without setpriv'
+scan: entry r1:22, max depth 0, max hosts 1000, concurrency 20
+depth 0: 1 queued, 0 running, 0 done
+depth 0: 0 queued, 0 running, 1 done (1 partial)
+
+scan 2 completed in 0 s
+hosts:    1 connected; 1 partial
+findings: 2 - 0 critical, 1 high, 1 medium, 0 low, 0 info
+edges:    0 access (0 effective, 0 unknown origin); keys: 0
+Only the entry point was found; it has no known_hosts/ssh config references. Add seeds to scan more.
+scan id:  2
+UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)
+warning: crawl.include is empty: crawl targets and ports are taken from target data (known_hosts, ~/.ssh/config, from=) without restriction; set crawl.include to the networks and host names you mean to scan
+(exit 0)
+
+# r1: chmod 755 /usr/bin/setpriv (restored)
+
+$ sshbite scans show latest
+scan 2  completed  label: r1 without setpriv
+started 2026-11-27T00:02:37Z  finished 2026-11-27T00:02:38Z  entry r1:22
+tool 0.1.0  collector sha256 8fd661564a0bbc35fcbb7bd7836ba2926be35e6064c5e0fea044b011add06c1a
+hosts: 1 partial
+findings: 0 critical, 1 high, 1 medium, 0 low, 0 info
+access edges: 0 (0 effective, 0 unknown origin); unresolved hashed known_hosts entries: 0
+
+host               status            privilege     depth  discovered via                               route
+r1                 partial           root              0  entry                                        r1
+                    reason: setpriv (util-linux) missing: files in user homes not read
+(exit 0)
+
+# r1: lab/installed.sh remove
+restored

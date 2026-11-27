@@ -1,0 +1,111 @@
+$ ruff check .
+E401 [*] Multiple imports on one line
+ --> evidence/p6/cold_start.py:2:1
+  |
+1 | """Cold start of the 2,000-host subnet heatmap: fresh synth DB, fresh `sshbite serve` process per measurement."""
+2 | import json, os, subprocess, sys, time, urllib.request, http.cookiejar
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3 | sys.path.insert(0, '/workspace')
+4 | VENV = '/workspace/.venv/bin'
+  |
+help: Split imports
+  |
+1 | """Cold start of the 2,000-host subnet heatmap: fresh synth DB, fresh `sshbite serve` process per measurement."""
+  - import json, os, subprocess, sys, time, urllib.request, http.cookiejar
+2 + import json
+3 + import os
+4 + import subprocess
+5 + import sys
+6 + import time
+7 + import urllib.request
+8 + import http.cookiejar
+9 | sys.path.insert(0, '/workspace')
+  |
+
+E701 Multiple statements on one line (colon)
+  --> evidence/p6/cold_start.py:15:29
+   |
+13 | def fresh_db():
+14 |     for f in (db, db + '-wal', db + '-shm'):
+15 |         if os.path.exists(f): os.remove(f)
+   |                             ^
+16 |     open(cfg, 'w').write(f'database: {db}\nentry:\n  host: 127.0.0.1\n')
+17 |     out = subprocess.run([f'{VENV}/sshbite', '-c', cfg, 'synth', '--hosts', '2000', '--seed', '42'], capture_output=True, text=True)
+   |
+
+E701 Multiple statements on one line (colon)
+  --> evidence/p6/cold_start.py:24:12
+   |
+22 |     p = subprocess.Popen([f'{VENV}/sshbite', '-c', cfg, 'serve', '--port', str(port)], stdout=subprocess.DEVNULL, stderr=subprocess.PI…
+23 |     for _ in range(200):
+24 |         try: urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=1)
+   |            ^
+25 |         except urllib.error.HTTPError: break
+26 |         except Exception: time.sleep(0.05); continue
+   |
+
+E701 Multiple statements on one line (colon)
+  --> evidence/p6/cold_start.py:25:38
+   |
+23 |     for _ in range(200):
+24 |         try: urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=1)
+25 |         except urllib.error.HTTPError: break
+   |                                      ^
+26 |         except Exception: time.sleep(0.05); continue
+27 |         break
+   |
+
+E701 Multiple statements on one line (colon)
+  --> evidence/p6/cold_start.py:26:25
+   |
+24 |         try: urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=1)
+25 |         except urllib.error.HTTPError: break
+26 |         except Exception: time.sleep(0.05); continue
+   |                         ^
+27 |         break
+28 |     return p
+   |
+
+E701 Multiple statements on one line (colon)
+  --> evidence/p6/cold_start.py:77:29
+   |
+75 |     say('## Browser: UI started on an empty DB, then synth writes the scan while it runs, then login -> heatmap')
+76 |     for f in (db, db + '-wal', db + '-shm'):
+77 |         if os.path.exists(f): os.remove(f)
+   |                             ^
+78 |     open(cfg, 'w').write(f'database: {db}\nentry:\n  host: 127.0.0.1\n')
+79 |     subprocess.run([f'{VENV}/python', '-c', f'import sys; sys.path.insert(0,"/workspace"); from sshbite import db as d; from sshbite.u…
+   |
+
+F541 [*] f-string without any placeholders
+  --> tools/rechte-doc/belege.py:33:12
+   |
+31 |     out = ["Belegprüfung: jede Datei:Zeile-Angabe aus SSHBITE-Minimale-Rechte.md mit den zitierten Zeilen",
+32 |            f"Code-Stand: letzter Commit an sshbite/, docs/, README.md: {head}",
+33 |            f"Erzeugt mit: tools/rechte-doc/belege.py", ""]
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+34 |     n = 0
+35 |     for no, text in enumerate(SRC.read_text(encoding="utf-8").splitlines(), 1):
+   |
+help: Remove extraneous `f` prefix
+   |
+32 |            f"Code-Stand: letzter Commit an sshbite/, docs/, README.md: {head}",
+   -            f"Erzeugt mit: tools/rechte-doc/belege.py", ""]
+33 +            "Erzeugt mit: tools/rechte-doc/belege.py", ""]
+34 |     n = 0
+   |
+
+Found 7 errors.
+[*] 2 fixable with `--fix`.
+
+$ ruff check sshbite tests lab tools/update_collector_sha.py evidence/hardening   # the paths this package touches
+All checks passed!
+$ npm run check (svelte-check)
+1795738536823 COMPLETED 143 FILES 0 ERRORS 14 WARNINGS 12 FILES_WITH_PROBLEMS
+$ sshbite collector show | grep ^=====   (allowlist lint, spec 3.6 / 7.5)
+===== collect.sh  sha256 ffd6b8582301fa075786b8a291b240b6c0d63b33b310583e34e1ce72858a5f8d  lint: OK
+===== resolve.sh  sha256 f048726e442a3b417e391d5dc396eafa34813eb19bcca4725587c0d99f44f2ff  lint: OK
+===== literal commands sent on exec channels (privilege.mode: sudo / sudo-login)
+===== literal commands sent on exec channels (privilege.mode: installed, collector_path /usr/local/libexec/sshbite/sshbite-collect)
+$ pytest tests/unit/test_lint.py -q
+83 passed in 0.12s

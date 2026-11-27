@@ -73,3 +73,99 @@ def test_names_starting_with_dash_are_never_sent():
 def test_password_with_line_break_is_refused(pw):
     with pytest.raises(ValueError):
         SudoSecret().set(pw)
+
+
+def _run_collector_as_root(tmp_path: Path, home: Path) -> tuple[str, str]:
+    """Run collect.sh as if it were root (fake `id -u` = 0) for one account with a non-zero uid.
+
+    The fake setpriv marks what it runs (SP=1) and runs the command; the fake ssh-keygen behaves like
+    OpenSSH run as the owner of a 0644 key: refuses the file ("bad permissions"), but derives the public
+    half from a key given on stdin. Every call is logged so the test can see who opened which path."""
+    import asyncssh
+
+    key = asyncssh.generate_private_key("ssh-ed25519")
+    pub = key.export_public_key().decode().strip()
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    log = tmp_path / "calls.log"
+
+    def tool(name: str, body: str) -> None:
+        (bindir / name).write_text("#!/bin/sh\n" + body)
+        (bindir / name).chmod(0o755)
+
+    tool("getent", f"echo 'mallory:x:{os.getuid() or 4242}:{os.getgid()}::{home}:/bin/sh'\n")
+    tool("id", 'if [ "$1" = -u ]; then echo 0; else /usr/bin/id "$@"; fi\n')
+    tool("setpriv", 'shift 5\nSP=1 exec "$@"\n')
+    tool("ssh-keygen", f"""echo "${{SP:-0}} $*" >> {log}
+eval "f=\\${{$#}}"
+if [ "$f" = /dev/stdin ]; then
+  grep -q 'PRIVATE KEY-----' && echo '{pub}' && exit 0
+  echo 'Load key "/dev/stdin": invalid format'; exit 255
+fi
+echo '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@'
+echo '@         WARNING: UNPROTECTED PRIVATE KEY FILE!          @'
+echo '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@'
+echo "Permissions 0644 for '$f' are too open."
+echo "Load key \\"$f\\": bad permissions"
+exit 255
+""")
+    script = collector.collect_script().replace("PATH=/usr/sbin:/usr/bin:/sbin:/bin", f"PATH={bindir}:/usr/bin:/bin", 1)
+    out = subprocess.run(["/bin/sh", "-s"], input=script, capture_output=True, text=True, timeout=60).stdout
+    return out, log.read_text() if log.exists() else ""
+
+
+def test_owners_0644_private_key_is_still_found_unencrypted(tmp_path):
+    """CEO correction 1: ssh-keygen refuses a group/other-readable key when it runs as the owner. The account
+    then reads the key (setpriv) and pipes it to the collector's ssh-keygen; no path below ~ is opened as root."""
+    if not (Path("/usr/bin/setpriv").exists() or Path("/bin/setpriv").exists()):
+        pytest.skip("the collector checks for /usr/bin/setpriv or /bin/setpriv; neither exists here")
+    home = tmp_path / "home"
+    (home / ".ssh").mkdir(parents=True)
+    k = home / ".ssh" / "id_rsa"
+    k.write_text("-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\n")
+    k.chmod(0o644)
+    out, calls = _run_collector_as_root(tmp_path, home)
+    assert "#END" in out and "#V setpriv\tyes" in out
+    c = records.parse(out)
+    assert c.keygen[str(k)]["y"][0] == 0
+    d = build(c)
+    pk = [p for p in d.private_keys if p.path == str(k)]
+    assert len(pk) == 1 and pk[0].encrypted == "no" and pk[0].alg == "ssh-ed25519" and pk[0].fp
+    # who opened what: every ssh-keygen with a path below ~ ran as the account; the collector's own
+    # ssh-keygen only got /dev/stdin
+    lines = calls.splitlines()
+    assert f"1 -y -P  -f {k}" in lines and "0 -y -P  -f /dev/stdin" in lines
+    assert all(ln.startswith("1 ") or ln.endswith(" -f /dev/stdin") for ln in lines), lines
+
+
+def test_encrypted_0644_key_stays_encrypted_through_the_pipe(tmp_path):
+    """The fallback does not turn an unreadable or encrypted key into 'unencrypted'."""
+    if not (Path("/usr/bin/setpriv").exists() or Path("/bin/setpriv").exists()):
+        pytest.skip("the collector checks for /usr/bin/setpriv or /bin/setpriv; neither exists here")
+    home = tmp_path / "home"
+    (home / ".ssh").mkdir(parents=True)
+    k = home / ".ssh" / "id_enc"
+    # header line passes privkey's check, the body has no BEGIN line the fake accepts on stdin
+    k.write_text("PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: aes256-cbc\n")
+    k.chmod(0o644)
+    out, _ = _run_collector_as_root(tmp_path, home)
+    d = build(records.parse(out))
+    pk = [p for p in d.private_keys if p.path == str(k)]
+    assert len(pk) == 1 and pk[0].encrypted != "no" and pk[0].fp is None
+
+
+def test_entry_gone_between_ls_and_read_is_reported_as_vanished(tmp_path):
+    """CEO correction 2: a listed name that no longer exists is 'vanished while reading', not a name with a tab."""
+    home = tmp_path / "home"
+    (home / ".ssh").mkdir(parents=True)
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "getent").write_text(f"#!/bin/sh\necho 'mallory:x:{os.getuid()}:{os.getgid()}::{home}:/bin/sh'\n")
+    (bindir / "getent").chmod(0o755)
+    # ls lists a file that is not there (as if it was removed right after the listing)
+    (bindir / "ls").write_text('#!/bin/sh\nif [ "$1" = -A ]; then echo known_hosts.gone; else /bin/ls "$@"; fi\n')
+    (bindir / "ls").chmod(0o755)
+    script = collector.collect_script().replace("PATH=/usr/sbin:/usr/bin:/sbin:/bin", f"PATH={bindir}:/usr/bin:/bin", 1)
+    out = subprocess.run(["/bin/sh", "-s"], input=script, capture_output=True, text=True, timeout=60).stdout
+    assert f"#X {home}/.ssh/known_hosts.gone\tvanished while reading" in out
+    assert "name with tab or newline skipped" not in out

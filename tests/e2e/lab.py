@@ -47,6 +47,26 @@ def find_entry() -> tuple[str, int] | None:
     return None
 
 
+# r1: the AlmaLinux 9 host (spec 8.2), stand-alone on lab_r and not in lab/expected.yaml (no other host refers
+# to it, so the 13-host expectations stay as they are). Its lab-control sshd answers on R1_IP:2200.
+R1_IP = "172.30.4.11"
+
+
+def find_r1() -> tuple[str, int] | None:
+    """Where r1's sshd answers for SSHBITE: SSHBITE_LAB_R1, else 127.0.0.1:2223 (published port), else r1:22."""
+    env = os.environ.get("SSHBITE_LAB_R1")
+    for c in [env] if env else ["127.0.0.1:2223", "r1:22"]:
+        h, _, p = c.rpartition(":")
+        if _tcp_ok(h, int(p)) and _tcp_ok(R1_IP, CTL_PORT):
+            return h, int(p)
+    return None
+
+
+def lab_hosts() -> dict[str, list[str]]:
+    """The 13 hosts of lab/expected.yaml plus r1: what LabControl may reach."""
+    return {**expected()["hosts"], "r1": [R1_IP]}
+
+
 def key_fp(name: str) -> str:
     from sshbite.parse.keys import parse_public_key_line
 

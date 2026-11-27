@@ -327,13 +327,26 @@ path, `<l>` = the first line of stderr):
 ### Prerequisite: util-linux
 
 The collector is a POSIX `sh` script and needs the usual base tools (`stat`, `head`, `awk`, `getent`,
-`ssh-keygen`, `sshd`). A coming change reads files in user homes as their owner with `setpriv` from
-util-linux; make sure `util-linux` (which provides `/usr/bin/setpriv`) is installed on every host.
+`ssh-keygen`, `sshd`). It reads files in user homes (`~/.ssh`, every `AuthorizedKeysFile` path) as their
+owner, with `setpriv` from util-linux (`/usr/bin/setpriv`, on Debian ≥ 10 and RHEL/EL ≥ 8 part of the base
+system) – so a user who swaps a file for a symlink gets nothing into the scan that they could not read
+themselves ([review.md](review.md#files-in-user-homes-are-read-as-their-owner)). Make sure `util-linux` is
+installed on every host. This applies to every `privilege.mode`.
+
+Without `setpriv` the collector does **not** fall back to reading as root: it reads nothing in user homes,
+and the host is shown as `partial` with the reason `setpriv (util-linux) missing: files in user homes not
+read`. Host keys, sshd settings and the shadow summary are still collected. Install util-linux and scan
+again.
+
+A file in a home that its owner cannot read – for example a root-owned 0600 `authorized_keys2` – is shown
+on the host as `unreadable by account: PATH`; the host stays `ok`. sshd reads authorized_keys as the user
+too, so keys in such a file do not work; fix the owner or remove the file.
 
 ### Not tested
 
-SELinux in enforcing mode, OpenSSH older than 8.7 and Busybox-based systems are not tested with this mode.
-The lab runs Debian 12 with OpenSSH 9.2 and sudo 1.9.13.
+The lab tests this mode on Debian 12 (OpenSSH 9.2, sudo 1.9.13, util-linux 2.38) and on AlmaLinux 9.9
+(RHEL-compatible; OpenSSH 9.9, sudo 1.9.17, util-linux 2.37). Not tested: SELinux in enforcing mode (the
+lab's containers do not enforce it), OpenSSH older than 8.7 and Busybox-based systems.
 
 ### Further hardening (not implemented)
 
