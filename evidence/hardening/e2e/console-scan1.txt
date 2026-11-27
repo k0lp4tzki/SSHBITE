@@ -16,7 +16,7 @@ depth 4: 0 queued, 0 running, 13 done (1 partial, 1 unreachable)
 
 scan 1 completed in 15 s
 hosts:    13 connected; 11 ok, 1 partial, 1 unreachable, 1 excluded, 2 out_of_scope, 1 unresolvable
-findings: 36 - 4 critical, 15 high, 14 medium, 2 low, 1 info
+findings: 37 - 4 critical, 15 high, 15 medium, 2 low, 1 info
 edges:    20 access (19 effective, 3 unknown origin); keys: 10
 scan id:  1
 UI:       http://127.0.0.1:8722/  (start it with `sshbite serve`)

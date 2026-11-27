@@ -1,6 +1,6 @@
 scan 5  completed  label: r1-no-setpriv
-started 2026-11-26T23:59:45Z  finished 2026-11-26T23:59:45Z  entry r1:22
-tool 0.1.0  collector sha256 8fd661564a0bbc35fcbb7bd7836ba2926be35e6064c5e0fea044b011add06c1a
+started 2026-11-27T00:17:02Z  finished 2026-11-27T00:17:02Z  entry r1:22
+tool 0.1.0  collector sha256 b7fbb3b748266546275b5f2ae1827cc0f9b0667b2f6a89e566675b73fddec8a2
 hosts: 1 partial
 findings: 0 critical, 1 high, 1 medium, 0 low, 0 info
 access edges: 0 (0 effective, 0 unknown origin); unresolved hashed known_hosts entries: 0

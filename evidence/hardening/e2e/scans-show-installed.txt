@@ -1,8 +1,8 @@
 scan 2  completed  label: installed
-started 2026-11-26T23:59:23Z  finished 2026-11-26T23:59:35Z  entry jump:22
-tool 0.1.0  collector sha256 8fd661564a0bbc35fcbb7bd7836ba2926be35e6064c5e0fea044b011add06c1a
+started 2026-11-27T00:16:40Z  finished 2026-11-27T00:16:52Z  entry jump:22
+tool 0.1.0  collector sha256 b7fbb3b748266546275b5f2ae1827cc0f9b0667b2f6a89e566675b73fddec8a2
 hosts: 1 excluded, 12 ok, 2 out_of_scope, 1 unreachable, 1 unresolvable
-findings: 4 critical, 16 high, 13 medium, 2 low, 1 info
+findings: 4 critical, 16 high, 14 medium, 2 low, 1 info
 access edges: 21 (20 effective, 4 unknown origin); unresolved hashed known_hosts entries: 1
 
 host               status            privilege     depth  discovered via                               route

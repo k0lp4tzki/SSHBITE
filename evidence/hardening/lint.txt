@@ -97,14 +97,15 @@ help: Remove extraneous `f` prefix
 
 Found 7 errors.
 [*] 2 fixable with `--fix`.
+
 $ ruff check sshbite tests lab tools/update_collector_sha.py evidence/hardening   # the paths this package touches
 All checks passed!
 $ npm run check (svelte-check)
-1795737718400 COMPLETED 143 FILES 0 ERRORS 14 WARNINGS 12 FILES_WITH_PROBLEMS
+1795738536823 COMPLETED 143 FILES 0 ERRORS 14 WARNINGS 12 FILES_WITH_PROBLEMS
 $ sshbite collector show | grep ^=====   (allowlist lint, spec 3.6 / 7.5)
-===== collect.sh  sha256 37825d1690dcabde1591f56c30d2022b6bd98e3830cbccb7d54f68a9b4e57b80  lint: OK
+===== collect.sh  sha256 ffd6b8582301fa075786b8a291b240b6c0d63b33b310583e34e1ce72858a5f8d  lint: OK
 ===== resolve.sh  sha256 f048726e442a3b417e391d5dc396eafa34813eb19bcca4725587c0d99f44f2ff  lint: OK
 ===== literal commands sent on exec channels (privilege.mode: sudo / sudo-login)
 ===== literal commands sent on exec channels (privilege.mode: installed, collector_path /usr/local/libexec/sshbite/sshbite-collect)
 $ pytest tests/unit/test_lint.py -q
-70 passed in 0.10s
+83 passed in 0.12s

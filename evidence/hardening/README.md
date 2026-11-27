@@ -12,11 +12,27 @@ the lab network directly (`SSHBITE_LAB_ENTRY=jump:22`). No Docker in the workspa
 
 | What | File | Result |
 |---|---|---|
-| `pytest tests/unit tests/web -v -rs` (frontend built, nothing skipped) | `pytest-unit-web.txt` | 297 passed |
+| `pytest tests/unit tests/web -v -rs` (frontend built, nothing skipped) | `pytest-unit-web.txt` | 313 passed |
 | `pytest -m e2e tests/e2e/test_lab.py tests/e2e/test_lab_installed.py -v -rs` (13 hosts + r1) | `pytest-e2e.txt` | 26 passed, none skipped |
 | Lint run (ruff, svelte-check, `collector show` → `lint: OK` for both scripts, `test_lint.py`) | `lint.txt` | see file; the 7 ruff findings are in `evidence/p6/` and `tools/rechte-doc/` (pre-existing, untouched) |
 | `pytest tests/browser` (after the HostDetail change) | – (not kept) | 35 passed |
 | Transcripts written by that e2e run (`SSHBITE_EVIDENCE_DIR`) | `e2e/` | see below |
+
+## Correction 1 (CEO): what changed in these files
+
+- `collect.sh`: an owner's group/other-readable private key (a1 deploy's 0644 `id_rsa`) is found
+  *unencrypted* again. When `ssh-keygen -y` run as the account says "bad permissions" / "UNPROTECTED
+  PRIVATE KEY FILE", the account reads the key (`uhead`) and the collector's own ssh-keygen gets it on a
+  pipe: `uhead 5000 PATH 2>/dev/null | head -c 65536 | ssh-keygen -y -P '' -f /dev/stdin`. No path below
+  `~` is opened as root. The lint allows `-f /dev/stdin` only in this one pipeline (`test_lint.py::setpriv_keygen_stdin_*`);
+  `test_hostile.py::test_owners_0644_private_key_is_still_found_unencrypted` runs collect.sh with it.
+- `lab/expected.yaml` is again byte for byte package A's (`private_key_unencrypted: 7`); `test_lab.py::test_08` checks it.
+- A name that `ls -A` listed but that is gone before it is read is now `vanished while reading`
+  (was wrongly `name with tab or newline skipped`); `e2e/race-count.md` shows it under that name.
+- Hash B is new; `pytest-unit-web.txt`, `pytest-e2e.txt`, `lint.txt` and every file in `e2e/` are from
+  the runs after the correction (lab started fresh from this branch). The screens did not change and were
+  not taken again; `walk.txt` and `walk-r1.txt` (CLI walks) are also from before the correction and show
+  the old B=2d534dece3d8.
 
 ## The files the CEO asked for
 

@@ -33,5 +33,4 @@ tests/e2e/test_lab_installed.py::test_i07_no_setpriv PASSED              [ 92%]
 tests/e2e/test_lab_installed.py::test_i08_race PASSED                    [ 96%]
 tests/e2e/test_lab_installed.py::test_i99_remove PASSED                  [100%]
 
-======================== 26 passed in 173.32s (0:02:53) ========================
-EXIT 0
+======================== 26 passed in 165.19s (0:02:45) ========================

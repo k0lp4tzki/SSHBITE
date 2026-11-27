@@ -10,5 +10,5 @@
 
 | Host | Control (root) | Collector | Collector runs in the window | Complete outputs (#END) | #X reasons for racer (count over all runs) |
 |---|---|---|---|---|---|
-| r1 | 70/200 | 0/200 | 124/200 | 200/200 | name with tab or newline skipped: 4, symlink not followed: 68, unreadable by account: 76 |
-| a5 | 87/200 | 0/200 | 105/200 | 200/200 | name with tab or newline skipped: 7, symlink not followed: 77, unreadable by account: 63 |
+| r1 | 71/200 | 0/200 | 121/200 | 200/200 | symlink not followed: 77, unreadable by account: 79, vanished while reading: 2 |
+| a5 | 66/200 | 0/200 | 106/200 | 200/200 | symlink not followed: 66, unreadable by account: 70, vanished while reading: 6 |
