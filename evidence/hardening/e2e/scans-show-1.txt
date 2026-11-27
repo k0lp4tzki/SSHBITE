@@ -1,6 +1,6 @@
 scan 1  completed  label: scan1
-started 2026-11-27T00:15:25Z  finished 2026-11-27T00:15:40Z  entry jump:22
-tool 0.1.0  collector sha256 ffd6b8582301fa075786b8a291b240b6c0d63b33b310583e34e1ce72858a5f8d
+started 2026-11-27T01:34:03Z  finished 2026-11-27T01:34:18Z  entry jump:22
+tool 0.1.0  collector sha256 354162117a7832e74caa371a67eb7542dbbf07a5afbc860216e01497cf40a2b1
 hosts: 1 excluded, 11 ok, 2 out_of_scope, 1 partial, 1 unreachable, 1 unresolvable
 findings: 4 critical, 15 high, 15 medium, 2 low, 1 info
 access edges: 20 (19 effective, 3 unknown origin); unresolved hashed known_hosts entries: 1

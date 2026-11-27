@@ -1,3 +1,3 @@
 $ sshbite config validate --connect   # privilege.collector_path: /usr/local/libexec/sshbite/collect
-config OK: /tmp/pytest-of-app/pytest-4/installed0/bad-path.yaml
+config OK: /tmp/pytest-of-app/pytest-11/installed0/bad-path.yaml
 entry OK, pinned key matches, sudo: FAILED - privilege.mode installed: refused by sshbite-gate on this host: sshbite-gate: denied (command not allowed)
