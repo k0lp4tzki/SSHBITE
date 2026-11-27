@@ -1,59 +1,63 @@
-# Configuration reference
+<a id="configuration-reference"></a>
 
-SSHBITE reads one YAML file: the path from `-c PATH`, else `$SSHBITE_CONFIG`, else
-`/etc/sshbite/sshbite.yaml` (in the Docker image `SSHBITE_CONFIG=/etc/sshbite/sshbite.yaml`).
-`sshbite init-config` prints an example with every key. Only `entry.host` and `entry.host_keys` have no
-usable default.
+# Konfigurationsreferenz
 
-- Unknown keys are errors. Errors name their path, e.g.
+SSHBITE liest eine YAML-Datei: den Pfad aus `-c PATH`, sonst aus `$SSHBITE_CONFIG`, sonst
+`/etc/sshbite/sshbite.yaml` (im Docker-Image `SSHBITE_CONFIG=/etc/sshbite/sshbite.yaml`).
+`sshbite init-config` gibt ein Beispiel mit jedem Schlüssel aus. Nur `entry.host` und `entry.host_keys` haben keinen
+brauchbaren Standardwert.
+
+- Unbekannte Schlüssel sind Fehler. Fehlermeldungen nennen den Pfad, z. B.
   `sshbite.yaml: crawl.include[2]: not a CIDR or glob`.
-- Relative file paths (`database`, `audit.key_file`, `seeds.*`, `hostkeys.known_hosts_file`) are relative
-  to the directory of the config file; `~` is expanded.
-- Check a config with `sshbite config validate` (add `--connect` to test the entry host too). Exit code 2
-  means a config error.
-- Keep the file mode 0600: `config validate` warns when the config or the database is group- or
-  world-readable.
+- Relative Dateipfade (`database`, `audit.key_file`, `seeds.*`, `hostkeys.known_hosts_file`) gelten relativ zum
+  Verzeichnis der Konfigurationsdatei; `~` wird expandiert.
+- Prüfen Sie eine Konfiguration mit `sshbite config validate` (fügen Sie `--connect` hinzu, um auch den Einstiegshost
+  zu testen). Exit-Code 2 bedeutet einen Konfigurationsfehler.
+- Halten Sie die Datei auf Modus 0600: `config validate` warnt, wenn die Konfiguration oder die Datenbank für Gruppe
+  oder alle lesbar ist.
 
-## Complete example with the defaults
+<a id="complete-example-with-the-defaults"></a>
+
+## Vollständiges Beispiel mit den Standardwerten
 
 ```yaml
 database: /var/lib/sshbite/sshbite.db
 entry:
-  host: jump01.corp.example     # as reachable from the SSHBITE machine
+  host: jump01.corp.example     # so, wie er vom SSHBITE-Rechner aus erreichbar ist
   port: 22
-  host_keys: ["ssh-ed25519 AAAAC3Nza..."]   # required; any match = verified
+  host_keys: ["ssh-ed25519 AAAAC3Nza..."]   # Pflicht; ein Treffer genügt zur Verifikation
 audit:
   user: sshbite
-  key_file: /etc/sshbite/audit_ed25519      # must be 0600
+  key_file: /etc/sshbite/audit_ed25519      # muss 0600 sein
   key_passphrase_env: null
 privilege:
-  mode: sudo   # sudo | sudo-login | none | installed (recommended, see docs/install.md)
-  # collector_path: /usr/local/libexec/sshbite/sshbite-collect   # only for mode installed
-  password_scope: []  # CIDRs / hostname globs that may receive the sudo password; empty = every host
+  mode: sudo   # sudo | sudo-login | none | installed (empfohlen, siehe docs/install.md)
+  # collector_path: /usr/local/libexec/sshbite/sshbite-collect   # nur für Modus installed
+  password_scope: []  # CIDRs / Hostnamen-Globs, die das sudo-Passwort erhalten dürfen; leer = jeder Host
 crawl:
   max_depth: 10
   max_hosts: 1000
-  include: []       # CIDRs / hostname globs; empty = no restriction
-  exclude: []       # always wins
+  include: []       # CIDRs / Hostnamen-Globs; leer = keine Einschränkung
+  exclude: []       # hat immer Vorrang
   chain_fallback: true
   hash_probe_include_cidrs: true
   hash_probe_max_addresses: 4096
   ssh_port: 22
-seeds:              # optional extra seeds, depth 0
-  hosts_file: null              # host or host:port per line, '#' comments
-  cidrs: []                     # every address probed via the entry; total <= 65536
-  ansible_inventories: []       # static INI or YAML
+seeds:              # optionale zusätzliche Seeds, Tiefe 0
+  hosts_file: null              # host oder host:port pro Zeile, '#' leitet Kommentare ein
+  cidrs: []                     # jede Adresse wird über den Einstiegshost geprüft; insgesamt <= 65536
+  ansible_inventories: []       # statisch, INI oder YAML
 hostkeys:
   mode: tofu                    # tofu | strict
-  known_hosts_file: null        # required if strict
+  known_hosts_file: null        # Pflicht bei strict
 limits:
   concurrency: 20
-  host_timeout: 30              # whole host: connect + auth + sudo probe + collect
-  connect_timeout: 10           # per hop
-  entry_connections: 4          # tunnels multiplexed over these
+  host_timeout: 30              # gesamter Host: Verbindung + Anmeldung + sudo-Probe + Einsammeln
+  connect_timeout: 10           # pro Hop
+  entry_connections: 4          # Tunnel werden über diese Verbindungen gebündelt
   max_output_mb: 32
 rules:
-  strength:                     # first match wins
+  strength:                     # der erste Treffer gilt
     good:     [ssh-ed25519, sk-ssh-ed25519@openssh.com, sk-ecdsa-sha2-nistp256@openssh.com]
     ok:       [ecdsa-sha2-nistp256, ecdsa-sha2-nistp384, ecdsa-sha2-nistp521, "ssh-rsa>=3072"]
     weak:     ["ssh-rsa>=2048"]
@@ -61,121 +65,127 @@ rules:
   many_hosts_threshold: 10
   ignore_audit_key: true
 grouping:
-  tags: [{name: dmz, match: ["10.1.0.0/16", "web-*"]}]   # first match wins, else "untagged"
+  tags: [{name: dmz, match: ["10.1.0.0/16", "web-*"]}]   # der erste Treffer gilt, sonst "untagged"
 web:
   bind: 127.0.0.1
   port: 8722
   session_hours: 8
-  secure_cookie: false          # true behind a TLS reverse proxy (always true with --tls-cert)
-  trusted_proxies: []           # proxy IPs/CIDRs whose X-Forwarded-For names the client
+  secure_cookie: false          # true hinter einem TLS-Reverse-Proxy (mit --tls-cert immer true)
+  trusted_proxies: []           # Proxy-IPs/CIDRs, deren X-Forwarded-For den Client nennt
 ```
 
-The `grouping.tags` line is an example; the default is no tags (`tags: []`).
+Die Zeile `grouping.tags` ist ein Beispiel; der Standardwert ist „keine Tags“ (`tags: []`).
 
-In the Docker image use `database: /data/sshbite.db` and paths under `/etc/sshbite/`.
+Verwenden Sie im Docker-Image `database: /data/sshbite.db` und Pfade unter `/etc/sshbite/`.
 
-## Keys
+<a id="keys"></a>
 
-### Top level
+## Konfigurationsschlüssel
 
-| Key | Default | Meaning |
+<a id="top-level"></a>
+
+### Oberste Ebene
+
+| Schlüssel | Standard | Bedeutung |
 |---|---|---|
-| `database` | `/var/lib/sshbite/sshbite.db` | The SQLite database. Created on first use with mode 0600 (directory 0700). Scanner and UI share it. |
+| `database` | `/var/lib/sshbite/sshbite.db` | Die SQLite-Datenbank. Wird bei der ersten Verwendung mit Modus 0600 angelegt (Verzeichnis 0700). Scanner und UI teilen sie sich. Im Docker-Image muss sie `/data/sshbite.db` sein: `/data` ist das Volume des Images für die Datenbank (`/etc/sshbite` wird nur lesend eingebunden). |
 
 ### `entry`
 
-| Key | Default | Meaning |
+| Schlüssel | Standard | Bedeutung |
 |---|---|---|
-| `entry.host` | – (required) | Name or address of the entry host (jump host) as reached from the SSHBITE machine. Always scanned, at depth 0. |
-| `entry.port` | `22` | Its SSH port. |
-| `entry.host_keys` | `[]` | Pinned host keys, each `"<algorithm> <base64> [comment]"` as printed by `ssh-keyscan`. Any match verifies the entry. Empty = every scan aborts (exit 3) and `config validate` fails. See [install.md](install.md#pin-the-entry-host-key). |
+| `entry.host` | – (Pflicht) | Name oder Adresse des Einstiegshosts (Jump-Host), so wie er vom SSHBITE-Rechner aus erreicht wird. Wird immer gescannt, in Tiefe 0. |
+| `entry.port` | `22` | Sein SSH-Port. |
+| `entry.host_keys` | `[]` | Festgelegte Host-Keys, jeweils `"<algorithm> <base64> [comment]"` **ohne Hostnamen davor**. `ssh-keyscan` gibt den Hostnamen als erstes Feld aus; schneiden Sie ihn ab, sonst lehnt SSHBITE die Zeile ab (`not an OpenSSH public key line`, Exit-Code 2). Ein Treffer genügt zur Verifikation des Einstiegshosts. Leer = jeder Scan bricht ab (Exit-Code 3) und `config validate` schlägt fehl. Befehl dafür: [Host-Key festlegen und Konfiguration schreiben](install.md#host-key-festlegen-und-konfiguration-schreiben). |
 
 ### `audit`
 
-| Key | Default | Meaning |
+| Schlüssel | Standard | Bedeutung |
 |---|---|---|
-| `audit.user` | `sshbite` | Account used on every host and every hop. |
-| `audit.key_file` | `/etc/sshbite/audit_ed25519` | The audit private key. Must be a regular file with mode 0600, readable by the user running SSHBITE. It is the only key SSHBITE ever uses; agents and keys found on targets are never used. |
-| `audit.key_passphrase_env` | `null` | Name of an environment variable holding the key's passphrase (not the passphrase itself). Unset variable = config error. |
+| `audit.user` | `sshbite` | Konto, das auf jedem Host und jedem Hop verwendet wird. Behalten Sie im Modus `installed` `sshbite` bei: Die von `sshbite collector export` geschriebene sudoers-Datei (`sudoers.d-sshbite`) und die authorized_keys-Vorlage (`authorized_keys.sshbite`) enthalten fest `sshbite` bzw. `/home/sshbite`. Mit einem anderen Namen müssen Sie beide Dateien von Hand anpassen, und ihre Prüfsummen in `SHA256SUMS` stimmen dann nicht mehr. |
+| `audit.key_file` | `/etc/sshbite/audit_ed25519` | Der private Audit-Schlüssel. Muss eine reguläre Datei mit Modus 0600 sein, lesbar für den Benutzer, unter dem SSHBITE läuft. Es ist der einzige Schlüssel, den SSHBITE je verwendet; Agents und auf Zielhosts gefundene Schlüssel werden nie verwendet. |
+| `audit.key_passphrase_env` | `null` | Name einer Umgebungsvariablen, die die Passphrase des Schlüssels enthält (nicht die Passphrase selbst). Nicht gesetzte Variable = Konfigurationsfehler. |
 
 ### `privilege`
 
-| Key | Default | Meaning |
+| Schlüssel | Standard | Bedeutung |
 |---|---|---|
-| `privilege.mode` | `sudo` | `installed` (recommended): runs the collector that `sshbite collector export` wrote and you installed on every host ([install.md](install.md#privileges-installed-collector-recommended)): probe `sudo -n -l P`, then `sudo -n P`, both with empty stdin (P = `collector_path`); names are resolved with the exported `sshbite-resolve` next to P. No script is sent to a shell, no sudo password is ever sent, and there is no unprivileged fallback: a host whose probe fails, or whose collector has another version, is `collector_error` with a message that says what to fix. `--ask-sudo-password` is refused (exit 2); `SSHBITE_SUDO_PASSWORD` is ignored with a warning. `sudo` (the default; legacy - equivalent to full root for whoever holds the audit key, see [install.md](install.md#legacy-sudo-binsh--s-equivalent-to-full-root)): probe `sudo -n /bin/true`, then run the collector as `sudo -n /bin/sh -s`. `sudo-login`: the same with `-i` (root's login environment). `none`: never call sudo; every host is scanned unprivileged and marked `partial`. With a sudo password (`--ask-sudo-password` or `SSHBITE_SUDO_PASSWORD`) a host that asks for one is tried with `sudo -S -k -p ''`. sudo is always run by its absolute path (`/usr/bin/sudo`, else `/bin/sudo`). |
-| `privilege.collector_path` | `/usr/local/libexec/sshbite/sshbite-collect` | Only for mode `installed`: where the collector is installed on the hosts. An absolute path of letters, digits, `.`, `_`, `-` and `/`, no `.` or `..` segment, at most 200 characters. `sshbite-resolve` and `sshbite-gate` are expected in the same directory. In another mode `config validate` warns that the key is ignored. |
-| `privilege.password_scope` | `[]` | CIDRs or host name globs (include syntax) of the hosts that may receive the sudo password. Empty = every host. A host outside the scope that asks for a password is not sent it: it is scanned unprivileged and marked `partial` with *sudo password not sent (outside privilege.password_scope)*. A compromised host can imitate a sudo prompt – see [operations.md](operations.md#the-sudo-password). Must be empty with mode `installed` (error, exit 2). |
+| `privilege.mode` | `sudo` | `installed` (empfohlen): führt den Collector aus, den `sshbite collector export` geschrieben und Sie auf jedem Host installiert haben ([install.md](install.md#zielhosts-vorbereiten-installierter-collector)): Probe `sudo -n -l P`, dann `sudo -n P`, beide mit leerem stdin (P = `collector_path`); Namen werden mit dem exportierten `sshbite-resolve` neben P aufgelöst. Es wird kein Skript an eine Shell gesendet, nie ein sudo-Passwort gesendet, und es gibt keinen Rückfall auf einen Lauf ohne Rechte: Ein Host, dessen Probe fehlschlägt oder dessen Collector eine andere Version hat, wird `collector_error` mit einer Meldung, die sagt, was zu beheben ist. `--ask-sudo-password` wird abgelehnt (Exit-Code 2); `SSHBITE_SUDO_PASSWORD` wird mit einer Warnung ignoriert. `sudo` (der Standard; Legacy-Modus – entspricht vollem Root-Zugriff für jeden, der den Audit-Schlüssel besitzt, siehe [install.md](install.md#legacy-modus-sudo-binsh--s-entspricht-vollem-root-zugriff)): Probe `sudo -n /bin/true`, dann wird der Collector als `sudo -n /bin/sh -s` ausgeführt. `sudo-login`: dasselbe mit `-i` (Login-Umgebung von root). `none`: nie sudo aufrufen; jeder Host wird ohne Rechte gescannt und als `partial` markiert. Mit einem sudo-Passwort (`--ask-sudo-password` oder `SSHBITE_SUDO_PASSWORD`) wird ein Host, der danach fragt, mit `sudo -S -k -p ''` versucht. sudo wird immer über seinen absoluten Pfad aufgerufen (`/usr/bin/sudo`, sonst `/bin/sudo`). |
+| `privilege.collector_path` | `/usr/local/libexec/sshbite/sshbite-collect` | Nur für Modus `installed`: wo der Collector auf den Hosts installiert ist. Ein absoluter Pfad aus Buchstaben, Ziffern, `.`, `_`, `-` und `/`, ohne `.`- oder `..`-Segment, höchstens 200 Zeichen. `sshbite-resolve` und `sshbite-gate` werden im selben Verzeichnis erwartet. In einem anderen Modus warnt `config validate`, dass der Schlüssel ignoriert wird. |
+| `privilege.password_scope` | `[]` | CIDRs oder Hostnamen-Globs (Syntax wie include) der Hosts, die das sudo-Passwort erhalten dürfen. Leer = jeder Host. Einem Host außerhalb des Bereichs, der nach einem Passwort fragt, wird es nicht gesendet: Er wird ohne Rechte gescannt und als `partial` markiert mit *sudo password not sent (outside privilege.password_scope)*. Ein kompromittierter Host kann eine sudo-Passwortabfrage nachahmen – siehe [operations.md](operations.md#das-sudo-passwort). Muss im Modus `installed` leer sein (Fehler, Exit-Code 2). |
 
 ### `crawl`
 
-| Key | Default | Meaning |
+| Schlüssel | Standard | Bedeutung |
 |---|---|---|
-| `crawl.max_depth` | `10` | Hosts more than this many steps from depth 0 are listed as `max_depth`, not scanned. `0` = entry and seeds only. Range 0–100. CLI: `--max-depth`. |
-| `crawl.max_hosts` | `1000` | Most hosts queued in one scan; further references are listed as `max_hosts`. CLI: `--max-hosts`. |
-| `crawl.include` | `[]` | CIDRs (`10.1.0.0/16`) or host name globs (`*.corp.example`). If set, a discovered host is scanned only if one of its names (glob, case-insensitive) or IPs (CIDR) matches; others are `out_of_scope`. Empty = no restriction: then targets and ports come from what the scanned hosts' known_hosts, `~/.ssh/config` and `from=` options say, and `config validate` and `scan` print a warning (*crawl.include is empty: …*). The entry host is always scanned. |
-| `crawl.exclude` | `[]` | Same syntax. A matching host is never connected to, only listed as `excluded`. Exclude wins over include and over seeds. |
-| `crawl.chain_fallback` | `true` | If the default route (entry → target) fails with a network error, retry along the path the host was discovered on (entry → parent → … → target), with the audit account and a host-key check on every hop. Authentication failures do not trigger it. |
-| `crawl.hash_probe_include_cidrs` | `true` | Hashed known_hosts lines (`\|1\|…`) are matched against every name and IP known in the scan; with this on, also against every IPv4 address in the `include` CIDRs. No connection is made for this. |
-| `crawl.hash_probe_max_addresses` | `4096` | Upper limit of include-CIDR addresses tried for hashed lines. |
-| `crawl.ssh_port` | `22` | Port used for references and seeds that name no port. |
+| `crawl.max_depth` | `10` | Hosts, die mehr als so viele Schritte von Tiefe 0 entfernt sind, werden als `max_depth` aufgeführt, nicht gescannt. `0` = nur Einstiegshost und Seeds. Bereich 0–100. CLI: `--max-depth`. |
+| `crawl.max_hosts` | `1000` | Höchstzahl der in einem Scan eingereihten Hosts; weitere Verweise werden als `max_hosts` aufgeführt. Bereich 1–100000. CLI: `--max-hosts`. |
+| `crawl.include` | `[]` | CIDRs (`10.1.0.0/16`) oder Hostnamen-Globs (`*.corp.example`). Wenn gesetzt, wird ein entdeckter Host nur gescannt, wenn einer seiner Namen (Glob, ohne Beachtung der Groß-/Kleinschreibung) oder eine seiner IPs (CIDR) passt; andere sind `out_of_scope`. Leer = keine Einschränkung: Dann stammen Ziele und Ports aus den known_hosts, `~/.ssh/config` und `from=`-Optionen der gescannten Hosts, und `config validate` und `scan` geben eine Warnung aus (*crawl.include is empty: …*). Der Einstiegshost wird immer gescannt. |
+| `crawl.exclude` | `[]` | Gleiche Syntax. Zu einem passenden Host wird nie eine Verbindung aufgebaut, er wird nur als `excluded` aufgeführt. Exclude hat Vorrang vor include und vor Seeds. |
+| `crawl.chain_fallback` | `true` | Scheitert die Standardroute (Einstiegshost → Zielhost) mit einem Netzwerkfehler, wird es entlang des Wegs erneut versucht, auf dem der Host entdeckt wurde (Einstiegshost → Elternhost → … → Zielhost), mit dem Audit-Konto und einer Host-Key-Prüfung auf jedem Hop. Authentifizierungsfehler lösen das nicht aus. |
+| `crawl.hash_probe_include_cidrs` | `true` | Gehashte known_hosts-Zeilen (`\|1\|…`) werden gegen jeden im Scan bekannten Namen und jede IP abgeglichen; ist dies eingeschaltet, auch gegen jede IPv4-Adresse in den `include`-CIDRs. Dafür wird keine Verbindung aufgebaut. |
+| `crawl.hash_probe_max_addresses` | `4096` | Obergrenze der include-CIDR-Adressen, die für gehashte Zeilen ausprobiert werden. Bereich 0–1048576. |
+| `crawl.ssh_port` | `22` | Port für Verweise und Seeds, die keinen Port nennen. |
 
 ### `seeds`
 
-All seeds start at depth 0 next to the entry host. They are optional: the normal case is the crawl from the
-entry host alone.
+Alle Seeds beginnen in Tiefe 0 neben dem Einstiegshost. Sie sind optional: Der Normalfall ist der Crawl allein vom
+Einstiegshost aus.
 
-| Key | Default | Meaning |
+| Schlüssel | Standard | Bedeutung |
 |---|---|---|
-| `seeds.hosts_file` | `null` | A text file: one `host`, `host:port` or `[host]:port` per line; `#` starts a comment. |
-| `seeds.cidrs` | `[]` | Networks whose every address is TCP-probed **from the entry host** (2 s) before scanning; silent addresses get status `no_ssh` and are hidden by default. At most 65,536 addresses in total. |
-| `seeds.ansible_inventories` | `[]` | Static Ansible inventories, INI or YAML (`.yml`/`.yaml` or starting with `all:`/`---`). `ansible_host`, `ansible_port` and ranges like `web[01:10]` are used; the first group becomes the host's `ansible` group in the heatmap. Dynamic inventories (scripts, plugins) are not run. |
+| `seeds.hosts_file` | `null` | Eine Textdatei: ein `host`, `host:port` oder `[host]:port` pro Zeile; `#` leitet einen Kommentar ein. |
+| `seeds.cidrs` | `[]` | Netze, deren jede Adresse vor dem Scan **vom Einstiegshost aus** per TCP geprüft wird (2 s); stumme Adressen erhalten den Status `no_ssh` und sind standardmäßig ausgeblendet. Insgesamt höchstens 65.536 Adressen. |
+| `seeds.ansible_inventories` | `[]` | Statische Ansible-Inventories, INI oder YAML (`.yml`/`.yaml` oder beginnend mit `all:`/`---`). `ansible_host`, `ansible_port` und Bereiche wie `web[01:10]` werden ausgewertet; die erste Gruppe wird die `ansible`-Gruppe des Hosts in der Heatmap. Dynamische Inventories (Skripte, Plugins) werden nicht ausgeführt. |
 
 ### `hostkeys`
 
-| Key | Default | Meaning |
+| Schlüssel | Standard | Bedeutung |
 |---|---|---|
-| `hostkeys.mode` | `tofu` | `tofu`: the first key seen for an address, port and algorithm is stored; a different key later gives status `hostkey_mismatch` and the critical finding `host_key_changed`, and the host is not logged in to until `sshbite hostkey accept ADDR[:PORT]`. `strict`: a host's key must be in `known_hosts_file` under one of its names or addresses, else status `hostkey_unknown`. Hops are checked the same way. The entry host is always checked against `entry.host_keys`. |
-| `hostkeys.known_hosts_file` | `null` | OpenSSH known_hosts file for `strict` (required then). |
+| `hostkeys.mode` | `tofu` | `tofu`: Der erste für eine Adresse, einen Port und einen Algorithmus gesehene Schlüssel wird gespeichert; ein später abweichender Schlüssel ergibt den Status `hostkey_mismatch` und den kritischen Befund `host_key_changed`, und auf dem Host wird keine Anmeldung durchgeführt, bis `sshbite hostkey accept ADDR[:PORT]` ausgeführt wurde. `strict`: Der Schlüssel eines Hosts muss unter einem seiner Namen oder einer seiner Adressen in `known_hosts_file` stehen, sonst Status `hostkey_unknown`. Hops werden genauso geprüft. Der Einstiegshost wird immer gegen `entry.host_keys` geprüft. |
+| `hostkeys.known_hosts_file` | `null` | OpenSSH-known_hosts-Datei für `strict` (dann Pflicht). |
 
 ### `limits`
 
-| Key | Default | Meaning |
+| Schlüssel | Standard | Bedeutung |
 |---|---|---|
-| `limits.concurrency` | `20` | Hosts collected at the same time. CLI: `--concurrency`. |
-| `limits.host_timeout` | `30` | Seconds for one host in total: connect, authenticate, sudo probe and collect. Exceeded = status `timeout`. CLI: `--timeout`. |
-| `limits.connect_timeout` | `10` | Seconds per hop to connect. |
-| `limits.entry_connections` | `4` | SSH connections to the entry host; all tunnels are multiplexed over them. |
-| `limits.max_output_mb` | `32` | Most collector output read from one host. Reaching it gives status `output_limit`; the data read so far is kept and the host counts as partial. |
+| `limits.concurrency` | `20` | Gleichzeitig eingesammelte Hosts. Bereich 1–500. CLI: `--concurrency`. |
+| `limits.host_timeout` | `30` | Sekunden für einen Host insgesamt: Verbindung, Authentifizierung, sudo-Probe und Einsammeln. Überschritten = Status `timeout`. Größer als 0, höchstens 3600. CLI: `--timeout`. |
+| `limits.connect_timeout` | `10` | Sekunden pro Hop für den Verbindungsaufbau. Größer als 0, höchstens 600. |
+| `limits.entry_connections` | `4` | SSH-Verbindungen zum Einstiegshost; alle Tunnel werden über sie gebündelt. Bereich 1–32. |
+| `limits.max_output_mb` | `32` | Höchstmenge an Collector-Ausgabe, die von einem Host gelesen wird. Wird sie erreicht, ergibt das den Status `output_limit`; die bis dahin gelesenen Daten bleiben erhalten und der Host zählt als partial. Bereich 1–1024. |
 
 ### `rules`
 
-| Key | Default | Meaning |
+| Schlüssel | Standard | Bedeutung |
 |---|---|---|
-| `rules.strength.good` / `.ok` / `.weak` / `.critical` | see example | Key strength classes. Each item is an algorithm name (`ssh-ed25519`) or `algorithm` + `>=`, `<=`, `>`, `<` or `==` + bits (`"ssh-rsa>=3072"`; quote it in YAML). The classes are tried in the order good, ok, weak, critical, and the first matching item wins; a key matching nothing is `unknown`. `critical` keys get the finding `key_strength_critical`, `weak` keys `key_strength_weak`. |
-| `rules.many_hosts_threshold` | `10` | A key authorized on at least this many hosts gets the finding `key_on_many_hosts`. Minimum 2. |
-| `rules.ignore_audit_key` | `true` | Leave the audit key's own authorized_keys lines out of edges and findings. |
+| `rules.strength.good` / `.ok` / `.weak` / `.critical` | siehe Beispiel | Klassen der Schlüsselstärke. Jeder Eintrag ist ein Algorithmusname (`ssh-ed25519`) oder `algorithm` + `>=`, `<=`, `>`, `<` oder `==` + Bits (`"ssh-rsa>=3072"`; in YAML in Anführungszeichen setzen). Die Klassen werden in der Reihenfolge good, ok, weak, critical geprüft, und der erste passende Eintrag gilt; ein Schlüssel, auf den nichts passt, ist `unknown`. `critical`-Schlüssel erhalten den Befund `key_strength_critical`, `weak`-Schlüssel `key_strength_weak`. |
+| `rules.many_hosts_threshold` | `10` | Ein Schlüssel, der auf mindestens so vielen Hosts autorisiert ist, erhält den Befund `key_on_many_hosts`. Mindestens 2. |
+| `rules.ignore_audit_key` | `true` | Die eigenen authorized_keys-Zeilen des Audit-Schlüssels bei Kanten und Befunden auslassen. |
 
 ### `grouping`
 
-| Key | Default | Meaning |
+| Schlüssel | Standard | Bedeutung |
 |---|---|---|
-| `grouping.tags` | `[]` | List of `{name, match}`. `match` uses the include/exclude syntax. A host gets the first tag that matches, else `untagged`. The heatmap can group by tag. |
+| `grouping.tags` | `[]` | Liste von `{name, match}`. `match` verwendet die Syntax von include/exclude. Ein Host erhält den ersten passenden Tag, sonst `untagged`. Die Heatmap kann nach Tag gruppieren. |
 
 ### `web`
 
-| Key | Default | Meaning |
+| Schlüssel | Standard | Bedeutung |
 |---|---|---|
-| `web.bind` | `127.0.0.1` | Address `sshbite serve` listens on. A non-loopback address needs `--tls-cert` and `--tls-key`, or `web.secure_cookie: true` (TLS at a reverse proxy), or `serve --insecure-bind` (logs a warning). Inside the Docker image (`SSHBITE_IN_CONTAINER=1`) `serve` without `--bind` ignores this and listens on `0.0.0.0`; publish the port on `127.0.0.1` only. An explicit `--bind` follows the rule above there too. CLI: `--bind`. |
+| `web.bind` | `127.0.0.1` | Adresse, auf der `sshbite serve` lauscht. Eine Nicht-Loopback-Adresse braucht `--tls-cert` und `--tls-key`, oder `web.secure_cookie: true` (TLS an einem Reverse Proxy), oder `serve --insecure-bind` (protokolliert eine Warnung). Im Docker-Image (`SSHBITE_IN_CONTAINER=1`) ignoriert `serve` ohne `--bind` diesen Wert und lauscht unabhängig von `web.bind` auf `0.0.0.0`; veröffentlichen Sie den Port nur auf `127.0.0.1`. Ein ausdrückliches `--bind` folgt auch dort der obigen Regel. CLI: `--bind`. |
 | `web.port` | `8722` | Port. CLI: `--port`. |
-| `web.session_hours` | `8` | Lifetime of a UI login session in hours. |
-| `web.secure_cookie` | `false` | `true`: the session cookie carries `Secure` (sent over HTTPS only). Set it when TLS ends at a reverse proxy ([operations.md](operations.md#behind-a-reverse-proxy-tls-at-the-proxy)). Always on with `--tls-cert`. |
-| `web.trusted_proxies` | `[]` | IPs or CIDRs of reverse proxies. Only when the connecting peer is in this list is the **last** entry of `X-Forwarded-For` used as the client address for the per-IP login limit; otherwise the header is ignored. |
+| `web.session_hours` | `8` | Lebensdauer einer UI-Login-Session in Stunden. |
+| `web.secure_cookie` | `false` | `true`: Das Session-Cookie trägt `Secure` (wird nur über HTTPS gesendet). Setzen Sie es, wenn TLS an einem Reverse Proxy endet ([operations.md](operations.md#hinter-einem-reverse-proxy-tls-am-proxy)). Mit `--tls-cert` immer eingeschaltet. |
+| `web.trusted_proxies` | `[]` | IPs oder CIDRs von Reverse Proxies. Nur wenn die verbindende Gegenstelle in dieser Liste steht, wird der **letzte** Eintrag von `X-Forwarded-For` als Client-Adresse für die Login-Begrenzung pro IP verwendet; sonst wird der Header ignoriert. |
 
-## Environment variables
+<a id="environment-variables"></a>
 
-| Variable | Meaning |
+## Umgebungsvariablen
+
+| Variable | Bedeutung |
 |---|---|
-| `SSHBITE_CONFIG` | Config path when `-c` is not given. |
-| `SSHBITE_SUDO_PASSWORD` | sudo password for `scan`, as an alternative to `--ask-sudo-password` (e.g. for a timer). Removed from SSHBITE's environment right after it is read; never stored or logged. **Not recommended:** the value stays readable in `/proc/<pid>/environ` while the process runs, and `docker inspect` shows it if it was passed with `docker run -e` or a compose file ([operations.md](operations.md#the-sudo-password)). |
-| `SSHBITE_IN_CONTAINER` | `1` in the Docker image: `serve` without `--bind` binds `0.0.0.0` without TLS. Do not set it elsewhere. |
-| the one named in `audit.key_passphrase_env` | Passphrase of the audit key. |
+| `SSHBITE_CONFIG` | Konfigurationspfad, wenn `-c` nicht angegeben ist. |
+| `SSHBITE_SUDO_PASSWORD` | sudo-Passwort für `scan`, als Alternative zu `--ask-sudo-password` (z. B. für einen Timer); nur in den Legacy-Modi, mit `privilege.mode: installed` wird es mit einer Warnung ignoriert. Wird direkt nach dem Lesen aus der Umgebung von SSHBITE entfernt; nie gespeichert oder protokolliert. **Nicht empfohlen:** Der Wert bleibt in `/proc/<pid>/environ` lesbar, solange der Prozess läuft, und `docker inspect` zeigt ihn, wenn er mit `docker run -e` oder einer Compose-Datei übergeben wurde ([operations.md](operations.md#das-sudo-passwort)). |
+| `SSHBITE_IN_CONTAINER` | `1` im Docker-Image: `serve` ohne `--bind` bindet `0.0.0.0` ohne TLS, unabhängig von `web.bind`. Setzen Sie sie nirgends sonst. |
+| die in `audit.key_passphrase_env` genannte | Passphrase des Audit-Schlüssels. |

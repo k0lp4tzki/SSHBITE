@@ -1,21 +1,23 @@
-# SSHBITE with Docker Compose (docs/install.md).
-#   1. /etc/sshbite/ on the host holds sshbite.yaml and the audit key, owned by uid 10001, mode 0600
-#      (the config must say  database: /data/sshbite.db).
-#   2. docker compose -f compose.example.yaml up -d
-#   3. docker exec -it sshbite sshbite user add admin
-#   4. docker exec -it sshbite sshbite scan --ask-sudo-password
-#   5. open http://127.0.0.1:8722/
+# SSHBITE mit Docker Compose (docs/install.md, Pfad B).
+#   0. Image zuerst bauen, im Wurzelverzeichnis des Repositorys:  docker build -t sshbite:0.1.0 .
+#   1. /etc/sshbite/ auf dem Host enthält sshbite.yaml und den Audit-Schlüssel, Besitzer uid 10001, Modus 0600
+#      (in der Konfiguration muss  database: /data/sshbite.db  stehen).
+#   2. docker compose -f docs/compose.example.yaml up -d
+#   3. docker exec -it sshbite sshbite config validate --connect
+#   4. docker exec -it sshbite sshbite user add admin
+#   5. docker exec sshbite sshbite scan
+#   6. http://127.0.0.1:8722/ öffnen
 services:
   sshbite:
-    build: ..                 # the repository root; or use an image you built: image: sshbite:0.1.0
+    build: ..                 # das Wurzelverzeichnis des Repositorys; oder nur ein gebautes Image: image: sshbite:0.1.0
     image: sshbite:0.1.0
     container_name: sshbite
     restart: unless-stopped
     volumes:
-      - sshbite-data:/data                  # database and its pre-update backups
-      - /etc/sshbite:/etc/sshbite:ro        # config and audit key, read-only
+      - sshbite-data:/data                  # Datenbank und ihre Kopien vor einer Aktualisierung
+      - /etc/sshbite:/etc/sshbite:ro        # Konfiguration und Audit-Schlüssel, nur lesend
     ports:
-      - "127.0.0.1:8722:8722"               # loopback only; the UI has no TLS inside the container
+      - "127.0.0.1:8722:8722"               # nur Loopback; die Oberfläche hat im Container kein TLS
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
