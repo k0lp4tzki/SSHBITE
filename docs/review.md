@@ -196,8 +196,14 @@ user's `~/.ssh` and every `AuthorizedKeysFile` path of that user (also absolute 
   `unreadable by account` and shown on the host as the reason `unreadable by account: PATH`; the host
   stays `ok`. sshd cannot use such a file either;
 - `ssh-keygen` run by a key's owner refuses a private key that group or others may read ("bad
-  permissions", as `ssh` does). For such a key SSHBITE still gets the fingerprint (`ssh-keygen -l`) and
-  reports *bad permissions*, but whether it has a passphrase is shown as *unknown*;
+  permissions", as `ssh` does). Only then the account reads the key once more (`uhead`, at most
+  64 KiB) and pipes it to the collector's own `ssh-keygen -y -P '' -f /dev/stdin`. That `ssh-keygen`
+  opens no path below `~`, only the pipe, so the race below gains nothing; the key never leaves the host
+  and only its public half is printed. Such a key is therefore still reported as *unencrypted* and with
+  *bad permissions*. If the key has a passphrase, `ssh-keygen` cannot use the pipe (it opens the key a
+  second time to try the passphrase), so for an *encrypted* key that others may read the passphrase
+  state is shown as *unknown*; fingerprint and *bad permissions* are still reported. The lint allows `-f /dev/stdin` in exactly this one pipeline
+  (`uhead N PATH 2>/dev/null | head -c 65536 | ssh-keygen -y -P "" -f /dev/stdin`);
 - **fail closed:** without `/usr/bin/setpriv` (or `/bin/setpriv`) the collector reads nothing in user
   homes – no fallback to root – and the host becomes `partial` with
   `setpriv (util-linux) missing: files in user homes not read`. Host keys, sshd and the shadow summary

@@ -117,3 +117,42 @@ def test_setpriv_collect_sh_lints_clean_and_uses_it():
     lines = [ln.strip() for ln in text.splitlines() if "setpriv" in ln and not ln.strip().startswith("#")]
     sp = [ln for ln in lines if ln.startswith("setpriv ")]
     assert len(sp) == 7 and all(ln.startswith(SP + " ") for ln in sp), sp
+
+
+KG_STDIN = "uhead 5000 \"$1\" 2>/dev/null | head -c 65536 | ssh-keygen -y -P '' -f /dev/stdin 2>&1"
+KG_STDIN_FORM = ("ssh-keygen: stdin only as 'uhead N PATH 2>/dev/null | head -c 65536 | "
+                 "ssh-keygen -y -P \"\" -f /dev/stdin'")
+UHEAD = 'uhead() {\n  head -n "$1" -- "$2"\n}\n'
+
+
+def test_setpriv_keygen_stdin_allowed_form():
+    """CEO correction 1: the owner's 0644 key - the account reads it, the collector's ssh-keygen gets the pipe."""
+    assert lint(UHEAD + KG_STDIN) == []
+    assert lint(UHEAD + f"o=$({KG_STDIN})") == []
+
+
+@pytest.mark.parametrize("bad", [
+    "cat /root/.ssh/id_rsa | ssh-keygen -y -P '' -f /dev/stdin",                     # not read by the account
+    "head -n 5 /home/a/.ssh/id_rsa | head -c 65536 | ssh-keygen -y -P '' -f /dev/stdin",  # head as root
+    "uhead 5 \"$1\" | ssh-keygen -y -P '' -f /dev/stdin",                           # no size cap
+    "uhead 5 \"$1\" | head -c 999999 | ssh-keygen -y -P '' -f /dev/stdin",          # other cap
+    "uhead 5 \"$1\" | head -c 65536 | ssh-keygen -l -f /dev/stdin",                  # only -y
+    "uhead 5 \"$1\" | head -c 65536 | ssh-keygen -y -P '' -f -",                     # only /dev/stdin
+    "uhead 5 \"$1\" | head -c 65536 | ssh-keygen -y -P '' -f /proc/self/fd/0",
+    "uhead 5 \"$1\"; head -c 65536 | ssh-keygen -y -P '' -f /dev/stdin",            # not one pipeline
+    "ssh-keygen -y -P '' -f /dev/stdin",                                             # stdin from anywhere
+    "x | uhead 5 \"$1\" | head -c 65536 | ssh-keygen -y -P '' -f /dev/stdin",       # something before uhead
+])
+def test_setpriv_keygen_stdin_other_forms_fail(bad):
+    assert KG_STDIN_FORM in _msgs(UHEAD + bad), bad
+
+
+def test_setpriv_keygen_stdin_not_as_account():
+    # wrapped in setpriv it would read the pipe as the owner and fail again: not allowed
+    assert KG_STDIN_FORM in _msgs(UHEAD + f"uhead 5 x | head -c 65536 | {SP} ssh-keygen -y -P '' -f /dev/stdin")
+
+
+def test_setpriv_collect_sh_has_the_keygen_stdin_form_once():
+    text = collector.collect_script()
+    assert lint(text, "collect.sh") == []
+    assert sum(1 for ln in text.splitlines() if "-f /dev/stdin" in ln and not ln.strip().startswith("#")) == 1

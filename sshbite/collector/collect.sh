@@ -1,5 +1,5 @@
 LC_ALL=C; export LC_ALL; PATH=/usr/sbin:/usr/bin:/sbin:/bin; set -u
-B=2d534dece3d8
+B=6a16430f3910
 # SSHBITE collector. Fixed, read-only POSIX sh script, sent verbatim on stdin.
 # It reads files and prints records to stdout. It writes no file, starts no
 # network connection and builds no command from target data. B above is the
@@ -144,7 +144,24 @@ privkey() {
   esac
   printf '#H %s\t%s\n' "$1" "$h"
   o=$(ukg y "$1")
-  kg "$1" y "$?" "$o"
+  r=$?
+  case "$o" in
+    *'bad permissions'* | *'UNPROTECTED PRIVATE KEY FILE'*)
+      # ssh-keygen refuses a key that group/other may read when it runs as the key's owner
+      # (st_uid == getuid()). Then the account reads it (uhead, as above) and the collector's
+      # ssh-keygen gets it through a pipe: no path below ~ is opened with root's rights.
+      # Only a success replaces the result: an encrypted key fails on a pipe (ssh-keygen opens
+      # it twice), and then the account's "bad permissions" is the more honest answer.
+      if [ "$ASU" = 1 ]; then
+        p2=$(uhead 5000 "$1" 2>/dev/null | head -c 65536 | ssh-keygen -y -P '' -f /dev/stdin 2>&1)
+        if [ "$?" = 0 ]; then
+          o="$p2"
+          r=0
+        fi
+      fi
+      ;;
+  esac
+  kg "$1" y "$r" "$o"
   o=$(ukg l "$1")
   kg "$1" l "$?" "$o"
 }
@@ -345,7 +362,9 @@ printf '%s\n' "$PW" | {
                 ;;
             esac
             if [ ! -e "$p" ] && [ ! -L "$p" ]; then
-              printf '#X %s\tname with tab or newline skipped\n' "$d"
+              # listed, but gone now: removed or renamed between ls and here (a name with a
+              # newline arrives in pieces that do not exist either, so it lands here as well)
+              printf '#X %s\tvanished while reading\n' "$p"
               continue
             fi
             case "$NL$akfs" in
